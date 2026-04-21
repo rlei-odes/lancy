@@ -2,6 +2,7 @@
 
 import React, { FunctionComponent, useCallback, useEffect, useRef, useState } from "react";
 import { FlaskConical, Loader2, Search, SlidersHorizontal } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/lorem";
 import { ChunkCard, ChunkData } from "@/components/ui/chunk-card";
 
@@ -68,6 +69,7 @@ function MethodIndicator({ label, enabled, color }: {
 }
 
 export const RetrievalProbe: FunctionComponent = () => {
+    const { t } = useTranslation("app");
     const [query, setQuery] = useState("");
     const [sourceFilter, setSourceFilter] = useState("");
     const [bm25Enabled, setBm25Enabled] = useState(true);
@@ -127,8 +129,8 @@ export const RetrievalProbe: FunctionComponent = () => {
             <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
                 <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted/30">
                     <FlaskConical className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Retrieval Probe</span>
-                    <span className="ml-auto text-xs text-muted-foreground">Enter to run · Shift+Enter for newline</span>
+                    <span className="text-sm font-medium">{t("explorer.probeTitle")}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">{t("explorer.keyboardHint")}</span>
                 </div>
 
                 <div className="p-4 flex flex-col gap-3">
@@ -137,7 +139,7 @@ export const RetrievalProbe: FunctionComponent = () => {
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder="Enter a query to probe the retrieval pipeline…"
+                        placeholder={t("explorer.queryPlaceholder")}
                         rows={3}
                         className="w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground/50 outline-none leading-relaxed"
                     />
@@ -157,7 +159,7 @@ export const RetrievalProbe: FunctionComponent = () => {
                                 type="text"
                                 value={sourceFilter}
                                 onChange={(e) => setSourceFilter(e.target.value)}
-                                placeholder="filter by source file…"
+                                placeholder={t("explorer.sourceFilterPlaceholder")}
                                 className="text-xs bg-transparent outline-none placeholder:text-muted-foreground/40 text-muted-foreground w-44"
                             />
                         </div>
@@ -173,9 +175,9 @@ export const RetrievalProbe: FunctionComponent = () => {
                             )}
                         >
                             {loading ? (
-                                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Running…</>
+                                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> {t("explorer.running")}</>
                             ) : (
-                                <>Run probe</>
+                                <>{t("explorer.runProbe")}</>
                             )}
                         </button>
                     </div>
@@ -195,9 +197,9 @@ export const RetrievalProbe: FunctionComponent = () => {
                     {/* Results header */}
                     <div className="flex items-center gap-3 px-1">
                         <span className="text-xs text-muted-foreground font-mono">
-                            {result.total_returned} chunks · top_k = {result.top_k}
+                            {t("explorer.resultsSummary", { total: result.total_returned, topK: result.top_k })}
                             {result.reranking_skipped && (
-                                <span className="ml-2 text-amber-500">(reranking skipped)</span>
+                                <span className="ml-2 text-amber-500">{t("explorer.rerankingSkipped")}</span>
                             )}
                         </span>
                         <div className="flex-1 h-px bg-border" />
@@ -208,8 +210,8 @@ export const RetrievalProbe: FunctionComponent = () => {
                         {result.chunks.map((chunk, i) => {
                             const isOverK = chunk.final_rank > topK;
                             const dimLabel = rerankingEnabled && !result.reranking_skipped
-                                ? "reranker\ncandidate"
-                                : "outside\nk";
+                                ? t("explorer.dimLabelReranker")
+                                : t("explorer.dimLabelOutsideK");
                             return (
                                 <React.Fragment key={chunk.id}>
                                     {/* Cutoff divider */}
@@ -217,7 +219,7 @@ export const RetrievalProbe: FunctionComponent = () => {
                                         <div className="flex items-center gap-3 my-1 px-1">
                                             <div className="flex-1 h-px bg-border/60" />
                                             <span className="text-[10px] font-mono text-muted-foreground/60 uppercase tracking-widest">
-                                                cutoff — top_{topK}
+                                                {t("explorer.cutoffLabel", { topK })}
                                             </span>
                                             <div className="flex-1 h-px bg-border/60" />
                                         </div>
@@ -241,8 +243,8 @@ export const RetrievalProbe: FunctionComponent = () => {
             {!result && !loading && !error && (
                 <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground/50">
                     <FlaskConical className="h-10 w-10 mb-3 opacity-30" />
-                    <p className="text-sm">Enter a query above to probe the retrieval pipeline.</p>
-                    <p className="text-xs mt-1">Results show ranked chunks with per-method scores.</p>
+                    <p className="text-sm">{t("explorer.emptyStateTitle")}</p>
+                    <p className="text-xs mt-1">{t("explorer.emptyStateSubtitle")}</p>
                 </div>
             )}
         </div>

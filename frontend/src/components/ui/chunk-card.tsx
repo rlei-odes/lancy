@@ -2,6 +2,7 @@
 
 import React, { FunctionComponent, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/lorem";
 
 export interface ChunkScores {
@@ -49,6 +50,7 @@ export const ChunkCard: FunctionComponent<Props> = ({
     dimmed = false,
     dimLabel,
 }) => {
+    const { t } = useTranslation("app");
     const [expanded, setExpanded] = useState(false);
 
     const { scores, final_rank, content, metadata } = chunk;
@@ -139,9 +141,9 @@ export const ChunkCard: FunctionComponent<Props> = ({
                         onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
                     >
                         {expanded ? (
-                            <><ChevronUp className="h-3 w-3" /> collapse</>
+                            <><ChevronUp className="h-3 w-3" /> {t("explorer.collapse")}</>
                         ) : (
-                            <><ChevronDown className="h-3 w-3" /> expand</>
+                            <><ChevronDown className="h-3 w-3" /> {t("explorer.expand")}</>
                         )}
                     </button>
                 </div>

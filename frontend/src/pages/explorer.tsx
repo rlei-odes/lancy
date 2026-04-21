@@ -4,6 +4,7 @@ import Head from "next/head";
 import Link from "next/link";
 import React from "react";
 import { ArrowLeft } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useTheme } from "@/hooks/useTheme";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { cn } from "@/lib/lorem";
@@ -13,10 +14,11 @@ import { RetrievalProbe } from "@/components/sections/retrieval-probe";
 export default function ExplorerPage() {
     const { cssClass } = useTheme();
     const { isMobile } = useMediaQuery();
+    const { t } = useTranslation("app");
 
     return (
         <>
-            <Head><title>Retrieval Explorer</title></Head>
+            <Head><title>{t("explorer.pageTitle")}</title></Head>
             <main
                 className={cn(cssClass, "bg-background flex w-full overflow-hidden")}
                 style={{ height: "100dvh" }}
@@ -28,14 +30,14 @@ export default function ExplorerPage() {
                         <Link
                             href="/"
                             className="flex items-center justify-center h-7 w-7 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                            title="Back to chat"
+                            title={t("explorer.backToChat")}
                         >
                             <ArrowLeft className="h-4 w-4" />
                         </Link>
                         <div className="h-4 w-px bg-border" />
-                        <h1 className="text-sm font-semibold tracking-tight">Retrieval Explorer</h1>
+                        <h1 className="text-sm font-semibold tracking-tight">{t("explorer.pageTitle")}</h1>
                         <span className="text-xs text-muted-foreground/60 font-mono">
-                            — probe the retrieval pipeline without the LLM
+                            {t("explorer.subtitle")}
                         </span>
                     </div>
 
