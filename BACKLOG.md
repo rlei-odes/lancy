@@ -448,6 +448,20 @@ The index should be created after initial bulk ingestion, not before — buildin
 
 ---
 
+### Investigate API Completeness and Check if More Consequent API Design is Necessary
+
+Finding on a question about API status:
+No, /api/rag/query (or /api/v1/rag/query) does not exist in the current codebase.
+
+I found a reference to it in the ARCHITECTURE.md file, but based on the actual implementation in main.py and the router files (rag_router.py, kb_router.py), that seems to be a documentation artifact or a typo for /api/v1/messages.
+
+The current query-related endpoints are:
+
+/api/v1/messages: The main endpoint used by the frontend for chat queries.
+/api/v1/rag/query-status: Used by the frontend to poll for the current phase of a running query (e.g., "retrieving" vs "generating").
+
+---
+
 ## Research & Future Directions
 
 ### Graph-RAG — Possible Next Evolution
@@ -468,3 +482,15 @@ Standard RAG retrieves isolated chunks. Graph-RAG builds a knowledge graph over 
 
 ---
 
+
+## Documentation
+
+### Add API Landscape and Description in Architecture
+
+Current API landscape summary:
+POST /api/v1/messages: Full RAG Chat (Retrieval + LLM).
+GET /api/v1/rag/config: Session parameters.
+POST /api/v1/rag/reindex: Ingestion/Indexing.
+GET /api/v1/kb: Knowledge Base management.
+POST /api/v1/rag/retrieve (New): Standalone Retrieval for the Explorer.
+This new endpoint will essentially be a "dry run" of the retrieval logic that the main chat uses, but with the added ability to return those detailed scores (BM25, Semantic, etc.) that are usually discarded before the LLM sees them.
