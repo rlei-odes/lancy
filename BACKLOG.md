@@ -212,6 +212,35 @@ When `image_indexing_enabled` is on for a KB, a document's chunks exist in both 
 - Automatic time-based expiry of documents based on metadata timestamps
 - Direct DMS API or database connectivity (DMS-specific, belongs in the integration layer)
 
+### Document Actuality — Time-Based Metadata and Retrieval Weighting
+
+**Goal:** make document age a first-class signal in retrieval so that answers can prefer recent documents, flag outdated sources, or apply a hard cutoff by date.
+
+**Why:** in knowledge bases that evolve over time (policy documents, technical specs, product data), an older document may be technically relevant but factually superseded. The current retrieval pipeline has no concept of document age — a 2018 spec ranks the same as the 2024 revision if their embeddings are similar.
+
+**Ingest side:**
+
+- `document_released_at` is already part of the planned metadata schema (see External Metadata Ingestion above) — this feature builds directly on it
+- Additionally, stamp every chunk with `ingested_at` (ISO date, set automatically at indexing time) — no sidecar file needed; the ingestion pipeline writes it unconditionally
+- `ingested_at` serves as a fallback when no explicit `document_released_at` is provided
+
+**Retrieval side:**
+
+Three configurable strategies, selectable per session or preset:
+
+1. **Prefer recent** — apply a time-decay score penalty to older chunks before or after reranking; recent documents rank higher all else being equal. Penalty function: linear or exponential decay from the reference date (today, or a configurable anchor).
+2. **Hard cutoff** — exclude chunks older than a given date from the candidate pool entirely. Useful when historical documents are indexed for reference but should never appear in answers about current state.
+3. **Soft penalty** — scale down the final score of old chunks by a configurable factor without fully excluding them. A 2018 document can still surface if nothing more recent is relevant.
+
+**UI:**
+
+- New session parameter in the RAG Config sidebar: "Document actuality" — off / prefer recent / cutoff (with a date picker) / soft penalty (with a slider for decay strength)
+- Source citations in the chat show the document date when available — lets users judge recency themselves even when no penalty is applied
+
+**Scope note:** this feature is complementary to the versioning/replacement system above — that handles explicit document supersession; this handles implicit age-based preference for live corpora where old documents are never explicitly removed.
+
+---
+
 ### Chunking Strategy Investigation — Lessons from Large-Scale Ingestion
 
 **Trigger:** Practitioner account of ingesting 20k documents / 600k pages. Key insight: not all pages need to be chunked — the pipeline must first analyze each page and chunk only relevant content. Images and tables require separate handling, not the same path as prose text.
@@ -303,6 +332,41 @@ Each result is a card with a large rank number on the left (bold, prominent), th
 **Scope note:** the UI cards are non-trivial but not complex — a ranked list with expandable text. Generic vector store UIs (ChromaDB-UI etc.) don't know about the BM25/RRF pipeline, so building this in-app is the only way to get the full picture.
 
 
+
+### Knowledge Base Analytics Page
+
+**Goal:** a dedicated stats/analytics view in the admin UI that gives a quick health overview of the indexed knowledge base — corpus composition, ingestion history, and retrieval activity.
+
+**Why:** once a KB grows beyond a few dozen documents, it becomes hard to reason about what is in it, how it is chunked, and how actively it is being used. Dashboards answer these questions without needing to query the vector store manually.
+
+**Proposed diagrams and panels:**
+
+- **Chunk size distribution** — histogram bucketing chunks by character count (e.g. 0–200, 200–500, 500–1000, 1000+). Reveals over-chunking, under-chunking, and runaway pages (OCR noise, headers, footers).
+- **Chunks per document** — scatter or bar chart: documents on x-axis ordered by chunk count, chunk count on y-axis. Identifies outliers — a single document producing 10× the average chunk count may indicate a problem.
+- **Ingestion timeline** — bar chart of chunks (or documents) indexed per day or month. Shows when the KB was last populated and whether ingestion is a one-time event or ongoing.
+- **Retrieval hit frequency** (optional) — which chunks appear most often in retrieval results; which documents are never retrieved. Useful for corpus hygiene: documents that are never retrieved may be poorly chunked, off-topic, or redundant.
+
+**Placement:** a third tab in the Retrieval Explorer admin view ("Analytics"), alongside the existing chunk browser and retrieval probe tabs. Shares the same full-width layout.
+
+**Performance note:** chunk size and count statistics require a full metadata scan of the vector store. For large KBs (tens of thousands of chunks) this should be pre-computed and cached — not run on every page load. A background job triggered at the end of each indexing run is the natural hook.
+
+---
+
+### User Feedback — Thumbs Up / Down
+
+**Goal:** let users rate individual answers with a thumbs up or down. Capture the active RAG configuration at the time of rating so quality can be correlated with retrieval settings.
+
+**Why:** RAG quality is hard to judge in aggregate without structured feedback. Recording which configuration settings (k, BM25, reranking, model, temperature) were active when a good or bad answer was given lets admins identify which presets actually work on the real corpus.
+
+**Scope:**
+- Thumbs up / down button visible per answer in the chat (logged-in users only)
+- Rating stored in the conversation database alongside the conversation and message ID, with a full snapshot of the `RagConfig` active at that moment
+- Admin view: a simple feedback log showing recent ratings, the question, the answer excerpt, and the config snapshot — sortable by rating and date
+- Optional aggregation: rating counts per model, per KB, per preset — useful for spotting that a specific LLM or k value consistently gets low ratings
+
+**Privacy note:** feedback entries are stored server-side in the existing DB; no external service involved. On public or multi-user deployments, the feedback log should be admin-only.
+
+---
 
 ### Customisable Retrieval Prompts
 

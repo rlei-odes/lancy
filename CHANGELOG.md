@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.2.31] — 2026-04-22 · rlei-odes
+
+### Added — Retrieval Explorer
+
+Interactive explorer panel for inspecting what the retrieval pipeline actually returns before the LLM sees it. See `DESIGN_DOC_Retrieval_Explorer.md` for the full design record.
+
+- `POST /api/v1/rag/retrieve` backend endpoint — runs the full retrieval pipeline (BM25, semantic, RRF, HyDE, query expansion, reranking) against a query without invoking the LLM; returns ranked chunks with scores and metadata
+- Retrieval Explorer panel in the frontend — accessible from the sidebar; shows the probe results as a ranked chunk list with score, source file, page, and chunk text
+- Results update live on query submit; panel state is independent of chat sessions
+
+---
+
 ## [Lancy v0.2.30] — 2026-04-19 · rlei-odes
 
 ### Added — Multimodal Image Retrieval Pipeline
