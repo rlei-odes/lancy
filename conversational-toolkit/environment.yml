@@ -1,0 +1,6 @@
+name: conversational-toolkit
+dependencies:
+  - python~=3.11.8
+  - pip
+  - pip:
+    - -r requirements.txt

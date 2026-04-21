@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lancy"
+authors = [
+    # { name = "Thibaut Loiseau", email = "thibaut.loiseau@epfl.ch" },
+    # { name = "Ivan-Daniel Sievering", email = "ivan.sievering@epfl.ch" },
+    # { name = "Paulina Körner", email = "paulina.koerner@sdsc.ethz.ch" },
+]
+description = ""
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "chromadb==1.4.1",
+    "docling==2.75.0",
+    "fastapi==0.115.14",
+    "numpy==2.3.3",
+    "ollama==0.6.1",
+    "openai==2.21.0",
+    "sentence-transformers==5.1.1",
+    "matplotlib==3.10.8",
+    "partial-json-parser==0.2.1.1.post7",
+]
+dynamic = ["version"]
+
+[tool.mypy]
+python_version = "3.11"
+
+[[tool.mypy.overrides]]
+module = "matplotlib.*"
+ignore_missing_imports = true
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+version = { attr = "lancy.__version__" }

@@ -1,0 +1,58 @@
+# Python cache
+*.pyc
+.ipynb_checkpoints/
+*.egg-info/
+
+# Virtual environments
+venv/
+.venv/
+
+# IDE settings
+.vscode/
+.idea/
+
+# OSX-specific
+.DS_Store
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Data / databases
+*.db
+
+# Runtime artefacts
+logs/
+dist/
+users.json
+sources.json
+conversations.json
+messages.json
+reactions.json
+chunks.db/
+
+rag_venv/
+db/
+images_unstructured_pdf/
+tmp/
+
+node_modules/
+.next/
+
+# Claude Code memory (private)
+.claude/
+
+# Custom prompts (may contain internal/confidential instructions)
+prompts/system_prompt.custom.md
+
+# Customer data (never commit)
+data */
+epub/
+
+# Build artifacts
+tsconfig.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
+
+# Systemd service files (contain local paths / secrets)
+*.service

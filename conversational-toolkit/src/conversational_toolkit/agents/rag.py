@@ -1,0 +1,150 @@
+"""
+Retrieval-Augmented Generation (RAG) agent.
+
+'RAG' combines document retrieval with language model generation. Before calling the LLM it rewrites the query to be history-independent, optionally expands it into multiple search queries, retrieves relevant chunks from all configured retrievers, merges the ranked results via Reciprocal Rank Fusion, and injects the sources into the LLM prompt using XML tags.
+"""
+
+import asyncio
+from typing import Any, AsyncGenerator
+
+from conversational_toolkit.agents.base import Agent, AgentAnswer, QueryWithContext
+from conversational_toolkit.llms.base import LLM, LLMMessage, Roles, MessageContent
+from conversational_toolkit.retriever.base import Retriever
+from conversational_toolkit.utils.retriever import (
+    make_query_standalone,
+    query_expansion,
+    reciprocal_rank_fusion,
+    hyde_expansion,
+)
+from conversational_toolkit.vectorstores.base import ChunkRecord
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class RAG(Agent):
+    """
+    RAG agent that retrieves document chunks before generating an answer.
+
+    # TODO: LLM response is assumed to be text-only; image output from the model is not handled.
+    # TODO: Image sources are injected as USER role messages.
+    # TODO: Remove their concept of sources in their format XML
+
+    Attributes:
+        utility_llm: A (typically cheaper) LLM used for query rewriting and expansion. Kept separate so a fast model can handle preprocessing while a more capable model handles generation.
+        retrievers: One or more retrievers queried in parallel. Their results are merged with Reciprocal Rank Fusion before being passed to the LLM.
+        number_query_expansion: Number of additional search queries to generate from the original query. Set to 0 to disable expansion.
+    """
+
+    def __init__(
+        self,
+        llm: LLM,
+        utility_llm: LLM,
+        retrievers: list[Retriever[Any]],
+        system_prompt: str,
+        description: str = "",
+        number_query_expansion: int = 0,
+        enable_hyde: bool = False,
+    ):
+        super().__init__(system_prompt, llm, description)
+        self.description = description
+        self.llm = llm
+        self.utility_llm = utility_llm
+        self.retrievers = retrievers
+        self.number_query_expansion = number_query_expansion
+        self.enable_hyde = enable_hyde
+
+    async def answer_stream(self, query_with_context: QueryWithContext) -> AsyncGenerator[AgentAnswer, None]:  # noqa: PLR0912
+        query = query_with_context.query
+        history = query_with_context.history
+
+        if len(history) > 0:
+            query = await make_query_standalone(self.utility_llm, history, query)
+
+        queries = [query]
+
+        if self.number_query_expansion > 0:
+            queries_expanded = await query_expansion(query, self.utility_llm, self.number_query_expansion)
+            queries += queries_expanded
+
+        if self.enable_hyde:
+            hyde_expansion_message = await hyde_expansion(query, self.utility_llm)
+            queries.append(hyde_expansion_message)
+
+        async def _retrieve_one(retriever) -> list[ChunkRecord]:
+            results = await asyncio.gather(*[retriever.retrieve(q) for q in queries])
+            return reciprocal_rank_fusion(list(results))[: retriever.top_k]
+
+        all_results = await asyncio.gather(*[_retrieve_one(r) for r in self.retrievers])
+        sources: list[ChunkRecord] = [chunk for group in all_results for chunk in group]
+
+        sources_list = []
+
+        for source in sources:
+            if "text" in source.mime_type:
+                sources_as_message = LLMMessage(role=Roles.USER, content=[])
+                sources_as_message.content.append(
+                    MessageContent(
+                        type="text",
+                        text=f"<source id='{source.id}' file='{source.metadata.get('source_file', '')}'>{source.content}</source>",
+                    )
+                )
+                sources_list.append(sources_as_message)
+
+            elif "image" in source.mime_type:
+                sources_as_message = LLMMessage(role=Roles.USER, content=[])
+                sources_as_message.content.append(
+                    MessageContent(
+                        type="text",
+                        text=f"<source id='{source.id}' file='{source.metadata.get('source_file', '')}' type='image'>",
+                    )
+                )
+                sources_as_message.content.append(
+                    MessageContent(
+                        type="image",
+                        image_url=source.content,
+                    )
+                )
+                sources_as_message.content.append(
+                    MessageContent(
+                        type="text",
+                        text="</source>",
+                    )
+                )
+                sources_list.append(sources_as_message)
+            else:
+                raise ValueError(f"Unsupported MIME type: {source.mime_type}")
+
+        response_stream = self.llm.generate_stream(
+            [
+                LLMMessage(
+                    role=Roles.SYSTEM,
+                    content=[MessageContent(type="text", text=self.system_prompt)],
+                ),
+                *history,
+                *sources_list,
+                LLMMessage(
+                    role=Roles.USER,
+                    content=[MessageContent(type="text", text=query)],
+                ),
+            ]
+        )
+
+        content = ""
+        async for response_chunk in response_stream:
+            if response_chunk.content:
+                for message_content in response_chunk.content:
+                    if message_content.type == "text" and message_content.text:
+                        content += message_content.text
+                    elif message_content.type == "image" and message_content.image_url:
+                        raise NotImplementedError("Image output from LLM is not supported in this version.")
+                answer = await self._answer_post_processing(
+                    AgentAnswer(
+                        content=[MessageContent(type="text", text=content)],
+                        role=Roles.ASSISTANT,
+                        sources=sources,
+                    )
+                )
+                if answer:
+                    yield answer

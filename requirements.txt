@@ -1,0 +1,26 @@
+-e ./conversational-toolkit/
+-e ./backend/
+chromadb==1.4.1
+docling==2.75.0
+einops
+fastapi==0.115.14
+httpx==0.28.1
+jupyterlab==4.4.10
+loguru==0.6.0
+markitdown[pdf]==0.1.4
+matplotlib==3.10.8
+numpy==2.3.3
+ollama==0.6.1
+openai==2.21.0
+openpyxl==3.1.5
+pgvector==0.4.2
+pydantic==2.10.6
+pytest==8.4.1
+python-jose==3.4.0
+qwen-vl-utils==0.0.14
+ragas==0.4.3
+rank-bm25==0.2.2
+ruff==0.12.3
+sentence-transformers==5.1.1
+SQLAlchemy==2.0.46
+uvicorn==0.35.0

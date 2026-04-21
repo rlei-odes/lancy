@@ -1,0 +1,27 @@
+[tool.ruff]
+extend-include = ["*.ipynb"]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+extend-select = [
+    "W605", # pycodestyle: invalid-escape-sequence
+    "PGH",  # pygrep-hooks
+    "RUF",  # Ruff-specific rules
+]
+ignore = [
+    "PGH003",   # allow blanket type: ignore comments
+    "E402",     # module-level import not at top — intentional: .env loaded before third-party imports
+    "PLC0415",  # import not at top-level — intentional lazy imports in async methods
+    "E401",     # multiple imports on one line — handled per-file in conversational-toolkit
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**" = ["INP001"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

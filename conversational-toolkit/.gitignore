@@ -1,0 +1,33 @@
+# Python cache
+*.pyc
+.ipynb_checkpoints/
+*.egg-info/
+
+# IDE settings
+.vscode/
+.idea/
+
+data/
+
+
+# Python virtual environment
+venv/
+
+# OSX-specific
+.DS_Store
+
+.env.local
+.env.production
+
+# Frontend
+dist/
+
+# Logs
+logs/
+
+users.json
+sources.json
+conversations.json
+messages.json
+reactions.json
+chunks.db/
