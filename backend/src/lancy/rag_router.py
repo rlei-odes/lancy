@@ -15,7 +15,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Callable
+from typing import Annotated, Any, Callable
 
 _SERVER_STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -95,6 +95,38 @@ class IndexStatus(BaseModel):
     last_result: ReindexResult | None = None  # result of the last completed reindex
 
 
+# ─── Retrieval probe ──────────────────────────────────────────────────────────
+
+
+class RetrieveRequest(BaseModel):
+    query: str
+    bm25_enabled: bool = True
+    reranking_enabled: bool = False
+    filters: dict[str, Any] | None = None
+
+
+class ChunkScores(BaseModel):
+    semantic_score: float | None = None
+    bm25_score: float | None = None
+    rrf_score: float | None = None
+    pre_rerank_rank: int | None = None  # rank before LLM reranking, if active
+
+
+class ChunkResult(BaseModel):
+    id: str
+    content: str
+    metadata: dict[str, Any]
+    final_rank: int
+    scores: ChunkScores
+
+
+class RetrieveResponse(BaseModel):
+    chunks: list[ChunkResult]
+    top_k: int
+    total_returned: int
+    reranking_skipped: bool = False
+
+
 # ─── Router factory ───────────────────────────────────────────────────────────
 
 
@@ -109,6 +141,8 @@ def create_rag_router(
     | None = None,  # (config) -> None, rebuilds agent without reindex
     cancel_callback: Callable
     | None = None,  # () -> None, requests indexing cancellation
+    retrieve_callback: Callable
+    | None = None,  # async (RetrieveRequest) -> RetrieveResponse
 ) -> APIRouter:
     """
     Args:
@@ -290,5 +324,12 @@ def create_rag_router(
     @router.get("/status")
     async def server_status() -> dict:
         return {"started_at": _SERVER_STARTED_AT}
+
+    @router.post("/retrieve", response_model=RetrieveResponse)
+    async def retrieve(req: RetrieveRequest) -> RetrieveResponse:
+        """Run retrieval pipeline without LLM — returns scored chunks for the Explorer."""
+        if retrieve_callback is None:
+            raise HTTPException(status_code=501, detail="Retrieval probe not configured.")
+        return await retrieve_callback(req)
 
     return router

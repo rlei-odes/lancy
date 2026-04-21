@@ -53,6 +53,7 @@ const nextConfig = {
     devIndicators: false,
     experimental: {
         forceSwcTransforms: true,
+        proxyTimeout: 120_000,  // LLM reranking can be slow — raise proxy timeout to 2 min
     },
 };
 

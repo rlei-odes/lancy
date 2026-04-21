@@ -229,6 +229,19 @@ When `image_indexing_enabled` is on for a KB, a document's chunks exist in both 
 
 ## UI & Settings
 
+### Retrieval Explorer — top_k / candidate pool validation
+
+**Issue:** the RAG Config sidebar allows setting `top_k` higher than `reranking_candidate_pool` (e.g. top_k=4, pool=3). This is logically invalid — you cannot return 4 reranked results from a pool of 3 candidates. Currently this causes no visible error but produces confusing results.
+
+**Options to evaluate:**
+- Frontend: clamp `reranking_candidate_pool` minimum to `top_k` in the sidebar (or vice versa — warn when pool < top_k)
+- Backend: enforce at runtime in `retrieve_callback` / the RAG query path and return a clear validation error
+- Both: frontend prevents the bad state; backend guards anyway
+
+**Why it matters:** affects both normal RAG queries and the Retrieval Explorer probe. A user changing top_k without adjusting the pool would silently get degraded results.
+
+---
+
 ### Preset Scope — Query Presets vs. Ingestion Presets
 
 **Current behaviour:** a preset saves the full combined state — both session/query parameters (`RagConfig`: top-k, BM25, reranking, LLM model, temperature, etc.) and KB-level embedding/ingestion parameters (embedding backend, model, batch size, chunk tokens, OCR, image toggles). Presets are already per-KB: stored in `rag_presets_{kb_id}.json`, so a preset saved for KB "A" does not appear for KB "B".

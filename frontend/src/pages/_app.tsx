@@ -8,6 +8,8 @@ import { ThemeProvider } from "@/hooks/useTheme";
 import { MediaQueryProvider } from "@/hooks/useMediaQuery";
 import { Inter } from "next/font/google";
 import { DisclaimerProvider } from "@/hooks/useDisclaimer";
+import { DisclaimerDialog } from "@/components/sections/dialogs/disclaimer-dialog";
+import { BackendStatus } from "@/components/sections/backend-status";
 
 Translation.init();
 const inter = Inter({ subsets: ["latin"] });
@@ -28,6 +30,8 @@ export default function App({ Component, pageProps }: AppProps) {
                     <MessagingProvider>
                         <div className={inter.className}>
                             <Component {...pageProps} />
+                            <DisclaimerDialog />
+                            <BackendStatus />
                         </div>
                     </MessagingProvider>
                 </DisclaimerProvider>

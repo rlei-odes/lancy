@@ -195,16 +195,38 @@ _(none outstanding — all layout and config questions resolved)_
 ## 7. Implementation Checklist
 
 ### Backend
-- [ ] Add `RetrieveRequest` / `RetrieveResponse` models to `rag_router.py`
-- [ ] Add `retrieve_callback` optional param to `create_rag_router`
-- [ ] Implement `POST /api/v1/rag/retrieve` (delegates to retrieve_callback)
-- [ ] Implement `retrieve_callback` in `main.py`: read session config, run BM25 + semantic in parallel, join scores, RRF, optional rerank on `top_k + lookahead` candidates
+- [x] Add `RetrieveRequest` / `RetrieveResponse` models to `rag_router.py`
+- [x] Add `retrieve_callback` optional param to `create_rag_router`
+- [x] Implement `POST /api/v1/rag/retrieve` (delegates to retrieve_callback)
+- [x] Implement `retrieve_callback` in `main.py`: read session config, run BM25 + semantic in parallel, join scores, RRF, optional rerank on `top_k + lookahead` candidates
 
 ### Frontend
-- [ ] Move `DisclaimerDialog` and `BackendStatus` from `home.tsx` to `_app.tsx`
-- [ ] Extract `RagConfigSidebar` component (toggle strip + `RagConfigPanel`) from `home.tsx`
-- [ ] Update `home.tsx` to use `RagConfigSidebar`
-- [ ] Add `/explorer` route (`pages/explorer.tsx`) — no left sidebar, uses `RagConfigSidebar`
-- [ ] Implement `RetrievalProbe` component (query input, method toggles, result cards with cut-off visual)
-- [ ] Implement `ChunkCard` component (capped height, expand on click, metadata row, score badges, pre-rerank badge)
-- [ ] Add "Retrieval Explorer" link to sidebar footer
+- [x] Move `DisclaimerDialog` and `BackendStatus` from `home.tsx` to `_app.tsx`
+- [x] Extract `RagConfigSidebar` component (toggle strip + `RagConfigPanel`) from `home.tsx`
+- [x] Update `home.tsx` to use `RagConfigSidebar`
+- [x] Add `/explorer` route (`pages/explorer.tsx`) — no left sidebar, uses `RagConfigSidebar`
+- [x] Implement `RetrievalProbe` component (query input, method toggles, result cards with cut-off visual)
+- [x] Implement `ChunkCard` component (capped height, expand on click, metadata row, score badges, pre-rerank badge)
+- [x] Add "Retrieval Explorer" link to sidebar footer
+
+---
+
+## 99. Implementation Notes
+
+### Backend (2 files changed)
+
+**`rag_router.py`** — added `RetrieveRequest`, `ChunkScores`, `ChunkResult`, `RetrieveResponse` models + `POST /api/v1/rag/retrieve` endpoint + optional `retrieve_callback` param to `create_rag_router`.
+
+**`main.py`** — `_build_components` now returns the embedding model as a 3rd value; added `emb_proxy` alongside the existing `vs_proxy` and `agent_proxy`. `retrieve_callback` runs BM25 + semantic in parallel (`asyncio.gather`), builds a per-method score map keyed by chunk ID, does RRF fusion inline, and optionally LLM-reranks using the agent's `utility_llm`. The BM25 retriever instance is cached in `_probe_bm25` and invalidated on KB switch and reindex so the corpus stays in sync without rebuilding on every probe call.
+
+### Frontend (7 files changed/created)
+
+| File | Change |
+|---|---|
+| `pages/_app.tsx` | `DisclaimerDialog` + `BackendStatus` moved here — global, mounted once |
+| `components/template/home.tsx` | Stripped down; now uses `RagConfigSidebar` |
+| `components/sections/rag-config-sidebar.tsx` | New — extracted toggle strip + `RagConfigPanel` |
+| `components/sections/sidebar/history.tsx` | Added Explorer link (flask icon) in the footer button row |
+| `components/ui/chunk-card.tsx` | New — expandable card: large rank number, score badges (SEM cyan / BM25 amber / RRF violet / PRE-RANK gray), capped content with expand/collapse, metadata row in monospace |
+| `components/sections/retrieval-probe.tsx` | New — query textarea, BM25/Reranking toggles, source filter, ranked result list with cutoff divider |
+| `pages/explorer.tsx` | New — `/explorer` route: header with back button, scrollable probe area, `RagConfigSidebar` on the right |

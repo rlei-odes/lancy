@@ -32,6 +32,7 @@ KB API:
 import asyncio
 import json
 import logging
+import math
 import os
 import pathlib
 import re
@@ -93,8 +94,12 @@ from lancy.feature0_baseline_rag import (
 from lancy.kb_router import KBInfo, create_kb_router
 from lancy.openai_compat_router import create_openai_compat_router
 from lancy.rag_router import (
+    ChunkResult,
+    ChunkScores,
     RagConfig,
     ReindexResult,
+    RetrieveRequest,
+    RetrieveResponse,
     create_rag_router,
 )
 from lancy.utils.json import parse_llm_json_stream
@@ -280,8 +285,8 @@ class _Proxy:
 # ---------------------------------------------------------------------------
 # Component builder
 # ---------------------------------------------------------------------------
-def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRAG]:
-    """Instantiate (vector_store, agent) for the given KB + session config."""
+def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRAG, Any]:
+    """Instantiate (vector_store, agent, embedding_model) for the given KB + session config."""
     emb = build_embedding_model(
         kb.embedding_backend,
         kb.embedding_model,
@@ -405,7 +410,7 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
         number_query_expansion=cfg.query_expansion,
         enable_hyde=cfg.hyde_enabled,
     )
-    return vs, agent
+    return vs, agent, emb
 
 
 async def _inject_source_files(agent: Any, vs: VectorStore, base_prompt: str) -> None:
@@ -757,9 +762,11 @@ def build_server():
         )
 
     # ── Initial components ────────────────────────────────────────────────
-    init_vs, init_agent = _build_components(active_kb, session_cfg)
+    init_vs, init_agent, init_emb = _build_components(active_kb, session_cfg)
     vs_proxy = _Proxy(init_vs)
     agent_proxy = _Proxy(init_agent)
+    emb_proxy = _Proxy(init_emb)
+    _probe_bm25: BM25Retriever | None = None
 
     # ── Stable user-id + one-time migration ──────────────────────────────
     # Use a fixed user_id for single-user mode so cookie resets never create
@@ -839,6 +846,7 @@ def build_server():
 
     # ── KB Router ─────────────────────────────────────────────────────────
     async def on_kb_activate(kb: KBInfo) -> None:
+        nonlocal _probe_bm25
         log.info(f"KB switch → '{kb.name}' (id={kb.id})")
         try:
             cfg = (
@@ -848,9 +856,11 @@ def build_server():
             )
         except Exception:
             cfg = session_cfg
-        new_vs, new_agent = _build_components(kb, cfg)
+        new_vs, new_agent, new_emb = _build_components(kb, cfg)
         vs_proxy.switch(new_vs)
         agent_proxy.switch(new_agent)
+        emb_proxy.switch(new_emb)
+        _probe_bm25 = None
         log.info(f"Agent ready for KB '{kb.name}'")
 
     kb_router = create_kb_router(
@@ -900,6 +910,7 @@ def build_server():
 
     # ── RAG Config / Reindex router ───────────────────────────────────────
     async def rebuild_callback(cfg: RagConfig, reset: bool) -> ReindexResult:
+        nonlocal _probe_bm25
         try:
             reg = json.loads(kb_registry_path.read_text())
             kb = KBInfo(**reg["bases"][reg["active"]])
@@ -912,11 +923,13 @@ def build_server():
         kb_router.update_stats(kb.id, chunks_n, files_n)
 
         # Rebuild so BM25 re-indexes new content
-        new_vs, new_agent = _build_components(kb, cfg)
+        new_vs, new_agent, new_emb = _build_components(kb, cfg)
+        _probe_bm25 = None
         base_prompt = cfg.system_prompt.strip() or _load_system_prompt()
         await _inject_source_files(new_agent, new_vs, base_prompt)
         vs_proxy.switch(new_vs)
         agent_proxy.switch(new_agent)
+        emb_proxy.switch(new_emb)
 
         from datetime import datetime, timezone
 
@@ -933,15 +946,128 @@ def build_server():
         return result
 
     def on_agent_rebuild(cfg: RagConfig) -> None:
+        nonlocal _probe_bm25
         kb = kb_router.get_active_kb()
-        new_vs, new_agent = _build_components(kb, cfg)
+        new_vs, new_agent, new_emb = _build_components(kb, cfg)
         vs_proxy.switch(new_vs)
         agent_proxy.switch(new_agent)
+        emb_proxy.switch(new_emb)
+        _probe_bm25 = None
         log.info(f"Agent rebuilt with llm={cfg.llm_backend}/{cfg.llm_model}")
 
     def cancel_indexing() -> None:
         global _cancel_requested
         _cancel_requested = True
+
+    async def retrieve_callback(req: RetrieveRequest) -> RetrieveResponse:
+        nonlocal _probe_bm25
+        try:
+            cfg = (
+                RagConfig(**json.loads(session_cfg_path.read_text()))
+                if session_cfg_path.exists()
+                else RagConfig()
+            )
+        except Exception:
+            cfg = RagConfig()
+
+        top_k = cfg.retriever_top_k
+        fetch_k = (
+            cfg.reranking_candidate_pool
+            if req.reranking_enabled
+            else top_k + math.ceil(top_k * 0.4)
+        )
+
+        # Semantic retrieval — embed query and search VS directly
+        emb_vectors = await emb_proxy.get_embeddings(req.query)
+        sem_results = await vs_proxy.get_chunks_by_embedding(
+            emb_vectors[0], fetch_k, req.filters or None
+        )
+
+        # BM25 retrieval — lazy-init and cache the retriever
+        bm25_results: list = []
+        if req.bm25_enabled:
+            if _probe_bm25 is None:
+                _probe_bm25 = BM25Retriever(vs_proxy, top_k=fetch_k)
+            else:
+                _probe_bm25.top_k = fetch_k
+            bm25_results = await _probe_bm25.retrieve(req.query)
+            # Post-filter by source_file if requested (BM25 doesn't support native filters)
+            if req.filters and req.filters.get("source_file"):
+                sf = req.filters["source_file"]
+                bm25_results = [
+                    c for c in bm25_results if c.metadata.get("source_file") == sf
+                ]
+
+        # Build per-method score maps: {chunk_id: (rank, raw_score)}
+        sem_map = {c.id: (i + 1, c.score) for i, c in enumerate(sem_results)}
+        bm25_map = {c.id: (i + 1, c.score) for i, c in enumerate(bm25_results)}
+
+        # Fuse results
+        chunk_map = {c.id: c for c in [*sem_results, *bm25_results]}
+        all_ids = list(chunk_map.keys())
+
+        rrf_scores: dict[str, float] = {}
+        if req.bm25_enabled and sem_results and bm25_results:
+            for cid in all_ids:
+                score = 0.0
+                if cid in sem_map:
+                    score += 1.0 / (cfg.rrf_k + sem_map[cid][0])
+                if cid in bm25_map:
+                    score += 1.0 / (cfg.rrf_k + bm25_map[cid][0])
+                rrf_scores[cid] = score
+            ordered_ids = sorted(all_ids, key=lambda c: rrf_scores[c], reverse=True)[
+                :fetch_k
+            ]
+        elif sem_results:
+            ordered_ids = [c.id for c in sem_results[:fetch_k]]
+        else:
+            ordered_ids = [c.id for c in bm25_results[:fetch_k]]
+
+        # Optional LLM-based reranking
+        reranking_skipped = False
+        pre_rerank_ranks: dict[str, int] = {}
+        if req.reranking_enabled:
+            try:
+                utility_llm = agent_proxy.utility_llm
+                candidates = [chunk_map[cid] for cid in ordered_ids if cid in chunk_map]
+                for i, cid in enumerate(ordered_ids):
+                    pre_rerank_ranks[cid] = i + 1
+                reranker = RerankingRetriever(
+                    retriever=None, llm=utility_llm, top_k=top_k  # type: ignore[arg-type]
+                )
+                ranked_indices = await reranker._llm_rerank(req.query, candidates)
+                ordered_ids = [candidates[i].id for i in ranked_indices[:fetch_k]]
+            except Exception as exc:
+                log.warning(f"Probe reranking failed, returning pre-rerank order: {exc}")
+                reranking_skipped = True
+
+        # Build response
+        chunks: list[ChunkResult] = []
+        for rank, cid in enumerate(ordered_ids, start=1):
+            chunk = chunk_map.get(cid)
+            if chunk is None:
+                continue
+            chunks.append(
+                ChunkResult(
+                    id=cid,
+                    content=chunk.content,
+                    metadata=chunk.metadata or {},
+                    final_rank=rank,
+                    scores=ChunkScores(
+                        semantic_score=sem_map[cid][1] if cid in sem_map else None,
+                        bm25_score=bm25_map[cid][1] if cid in bm25_map else None,
+                        rrf_score=rrf_scores.get(cid),
+                        pre_rerank_rank=pre_rerank_ranks.get(cid),
+                    ),
+                )
+            )
+
+        return RetrieveResponse(
+            chunks=chunks,
+            top_k=top_k,
+            total_returned=len(chunks),
+            reranking_skipped=reranking_skipped,
+        )
 
     rag_router = create_rag_router(
         db_dir=_DB_DIR,
@@ -952,6 +1078,7 @@ def build_server():
         query_status_factory=lambda: dict(_query_status),
         agent_rebuild_callback=on_agent_rebuild,
         cancel_callback=cancel_indexing,
+        retrieve_callback=retrieve_callback,
     )
     app.include_router(rag_router)
 

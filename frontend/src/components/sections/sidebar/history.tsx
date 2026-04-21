@@ -1,7 +1,8 @@
 import React, { FunctionComponent, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
-import { BookOpen, ChevronDown, ChevronRight, Settings, SquarePen, Tag, Trash2, Webhook } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, FlaskConical, Settings, SquarePen, Tag, Trash2, Webhook } from "lucide-react";
+import Link from "next/link";
 import { SidebarButton } from "@/components/ui/sidebar-button";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { groupConversationsByDate } from "@/lib/conversation";
@@ -211,6 +212,16 @@ export const History: FunctionComponent<Props> = (props: Props) => {
                                 <Settings className="h-4 w-4" /> {t("settings")}
                             </div>
                         </div>
+                    </div>
+                    <div className="py-1 px-2 mx-2">
+                        <Link
+                            href="/explorer"
+                            className="flex w-full py-2 px-3 border border-border rounded-md justify-center hover:bg-muted transition-colors"
+                        >
+                            <div className="flex text-sm items-center gap-1.5 text-muted-foreground">
+                                <FlaskConical className="h-4 w-4" /> Retrieval Explorer
+                            </div>
+                        </Link>
                     </div>
                 </div>
                 <Footer />

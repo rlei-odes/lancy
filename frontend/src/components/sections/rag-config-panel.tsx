@@ -712,6 +712,7 @@ export const RagConfigPanel: FunctionComponent = () => {
             if (sessionRes.ok && (kbRes as Response).ok) {
                 setDirty(false);
                 setStatus({ type: "success", text: t("rag.statusSaved") });
+                window.dispatchEvent(new CustomEvent("rag-config-saved"));
             } else {
                 setStatus({ type: "error", text: t("rag.statusSaveError") });
             }
