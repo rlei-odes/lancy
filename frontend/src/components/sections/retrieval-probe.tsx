@@ -146,8 +146,8 @@ export const RetrievalProbe: FunctionComponent = () => {
                         {/* Method toggles */}
                         <div className="flex items-center gap-1.5">
                             <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
-                            <MethodIndicator label="BM25" enabled={bm25Enabled} color="bg-amber-500/15 text-amber-400" />
-                            <MethodIndicator label="Reranking" enabled={rerankingEnabled} color="bg-violet-500/15 text-violet-400" />
+                            <MethodIndicator label="BM25" enabled={bm25Enabled} color="bg-amber-500/15 text-amber-600 dark:text-amber-400" />
+                            <MethodIndicator label="Reranking" enabled={rerankingEnabled} color="bg-rose-500/15 text-rose-600 dark:text-rose-400" />
                         </div>
 
                         {/* Source filter */}

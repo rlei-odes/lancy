@@ -68,7 +68,7 @@ export const ChunkCard: FunctionComponent<Props> = ({
             )}
         >
             {/* Rank column */}
-            <div className="flex flex-col items-center justify-start pt-4 pl-4 pr-1 shrink-0">
+            <div className="flex flex-col items-center justify-start pt-3 pl-4 pr-1 shrink-0">
                 <span
                     className={cn(
                         "font-mono font-bold text-2xl leading-none tabular-nums",
@@ -92,28 +92,28 @@ export const ChunkCard: FunctionComponent<Props> = ({
                         <ScoreBadge
                             label="SEM"
                             value={fmt(scores.semantic_score)}
-                            color="bg-cyan-500/10 text-cyan-400 border-cyan-500/25"
+                            color="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/25"
                         />
                     )}
                     {scores.bm25_score != null && (
                         <ScoreBadge
                             label="BM25"
                             value={fmt(scores.bm25_score, 2)}
-                            color="bg-amber-500/10 text-amber-400 border-amber-500/25"
+                            color="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25"
                         />
                     )}
                     {scores.rrf_score != null && (
                         <ScoreBadge
                             label="RRF"
                             value={fmt(scores.rrf_score, 4)}
-                            color="bg-violet-500/10 text-violet-400 border-violet-500/25"
+                            color="bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/25"
                         />
                     )}
                     {showPreRank && scores.pre_rerank_rank != null && (
                         <ScoreBadge
                             label="PRE-RANK"
                             value={`#${scores.pre_rerank_rank}`}
-                            color="bg-slate-500/10 text-slate-400 border-slate-500/25"
+                            color="bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/25"
                         />
                     )}
                 </div>
