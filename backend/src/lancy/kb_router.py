@@ -22,7 +22,7 @@ import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Literal
 from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException
@@ -37,23 +37,23 @@ log = logging.getLogger("uvicorn")
 class KBCreate(BaseModel):
     """Fields the caller provides when creating or updating a KB."""
 
-    name: str
+    name: str = Field(..., min_length=1, max_length=100)
     data_dirs: list[str] = Field(default_factory=lambda: ["data/"])
-    embedding_backend: str = "local"  # local | ollama | litellm | custom
-    embedding_model: str = "nomic-ai/nomic-embed-text-v1"
-    embedding_ollama_host: str = ""  # ollama: host:port (default localhost:11434)
-    embedding_custom_base_url: str = ""  # custom: OpenAI-compat base URL
-    embedding_custom_api_key: str = ""  # custom: API key
+    embedding_backend: Literal["local", "ollama", "litellm", "custom"] = "local"
+    embedding_model: str = Field("nomic-ai/nomic-embed-text-v1", max_length=200)
+    embedding_ollama_host: str = Field("", max_length=253)  # ollama: host:port (default localhost:11434)
+    embedding_custom_base_url: str = Field("", max_length=500)  # custom: OpenAI-compat base URL
+    embedding_custom_api_key: str = Field("", max_length=500)  # custom: API key
     nomic_prefix: bool = True
-    max_file_size_mb: int = 20
-    embedding_batch_size: int = 50
+    max_file_size_mb: int = Field(20, ge=1, le=500)
+    embedding_batch_size: int = Field(50, ge=1, le=1000)
     pdf_ocr_enabled: bool = True
-    max_chunk_tokens: int = 0
-    vs_type: str = "chromadb"  # "chromadb" | "pgvector"
-    vs_connection_string: str = ""  # used when vs_type == "pgvector"
+    max_chunk_tokens: int = Field(0, ge=0, le=8192)
+    vs_type: Literal["chromadb", "pgvector"] = "chromadb"
+    vs_connection_string: str = Field("", max_length=500)  # used when vs_type == "pgvector"
     image_indexing_enabled: bool = False
     image_retrieval_enabled: bool = False
-    image_embedding_model: str = "Qwen/Qwen3-VL-Embedding-2B"
+    image_embedding_model: str = Field("Qwen/Qwen3-VL-Embedding-2B", max_length=200)
 
 
 class KBInfo(KBCreate):

@@ -87,6 +87,7 @@ export const SendBar: FunctionComponent = () => {
                             }}
                             placeholder={t("messagePlaceholder")}
                             onPressEnter={() => handleSendMessage(message)}
+                            maxLength={32000}
                         />
                         {sending ? (
                             <Square

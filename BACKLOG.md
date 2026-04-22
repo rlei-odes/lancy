@@ -443,6 +443,19 @@ Also document in `local_setup.md` that after first run the system is designed to
 
 **Output:** a documented list in `local_setup.md` (or a dedicated `SECURITY.md`) of all external hosts, what triggers the call, and how to suppress it for air-gapped or privacy-sensitive deployments.
 
+### API Endpoint Protection — Rate Limiting and Request Queueing
+
+The backend currently has no rate limiting or concurrency guards beyond the single-job check on `/api/v1/rag/reindex`. With multiple simultaneous users this matters: the `/api/v1/messages/stream` endpoint triggers a full retrieval + LLM call per request, and `/api/v1/rag/retrieve` runs embedding inference — both are expensive and unbounded. The login/passcode endpoints have no brute-force protection either.
+
+**Recommended approach:**
+
+- **Rate limiting:** add `slowapi` (the FastAPI equivalent of Flask-Limiter) with per-IP limits on the hot endpoints — e.g. 10 requests/minute on `/messages/stream`, 30/minute on `/rag/retrieve`, and 5/minute on the auth endpoint. Limits are set as decorators on the route functions and require no architectural change.
+- **Reindex queueing:** the existing in-progress guard (409 if already indexing) is sufficient for now; a proper job queue is only needed if concurrent reindex requests from different KBs become a requirement.
+- **LLM concurrency:** if Ollama is running on limited hardware (single GPU), concurrent LLM calls queue internally in Ollama — but FastAPI will still accept all requests and hold open connections. A simple asyncio semaphore on the answer path (e.g. max 3 concurrent LLM calls) prevents connection pile-up under load.
+- **Auth hardening:** the passcode endpoint should reject requests after N failed attempts within a time window — a simple in-memory counter per IP is enough for a non-public deployment.
+
+**Why now:** input sanitization (max lengths, enum guards) is in place, which closes the "bad data" surface. Rate limiting closes the "too much data" surface. Together they cover the realistic abuse scenarios for a small multi-user internal deployment.
+
 ---
 
 ## Production Installation and Architecture
@@ -637,3 +650,13 @@ POST /api/v1/rag/reindex: Ingestion/Indexing.
 GET /api/v1/kb: Knowledge Base management.
 POST /api/v1/rag/retrieve (New): Standalone Retrieval for the Explorer.
 This new endpoint will essentially be a "dry run" of the retrieval logic that the main chat uses, but with the added ability to return those detailed scores (BM25, Semantic, etc.) that are usually discarded before the LLM sees them.
+
+### Interactive API Documentation with Example Payloads
+
+FastAPI auto-generates an OpenAPI schema and exposes a Swagger UI at `/docs` and ReDoc at `/redoc` — both are already live, but they show only field types and defaults, not realistic example payloads. Enriching the Pydantic models with `json_schema_extra` examples would make the Swagger UI directly useful for manual testing and integration work: a developer could open `/docs`, pick an endpoint, click "Try it out", and fire a real request against the running backend with a pre-filled example body.
+
+**Scope:**
+
+- Add `model_config = ConfigDict(json_schema_extra={"examples": [...]})` to the key request models: `RagConfig`, `KBCreate`, `RetrieveRequest`, `MessageInput`, and `ChatCompletionRequest` — one realistic example payload per model is enough
+- The auto-generated response schemas are already complete; adding a few `response_description` strings to the route decorators improves readability
+- Consider locking `/docs` and `/redoc` behind the existing auth check for non-development deployments — currently anyone who knows the URL can browse and call the API without a passcode

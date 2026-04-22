@@ -15,7 +15,8 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Any, Callable
+import re
+from typing import Annotated, Any, Callable, Literal
 
 _SERVER_STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -39,26 +40,26 @@ class RagConfig(BaseModel):
     reranking_candidate_pool: int = Field(15, ge=3, le=100)
 
     # LLM
-    llm_backend: str = Field("ollama")  # ollama | litellm | custom
-    llm_model: str = Field("mistral-nemo:12b")
+    llm_backend: Literal["ollama", "litellm", "custom"] = "ollama"
+    llm_model: str = Field("mistral-nemo:12b", max_length=200)
     llm_temperature: float = Field(0.3, ge=0.0, le=2.0)
-    ollama_host: str = Field("")  # empty = localhost:11434
+    ollama_host: str = Field("", max_length=253)  # empty = localhost:11434
     utility_llm_model: str = Field(
-        ""
+        "", max_length=200
     )  # empty = use same as llm_model; set e.g. "qwen2.5:3b" for faster preprocessing
     num_ctx: int = Field(
         8192, ge=512, le=131072
     )  # Ollama KV-cache window; 16384+ overflows VRAM on <16GB GPUs → CPU fallback
     custom_base_url: str = Field(
-        ""
+        "", max_length=500
     )  # custom: OpenAI-compat base URL, e.g. https://api.anthropic.com/v1
-    custom_api_key: str = Field("")  # custom: API key for custom endpoint
+    custom_api_key: str = Field("", max_length=500)  # custom: API key for custom endpoint
 
     # Image retrieval (session-level; requires image_retrieval_enabled on active KB)
     image_retriever_top_k: int = Field(1, ge=1, le=4)
 
     # Prompt
-    system_prompt: str = Field("")  # empty = use server default
+    system_prompt: str = Field("", max_length=20_000)  # empty = use server default
     follow_up_count: int = Field(3, ge=0, le=10)
 
 
@@ -99,10 +100,10 @@ class IndexStatus(BaseModel):
 
 
 class RetrieveRequest(BaseModel):
-    query: str
+    query: str = Field(..., min_length=1, max_length=4_000)
     bm25_enabled: bool = True
     reranking_enabled: bool = False
-    filters: dict[str, Any] | None = None
+    filters: dict[str, str] | None = None
 
 
 class ChunkScores(BaseModel):
@@ -303,6 +304,8 @@ def create_rag_router(
             log.warning(f"Could not fetch LiteLLM models: {exc}")
             return []
 
+    _VALID_HOST_RE = re.compile(r"^[a-zA-Z0-9._\-]+(:\d{1,5})?$")
+
     @router.get("/ollama-models")
     async def get_ollama_models(host: str = "localhost:11434") -> list[str]:
         """Fetch available model names from an Ollama instance."""
@@ -310,10 +313,11 @@ def create_rag_router(
 
         if not host:
             return []
-        base = host if host.startswith("http") else f"http://{host}"
+        if not _VALID_HOST_RE.match(host):
+            raise HTTPException(status_code=400, detail="Invalid host format — use hostname:port.")
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                r = await client.get(f"{base}/api/tags")
+                r = await client.get(f"http://{host}/api/tags")
                 if r.status_code == 200:
                     data = r.json()
                     return sorted([m["name"] for m in data.get("models", [])])

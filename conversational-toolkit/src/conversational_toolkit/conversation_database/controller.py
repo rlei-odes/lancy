@@ -17,7 +17,7 @@ import time
 from collections.abc import AsyncGenerator, Sequence
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from conversational_toolkit.agents.base import Agent, QueryWithContext
 from conversational_toolkit.conversation_database.data_models.conversation import Conversation, ConversationDatabase
@@ -32,11 +32,11 @@ from conversational_toolkit.utils.time import get_current_timestamp
 
 
 class MessageInput(BaseModel):
-    content: str
+    content: str = Field(..., min_length=1, max_length=32_000)
     parent_id: str | None = None
     conversation_id: str | None = None
     type: str | None = None
-    session_label: str | None = None
+    session_label: str | None = Field(None, max_length=200)
 
 
 class ConversationInput(BaseModel):

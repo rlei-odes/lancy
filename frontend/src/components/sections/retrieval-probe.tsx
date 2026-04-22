@@ -141,6 +141,7 @@ export const RetrievalProbe: FunctionComponent = () => {
                         onKeyDown={handleKeyDown}
                         placeholder={t("explorer.queryPlaceholder")}
                         rows={3}
+                        maxLength={4000}
                         className="w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground/50 outline-none leading-relaxed"
                     />
 

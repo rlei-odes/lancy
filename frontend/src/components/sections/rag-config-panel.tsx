@@ -987,6 +987,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                     onChange={(e) => updateSession("system_prompt", e.target.value)}
                                     placeholder={t("rag.fieldSystemPromptPlaceholder")}
                                     rows={8}
+                                    maxLength={20000}
                                     className="bg-muted border border-border text-foreground text-[10px] rounded px-2 py-1.5 focus:outline-none focus:border-blue-400 w-full font-mono resize-y leading-relaxed"
                                 />
                             </div>

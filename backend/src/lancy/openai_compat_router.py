@@ -21,7 +21,7 @@ from collections.abc import AsyncIterator
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from conversational_toolkit.agents.base import QueryWithContext
 from conversational_toolkit.llms.base import LLMMessage, MessageContent, Roles
@@ -31,16 +31,16 @@ from conversational_toolkit.llms.base import LLMMessage, MessageContent, Roles
 
 
 class ChatMessage(BaseModel):
-    role: str
-    content: str
+    role: str = Field(..., max_length=50)
+    content: str = Field(..., max_length=32_000)
 
 
 class ChatCompletionRequest(BaseModel):
-    model: str = "rag-assistant"
-    messages: list[ChatMessage]
+    model: str = Field("rag-assistant", max_length=200)
+    messages: list[ChatMessage] = Field(..., min_length=1, max_length=200)
     stream: bool = False
-    temperature: float | None = None
-    max_tokens: int | None = None
+    temperature: float | None = Field(None, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(None, ge=1, le=131_072)
 
 
 # ─── Router factory ───────────────────────────────────────────────────────────
