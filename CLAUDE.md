@@ -126,10 +126,17 @@ Fork of the SDSC SME-KT-ZH Collaboration RAG, extended with multi-KB support, hy
 | `backend/src/lancy/kb_router.py` | KB registry, hot-swap, indexing control |
 | `backend/src/lancy/openai_compat_router.py` | `/v1/chat/completions` OpenAI-compatible endpoint |
 | `backend/src/lancy/feature0_baseline_rag.py` | `build_llm()`, `build_embedding_model()`, `build_vector_store()` factories |
-| `conversational-toolkit/src/conversational_toolkit/` | Core library: agents, embeddings, LLMs, vector stores, chunkers, retriever |
+| `conversational-toolkit/src/conversational_toolkit/agents/` | Agent implementations (`RAG`, `ToolAgent`) |
+| `conversational-toolkit/src/conversational_toolkit/utils/retriever.py` | Query utilities: standalone reformulation, expansion, HyDE, RRF, context assembly |
+| `conversational-toolkit/src/conversational_toolkit/retriever/` | Retriever implementations: semantic, BM25, reranking |
+| `conversational-toolkit/src/conversational_toolkit/embeddings/` | Embedding model backends (local sentence-transformers, Ollama, OpenAI-compatible) |
+| `conversational-toolkit/src/conversational_toolkit/llms/` | LLM backends (Ollama, OpenAI-compatible) |
+| `conversational-toolkit/src/conversational_toolkit/vectorstores/` | Vector store backends (ChromaDB) |
+| `conversational-toolkit/src/conversational_toolkit/chunking/` | Chunkers (PDF/Markdown via Docling, MarkItDown) |
 | `frontend/src/components/sections/rag-config-panel.tsx` | RAG Parameters panel — all session-configurable settings |
 | `backend/src/lancy/db/rag_config.json` | Active RAG session config (persisted, loaded on startup) |
 | `backend/src/lancy/db/knowledge_bases.json` | KB registry (all KB definitions + active flag) |
+| `prompts/system_prompt.default.md` | Default system prompt — overridden by `system_prompt.custom.md` (gitignored) or UI session input |
 
 
 ---
@@ -221,8 +228,9 @@ This is currently a solo fork — committing directly to `main` is fine for day-
 ## Documentation Drift
 
 When making changes, check whether documentation needs updating:
-- `README.md` — if features, env vars, or repo structure changed
-- `ARCHITECTURE.md` — if the backend structure, retrieval pipeline, or data flow changed
+- `README.md` — if features changed
+- `docs/ARCHITECTURE.md` — if the backend structure, retrieval pipeline, or data flow changed
+- `docs/admin-guides/setup-guide.md` — if env vars, deployment, or repo structure changed
 
 Update affected docs in the same set of changes. Do not leave docs out of sync with the code.
 

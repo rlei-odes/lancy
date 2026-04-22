@@ -4,6 +4,22 @@
 
 ## Overview
 
+```mermaid
+flowchart TD
+    FE["**Next.js Frontend**\nChat UI · RAG Config Panel · Session Labels · i18n\nAuth (session cookie) · Sidebar badges · Source citations"]
+    BE["**FastAPI Backend**\n/rag · /kb · /v1/chat/completions (OpenAI-compat)"]
+    KB["**KB Registry** (hot-swap)\nKB-A: ChromaDB · local embed · BM25+semantic\nKB-B: pgvector · LiteLLM embed · semantic only\nKB-N: ..."]
+    RP["**Retrieval Pipeline**\nQuery → BM25 | Semantic | HyDE\n→ RRF fusion → Reranker → Top-K"]
+    VS["**Vector Store**\nChromaDB / pgvector\n(per-KB, HNSW ANN)"]
+    LLM["**LLM Backend**\nOllama · OpenAI\nAnthropic · LiteLLM"]
+
+    FE -->|"HTTP (proxy rewrite)"| BE
+    BE --> KB
+    KB --> RP
+    RP --> VS
+    RP --> LLM
+```
+
 Lancy is a full-stack RAG system structured in three layers:
 
 ```
@@ -90,7 +106,6 @@ POST /reindex (reset: bool)
   │     │     include_files=filtered,
   │     │     file_hashes=hash_map)
   │     │     └── per file: parse → chunk → stamp chunk.metadata["file_hash"]
-  │     │         (hash computed on-the-fly if not in hash_map — notebook compat)
   │     │
   │     └── executor/new-loop: build_vector_store(   CPU-bound — separate thread
   │           chunks, embedding_model,
@@ -305,81 +320,6 @@ Password-based login via session cookie:
 - `POST /api/auth/login` validates password against `API_KEY` env var, sets `rag_auth` cookie
 - `middleware.ts` checks cookie on every request, redirects to `/login` if missing
 - Stateless — no database, no user accounts
-
----
-
-## Deployment
-
-### Systemd User Services
-
-Services run under the user account (no root required):
-
-```
-~/.config/systemd/user/
-  ├── insight-backend.service    # FastAPI backend
-  └── insight-frontend.service   # Next.js frontend
-```
-
-```bash
-systemctl --user daemon-reload
-systemctl --user enable --now insight-backend insight-frontend
-journalctl --user -u insight-backend -f   # live logs
-```
-
-### nginx Reverse Proxy
-
-`nginx.conf` provides:
-- TLS termination (via certbot or manual cert)
-- Proxy to Next.js frontend (`:3000`)
-- Frontend proxies backend internally — nginx only needs to reach port 3000
-
-### KB and Config Files
-
-```
-backend/src/lancy/db/
-  ├── knowledge_bases.json    # KB registry (all KB definitions + active flag)
-  └── rag_config.json         # Current RAG parameters (k, BM25, HyDE, etc.)
-```
-
-These files are gitignored (contain local paths). Use `knowledge_bases.json.example`
-and `rag_config.json.example` as templates.
-
----
-
-## Configuration Reference
-
-### knowledge_bases.json structure
-
-```json
-{
-  "active": "my-kb",
-  "knowledge_bases": [
-    {
-      "id": "my-kb",
-      "name": "My Knowledge Base",
-      "data_dirs": ["data/"],
-      "vector_store": "chromadb",
-      "embedding_backend": "local",
-      "embedding_model": "nomic-ai/nomic-embed-text-v1",
-      "persist_directory": "db/my-kb-chroma"
-    }
-  ]
-}
-```
-
-### rag_config.json structure
-
-```json
-{
-  "retrieval_k": 5,
-  "use_bm25": true,
-  "use_hyde": false,
-  "use_query_expansion": false,
-  "use_reranking": false,
-  "llm_model": "mistral-nemo:12b",
-  "llm_temperature": 0.1
-}
-```
 
 ---
 

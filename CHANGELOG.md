@@ -5,6 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+
 ## [Lancy v0.2.31] — 2026-04-22 · rlei-odes
 
 ### Added — Retrieval Explorer
@@ -14,6 +15,17 @@ Interactive explorer panel for inspecting what the retrieval pipeline actually r
 - `POST /api/v1/rag/retrieve` backend endpoint — runs the full retrieval pipeline (BM25, semantic, RRF, HyDE, query expansion, reranking) against a query without invoking the LLM; returns ranked chunks with scores and metadata
 - Retrieval Explorer panel in the frontend — accessible from the sidebar; shows the probe results as a ranked chunk list with score, source file, page, and chunk text
 - Results update live on query submit; panel state is independent of chat sessions
+
+### Changed — Multilingual prompt improvements
+
+- **System prompt** — replaced the hardcoded German-only prompt with a universal English prompt that instructs the LLM to detect the user's language and respond accordingly; supports cross-lingual retrieval (query in one language, documents in another)
+- **Query expansion** — removed the forced English-only output; now generates queries in both the original query language and English for broader retrieval coverage across multilingual corpora
+- **Query reformulation and HyDE** — added explicit language constraints so standalone query rewriting and hypothetical document generation stay in the user's language rather than defaulting to English
+
+### Fixed
+
+- `vs_path` in the default KB registry corrected to point within the project directory; previously pointed to a stale absolute path from the predecessor project
+
 
 ---
 

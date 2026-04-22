@@ -26,7 +26,7 @@ async def make_query_standalone(llm: LLM, history: list[LLMMessage], query: str)
             Conversation History:
                 {chat_history}
 
-        Reformulated Query (ONLY the reformulated query, without any explanation):
+        Reformulated Query (ONLY the reformulated query in the same language as the user query, without any explanation):
     """
     )
     chat_history = "\n".join([f"{message.role}: {message.content}" for message in history])
@@ -37,7 +37,7 @@ async def make_query_standalone(llm: LLM, history: list[LLMMessage], query: str)
             content=[
                 MessageContent(
                     type="text",
-                    text="You are a helpful assistant that transforms a message from a user to be independent from the conversation history given.",
+                    text="You are a helpful assistant that transforms a message from a user to be independent from the conversation history given. Always produce the reformulated query in the same language as the original user query.",
                 )
             ],
         ),
@@ -60,8 +60,10 @@ async def make_query_standalone(llm: LLM, history: list[LLMMessage], query: str)
 
 async def query_expansion(query: str, llm: LLM, expansion_number: int = 2) -> list[str]:
     template_query_expansion = """
-        Generate multiple search queries related to: {query}, and translate them in english if they are not already in english. Only output {expansion_number} queries in english.
-        OUTPUT ({expansion_number} queries):
+        Generate multiple search queries related to: {query}
+        Produce {expansion_number} queries total: some in the same language as the input query, some in English.
+        This dual-language approach maximizes retrieval coverage across multilingual document collections.
+        OUTPUT ({expansion_number} queries, one per line, no numbering or explanation):
     """
     conversation = [
         LLMMessage(
@@ -69,7 +71,7 @@ async def query_expansion(query: str, llm: LLM, expansion_number: int = 2) -> li
             content=[
                 MessageContent(
                     type="text",
-                    text="You are a focused assistant designed to generate multiple, relevant search queries based solely on a single input query. Your task is to produce a list of these queries in English, without adding any further explanations or information.",
+                    text="You are a focused assistant that generates multiple relevant search queries from a single input query. Output only the queries, one per line, with no numbering, labels, or explanation.",
                 )
             ],
         ),
@@ -99,7 +101,7 @@ async def hyde_expansion(query: str, llm: LLM) -> str:
             content=[
                 MessageContent(
                     type="text",
-                    text="You are a helpful assistant. Provide an example of answer to the provided query. Only output an hypothetical explanation to the query. Concise, only a few sentences, without any introduction or conclusion.",
+                    text="You are a helpful assistant. Provide a hypothetical example answer to the provided query. Respond in the same language as the query. Concise, only a few sentences, without any introduction or conclusion.",
                 )
             ],
         ),

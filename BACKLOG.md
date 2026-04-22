@@ -3,14 +3,6 @@
 Planned improvements and feature work for the Lancy fork.
 Items are grouped by theme and roughly prioritised within each section.
 
-## Codebase and Cleanup
-
-- [ ] **Audit all code and notebook files** — go through `backend/notebooks/`, `conversational-toolkit/`, and all backend source files to decide what is still relevant, what can be removed, and what is missing from the Key Files table above. Goal: make the Key Files section a complete and accurate map of the codebase.
-
-- [ ] **After Cleanup, refresh doc content** — document the relevant folders, files and their purpose
-
----
-
 ## Known Bugs
 
 ### Answer Disappears After Rendering
@@ -348,6 +340,8 @@ Each result is a card with a large rank number on the left (bold, prominent), th
 
 **Placement:** a third tab in the Retrieval Explorer admin view ("Analytics"), alongside the existing chunk browser and retrieval probe tabs. Shares the same full-width layout.
 
+**Implementation approach:** replace the removed `matplotlib` dependency with a backend `/api/v1/rag/stats` endpoint that returns raw JSON (chunk size buckets, per-document counts, ingestion timeline). The frontend renders this with **Recharts** (already a common choice in Next.js/Tailwind stacks) — gives hover effects, responsive layout, and a design that fits the existing UI. Static matplotlib images would not.
+
 **Performance note:** chunk size and count statistics require a full metadata scan of the vector store. For large KBs (tens of thousands of chunks) this should be pre-computed and cached — not run on every page load. A background job triggered at the end of each indexing run is the natural hook.
 
 ---
@@ -380,6 +374,18 @@ The query expansion, HyDE, and reranking prompts are currently hardcoded in Pyth
 **Scope:** same file-based pattern as the system prompt — `prompts/query_expansion.default.md`, `prompts/hyde.default.md`, `prompts/reranking.default.md`, each with a gitignored `.custom.md` override. Admin-only UI exposure makes sense given the technical nature.
 
 **Why:** hardcoded prompts cannot be tuned without touching source code; domain-specific guidance measurably improves retrieval recall and precision.
+
+**System prompt UX — default vs. custom toggle:**
+The system prompt field should have an explicit Default / Custom toggle. When the user switches to Custom for the first time, pre-fill the editor with the server default so they have a starting point rather than a blank slate. After that, the custom text is kept separate — stored in the session and persisted on save — and the default is never overwritten. Switching back to Default should restore the server default without destroying the custom draft (keep it in state so toggling back doesn't lose their work).
+
+**Domain context prompt (corpus glossary):**
+Investigate adding a second, lightweight prompt field — a "corpus context" block — where the user can provide domain-specific instructions: special terminology, common abbreviations, ID patterns found in the documents, or notes on document provenance. This is distinct from the system prompt (which governs answer format and tone) and from retrieval prompts (which govern query rewriting). It would be appended to the context sent to the LLM only when non-empty, so it has zero effect on default deployments. Useful for specialised corpora where the LLM would otherwise misinterpret jargon.
+
+**Prompt editor UI — consider a dedicated admin section:**
+The current sidebar panel is too narrow for comfortable prompt editing. Options to consider:
+- A dedicated **Prompt Settings** page in the admin section (separate route), giving full-width layout.
+- A **markdown editor with syntax highlighting and preview** (e.g. `@uiw/react-md-editor` or CodeMirror with a markdown mode) — prompts are markdown, so rendering the preview inline helps the user see what the LLM will receive.
+- The retrieval prompts (expansion, HyDE, reranking) are more technical than the system prompt; grouping them under a collapsible "Advanced" section within the same page keeps the UI approachable for non-technical admins.
 
 
 ---
@@ -525,6 +531,20 @@ The index should be created after initial bulk ingestion, not before — buildin
 
 ---
 
+### nginx Reverse Proxy Configuration
+
+No example nginx config exists in the repo yet. The systemd services get both processes running, but for any real deployment nginx sits in front and handles several things that Next.js and FastAPI should not do themselves:
+
+- **TLS termination** — serve over HTTPS with a cert from certbot or a manual cert; without this, passwords and session cookies travel in plaintext
+- **Single public entry point** — expose only port 443 externally; nginx proxies to Next.js on `:3000`, and Next.js proxies backend calls server-side to FastAPI on `:8080` — the backend never needs to be publicly reachable
+- **HTTP → HTTPS redirect** — any request on port 80 gets redirected permanently
+- **Security headers** — `Strict-Transport-Security`, `X-Frame-Options`, `X-Content-Type-Options` added in one place rather than in application code
+
+**What to build:** a minimal `nginx.conf` example committed to `docs/admin-guides/`. Should cover a single-host deployment (one domain, certbot cert, proxy to `:3000`). The frontend's existing proxy rewrite handles the backend — nginx only needs to know about port 3000.
+
+
+---
+
 ### Investigate API Completeness and Check if More Consequent API Design is Necessary
 
 Finding on a question about API status:
@@ -540,6 +560,52 @@ The current query-related endpoints are:
 ---
 
 ## Research & Future Directions
+
+### Agentic RAG — RAG as a Tool
+
+The current architecture uses a fixed pipeline: every query always triggers retrieval first (`CustomRAG`). The notebook prototypes (feature4b/d) explored a `ToolAgent` using the ReAct pattern, where retrieval is an *optional* tool call — the model decides whether to search the vector store or answer from its own knowledge. This is the natural next evolution of the system.
+
+**What exists in the codebase:**
+- `ToolAgent` is already implemented in `conversational-toolkit/src/conversational_toolkit/agents/`
+- The `Tool` base class lives in `conversational_toolkit.tools.base` — any new tool subclasses it and implements `async call(args) -> dict`
+- The infrastructure is there; it is just not wired into `main.py`
+
+**How `RetrieveRelevantChunks` was prototyped (from the now-deleted `feature4_tool_agents.py`):**
+```python
+class RetrieveRelevantChunks(Tool):
+    def __init__(self, name, description, parameters, retriever):
+        ...
+    async def call(self, args):
+        chunks = await self.retriever.retrieve(args["query"])
+        return {"result": chunks_to_text(chunks)}  # formatted as ## Chunk {title}: ``` {content} ```
+```
+Wiring: instantiate with the active KB's retriever, register with `ToolAgent` at startup in `main.py`.
+
+**Three levels of agentic capability identified in the notebooks:**
+
+1. **Agentic Mode toggle** — switch the backend from `CustomRAG` to `ToolAgent`, making retrieval optional. The model answers general questions without a vector store lookup, saving tokens and latency. Implement as a toggle in the RAG config panel.
+
+2. **Extended tool registration** — register additional tools (e.g. calculators, external lookups) with the production agent by subclassing `Tool` and registering at startup.
+
+3. **Multi-agent / subagent pattern** — wrap the RAG pipeline as a tool for a coordinator agent. Enables routing across multiple KBs (e.g. one subagent per domain). Lower priority; useful only once multi-KB usage becomes a real need.
+
+**Recommended first step:** implement the Agentic Mode toggle (level 1) — it is the highest-value change with the smallest footprint, and the existing `ToolAgent` class makes it straightforward.
+
+---
+
+### RAG Quality Evaluation with Ragas
+
+`ragas` is already present in `conversational-toolkit/pyproject.toml` and was used in the notebook prototypes to compute Faithfulness and Answer Relevancy metrics. It was deliberately left in the codebase rather than removed, but there is currently no production integration and it is uncertain whether one will ever be built.
+
+**Why not in real-time:** Ragas requires additional LLM calls per answer, making it unsuitable for the request-response cycle.
+
+**Potential future use:** a background batch job that periodically samples recent answers and scores them (Faithfulness, Context Recall, Answer Relevancy), writing results to a log or dashboard. Would provide an ongoing quality signal without impacting latency.
+
+A ground-truth query set (`EVALUATION_QUERIES`) covering the PrimePack AG demo corpus is already defined in `backend/src/lancy/feature1_evaluation.py` — it can serve as the basis for any Ragas evaluation run.
+
+**Status:** dependency retained, no implementation planned. Revisit if systematic quality monitoring becomes a priority.
+
+---
 
 ### Graph-RAG — Possible Next Evolution
 
@@ -557,8 +623,8 @@ Standard RAG retrieves isolated chunks. Graph-RAG builds a knowledge graph over 
 
 **Suggested first step:** run LightRAG on the PrimePack demo dataset, compare retrieval quality on a set of multi-hop test questions against the current hybrid pipeline.
 
----
 
+---
 
 ## Documentation
 
