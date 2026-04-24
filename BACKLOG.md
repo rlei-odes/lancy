@@ -123,6 +123,18 @@ When `image_retrieval_enabled` is on, the system silently injects images into th
 
 
 
+### Ingestion Methods — Post-Ingest Behaviour & Storage API Source
+
+Three ingestion paths exist or are planned. Each has distinct post-ingest behaviour options worth making toggleable:
+
+**1. API upload (`POST /api/v1/kb/{id}/documents`):** the caller owns the file lifecycle — Lancy receives a copy and does nothing to the source. No additional option needed.
+
+**2. Filesystem path ingestion** (existing behaviour: scan a configured directory): after a file is successfully indexed, offer a per-KB toggle with three options — *keep* (current default, file untouched), *move to processed/* (moves the file into a `processed/` subdirectory so the next scan skips it without losing the file), *delete* (removes the source file). Useful for automated drop-folder pipelines where processed files should not be re-scanned. The toggle lives in KB settings alongside the data path.
+
+**3. Object storage ingestion (S3-compatible):** ingest directly from a bucket prefix (AWS S3, MinIO, Garage, Scaleway Object Storage, etc.) via the S3 API. KB config gains: endpoint URL, bucket, prefix, credentials (env-var references, not stored plaintext). Lancy lists objects under the prefix, downloads each, chunks and indexes it. Same post-ingest toggle as filesystem: keep (re-download skipped via content-hash), move (copy to `processed/` prefix, delete original), delete. Requires `boto3` or `aiobotocore` as a new optional dependency — gate it behind an install extra so deployments without object storage don't pull it in.
+
+**All three paths share the same deduplication mechanism** (content-hash per chunk) once incremental indexing is in place — the ingestion source is irrelevant at the vector-store layer.
+
 ### File Upload API + Incremental Indexing
 
 **Goal:** allow external tools (n8n, Make, custom scripts, DMS webhooks) to push a document directly into a KB via API, without requiring filesystem access or a full reindex.
@@ -280,6 +292,72 @@ Three configurable strategies, selectable per session or preset:
 3. **Are all parameters truly per-KB?** Session parameters (`RagConfig`) are currently global — one active config shared across all KBs. KB-level parameters are per-KB. If a user switches KBs, the session config (LLM model, top-k, etc.) does not change. This may be surprising: a preset saved for KB "A" that includes LLM model selection will apply that model when loaded, even though the LLM is not KB-specific. Worth making explicit in the UI which parameters belong to the KB and which are global session settings.
 
 **Suggested direction:** split presets into query and ingestion categories; tie ingestion preset changes to a re-index warning; expose query presets to end users once role separation is in place. Decide in conjunction with the Admin / User Role Separation item above.
+
+---
+
+### UI Branding & Customization
+
+**Goal:** allow deployers to surface key branding variables through the admin settings UI without touching source code — agent display name, agent avatar icon, application name, and application favicon.
+
+**Variables to expose:**
+
+- **Agent name** — the name shown in the chat UI (e.g. "Lancy", "AskMyDocs", "Company Assistant"). Currently hardcoded in the frontend.
+- **Agent avatar** — the icon shown next to agent messages. Allow uploading a custom image (PNG/SVG, constrained size) or selecting from a small set of built-ins.
+- **App name** — the browser tab title and any top-bar branding. Currently a hardcoded string in the Next.js layout.
+- **App favicon** — the browser tab icon. Replacing it at runtime requires serving a dynamic file from a known path that the Next.js `<link rel="icon">` tag points to.
+
+**Implementation sketch:**
+
+- Store branding config in a new `branding.json` in `backend/src/lancy/db/` (gitignored, like `rag_config.json`). Provide a `branding.example.json` with defaults.
+- Backend: expose `GET /api/v1/branding` (public, read by the frontend on load) and `PUT /api/v1/branding` (admin-only). Uploaded icons are saved to a static-files directory served by FastAPI.
+- Frontend: on app load, fetch branding and apply: page `<title>`, favicon `<link>`, agent name string, agent avatar `<img src>`. Use a React context so components don't each fetch separately.
+
+**Deployment feasibility:**
+
+| Method | Agent name / App name | Agent / App icon upload |
+|---|---|---|
+| **Python / systemd** | Straightforward — JSON file on disk, served by FastAPI. | Also straightforward — FastAPI serves the `uploads/` static folder; file persists on disk alongside the app. |
+| **Docker (single container)** | Same as above — JSON written into a bind-mounted volume. | Icon files must also live in the bind-mounted volume, otherwise they are lost on container restart. Document the required volume mount. |
+| **Docker (multi-container / compose)** | JSON in a named volume shared with the backend service. | Same volume approach. Frontend container does not need access — it fetches icons via the backend's static endpoint at runtime. |
+| **Reverse-proxy (nginx / Caddy in front of Next.js)** | No change needed — branding is fetched client-side from the backend API. | Same. The reverse proxy does not need to know about icon files. |
+
+**What is not straightforward:** replacing the Next.js app icon at build time (e.g. for PWA manifest or OG images) requires a rebuild. Runtime-swappable favicons via a dynamic endpoint are feasible but only work for the browser tab icon, not build-time assets. If PWA/OG image support is needed, a separate build-time config step would be required.
+
+**Suggested scope for a first pass:** agent name + agent avatar only (simpler, higher user-facing value). App name and favicon can follow once the branding config plumbing is in place.
+
+---
+
+### Industrial Cyber-Noir Theme ("Cyber-Purple")
+
+**Goal:** add a third app theme — alongside light and dark — that matches the visual identity of the lancy.tech website: deep purple-tinted backgrounds, violet/cyan accents, glassmorphic card surfaces, a grid-dot body background, and optional CRT scanline overlay.
+
+**Why it's appealing:** the existing CSS variable architecture makes the color layer trivially extensible. The theme would differentiate Lancy visually and reinforce the project identity for deployments that want something beyond a generic dark mode.
+
+**How the current theming system works (verified in code):**
+
+- `frontend/src/hooks/useTheme.tsx` — custom React Context provider, no `next-themes`. Exports a `Theme` enum (`LIGHT`, `DARK`, `SYSTEM`), persists to localStorage, applies `"dark"` CSS class to `<body>`.
+- `frontend/src/styles/globals.css` — all color tokens as HSL CSS variables. Light mode in `:root`, dark mode in `.dark`. Tailwind resolves all color classes via `hsla(var(--token))`.
+- `frontend/tailwind.config.ts` — `darkMode: ["class"]`, all palette entries point to CSS variables.
+- `frontend/src/components/sections/sidebar/settings.tsx` — theme toggle button cycles between light and dark using `useTheme()`.
+- `frontend/src/components/template/home.tsx` — main layout applies `bg-background` which resolves from CSS variables.
+
+**Implementation layers and estimated effort:**
+
+| Layer | What it involves | Effort |
+|---|---|---|
+| Color palette | Add `.cyber-purple` CSS variable block in `globals.css` — deep near-black purple backgrounds, violet primary, cyan secondary, translucent borders | ~1–2h |
+| Theme enum + provider | Add `CYBER_PURPLE` to `Theme` enum; update provider to apply `cyber-purple` class to body instead of/alongside `dark` | ~30 min |
+| Toggle UI | Change settings toggle from 2-state to 3-state cycle (or a small icon group); add a purple/cyber icon | ~30 min |
+| Grid dot background | CSS `background-image` radial-gradient pattern on `body` scoped to `.cyber-purple` | ~30 min |
+| Glassmorphic cards | Cards/panels need `backdrop-blur` + semi-transparent fill. Cleanest approach: CSS variable opacity (`--card` with alpha) so blur only activates in this theme; may need per-component class tweaks | ~1h |
+| CRT scanline overlay | Full-viewport pseudo-element with repeating-linear-gradient, low opacity, `pointer-events: none` | ~30 min |
+| Glitch text effects | Keyframe animations on specific headings — cool but probably skip for a functional app UI | ~1–2h if wanted |
+
+**Total for a solid first pass** (colors + grid background + glassmorphism + theme switch, no glitch): roughly a half-day of focused work.
+
+**The main complexity:** glassmorphism requires card/panel components to use semi-transparent fills + `backdrop-blur` instead of solid backgrounds. This either means adding conditional classes per component, or accepting the effect applies in all themes (not desirable). The cleanest approach is a CSS variable with alpha for `--card` and `--popover` that only kicks in under `.cyber-purple`, so card components don't need to change at all.
+
+**Suggested approach:** branch off `main`, implement the color palette + theme switch + grid background first, eyeball it in the browser, then decide if glassmorphism and scanlines are worth the extra component-level work.
 
 ---
 
