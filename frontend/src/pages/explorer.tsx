@@ -2,7 +2,7 @@
 
 import Head from "next/head";
 import Link from "next/link";
-import React from "react";
+import React, { useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useTheme } from "@/hooks/useTheme";
@@ -10,11 +10,15 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { cn } from "@/lib/lorem";
 import { RagConfigSidebar } from "@/components/sections/rag-config-sidebar";
 import { RetrievalProbe } from "@/components/sections/retrieval-probe";
+import { ChunkBrowser } from "@/components/sections/chunk-browser";
+
+type Tab = "probe" | "browser";
 
 export default function ExplorerPage() {
     const { cssClass } = useTheme();
     const { isMobile } = useMediaQuery();
     const { t } = useTranslation("app");
+    const [activeTab, setActiveTab] = useState<Tab>("probe");
 
     return (
         <>
@@ -41,10 +45,29 @@ export default function ExplorerPage() {
                         </span>
                     </div>
 
-                    {/* Scrollable probe area */}
+                    {/* Tab strip */}
+                    <div className="flex items-center gap-1 px-5 py-2 border-b border-border bg-muted/20 shrink-0">
+                        {(["probe", "browser"] as Tab[]).map(tab => (
+                            <button
+                                key={tab}
+                                onClick={() => setActiveTab(tab)}
+                                className={cn(
+                                    "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                                    activeTab === tab
+                                        ? "bg-background text-foreground shadow-sm border border-border"
+                                        : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                                )}
+                            >
+                                {tab === "probe" ? t("explorer.tabProbe") : t("explorer.tabBrowser")}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Scrollable content area */}
                     <div className="flex-1 overflow-y-auto">
-                        <div className="max-w-3xl mx-auto px-5 py-6">
-                            <RetrievalProbe />
+                        <div className={cn(activeTab === "browser" ? "max-w-6xl" : "max-w-3xl", "mx-auto px-5 py-6")}>
+                            {activeTab === "probe" && <RetrievalProbe />}
+                            {activeTab === "browser" && <ChunkBrowser active={activeTab === "browser"} />}
                         </div>
                     </div>
                 </div>

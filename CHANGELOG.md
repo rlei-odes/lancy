@@ -22,6 +22,16 @@ Interactive explorer panel for inspecting what the retrieval pipeline actually r
 - **Query expansion** — removed the forced English-only output; now generates queries in both the original query language and English for broader retrieval coverage across multilingual corpora
 - **Query reformulation and HyDE** — added explicit language constraints so standalone query rewriting and hypothetical document generation stay in the user's language rather than defaulting to English
 
+### Added — Chunk Browser (Retrieval Explorer v2)
+
+Second tab on the `/explorer` page for browsing the raw vector store contents without running a query. See `DESIGN_DOC_Retrieval_Explorer.md` section 8 for the full design record.
+
+- `POST /api/v1/rag/chunks` backend endpoint — server-side paginated fetch over indexed chunks; accepts a list of `{key, op, value}` filter conditions (ANDed); `limit+1` trick drives `has_more` without a total count query
+- `ChunkBrowser` frontend component — file dropdown (populated from `store-info` on tab switch), add-filter rows with metadata key suggestions, TanStack Table v8 with fixed baseline columns (`#`, File, Title, Index, Type) plus dynamic columns derived from the result metadata; click-to-expand rows show full chunk text in a scrollable monospace pane; load-more pagination
+- Tab switcher added to the Explorer page (Retrieval Probe / Chunk Browser)
+- `get_chunks_by_filter` in both vector store backends updated to accept neutral `{field: value}` filter dicts (translated to ChromaDB `$eq`/`$and` internally) and `limit`/`offset` for true server-side pagination — previously the method loaded the full collection
+- `ContextWindowRetriever` fixed to use the neutral filter format; it was passing ChromaDB-native `$and`/`$eq` syntax directly, which would have silently failed against the pgvector backend
+
 ### Fixed
 
 - `vs_path` in the default KB registry corrected to point within the project directory; previously pointed to a stale absolute path from the predecessor project

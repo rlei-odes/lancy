@@ -23,6 +23,8 @@ retrieval settings, and generation stats — no black box. Investigate your docu
 | **Image retrieval** | Dual-collection pipeline: images extracted from PDFs and standalone files are embedded separately (Qwen3-VL) and injected into LLM context alongside text chunks |
 | **Structured outputs** | Evidence-level tagging per claim: VERIFIED / CLAIMED / MISSING / MIXED |
 | **RAG config panel** | Collapsible right-side panel with presets and live parameter tuning |
+| **Retrieval Probe** | Test queries against the retrieval pipeline without the LLM — returns ranked chunks with per-method scores (BM25, semantic, RRF), reranking cut-off visualised, and a lookahead window showing what the RAG discards |
+| **Chunk Browser** | Browse the raw vector store by metadata filter (file, author, document class, and more); paginated server-side so large KBs are never fully loaded; expandable rows render chunk content as markdown |
 | **Transparent sessions** | Per-conversation config snapshot: KB · LLM · T= · emb: · k= · BM25 · Rerank · HyDE displayed as badges |
 | **Generation stats** | Query duration, tokens/second, and model name shown per response |
 | **Source citations** | Every answer links back to the source chunks it was grounded on |
@@ -34,6 +36,44 @@ retrieval settings, and generation stats — no black box. Investigate your docu
 | **Document formats** | PDF, Markdown, XLSX, EPUB, DOCX |
 | **Auth** | Password-protected login via session cookie (`API_KEY` in `.env`) |
 | **i18n** | DE / EN / FR / IT |
+
+
+
+### Hybrid Retrieval
+
+Lancy combines two complementary retrieval methods and fuses their results:
+
+- **BM25** (Okapi BM25) — keyword-based sparse retrieval. Fast, interpretable, and strong on exact term matches, named entities, and domain-specific vocabulary that semantic models may not have seen during training.
+- **Semantic search** — dense vector retrieval via cosine similarity against chunk embeddings. Captures meaning, synonyms, paraphrases, and cross-lingual matches where the query language differs from the document language.
+- **RRF (Reciprocal Rank Fusion)** — merges the two ranked lists by position rather than raw score, avoiding the need to normalise incompatible score scales. Consistently outperforms either method alone on mixed corpora.
+
+BM25 can be toggled per session from the RAG Config panel or the Retrieval Probe. Disabling BM25 falls back to pure semantic retrieval.
+
+The RRF `k` constant (default 60) controls how steeply rank position is penalised. Each result's contribution is scored as `1 / (k + rank)`: a top-ranked result scores `1/61`, a result at rank 10 scores `1/70`, and so on. A higher `k` flattens the differences between ranks — making the fusion more democratic and less dominated by whichever method happened to rank something first. A lower `k` amplifies the advantage of top positions. The default of 60 is the value from the original RRF paper and works well in practice across a wide range of corpora.
+
+### Query Techniques
+
+Three optional pre-retrieval techniques address different failure modes. All are configurable per session from the RAG Config panel — no restart required.
+
+- **Query expansion** — generates N reformulations of the original query using the LLM and runs each through retrieval independently. Results are merged before ranking. Improves recall when the user's phrasing does not match the document vocabulary (e.g. "energy use" vs. "power consumption").
+- **HyDE (Hypothetical Document Embeddings)** — instead of embedding the question, the LLM generates a short hypothetical answer and that answer is embedded for semantic retrieval. Effective when questions and answers look very different semantically, which is common in technical or regulatory documents.
+- **LLM reranking** — after retrieval, a second LLM pass scores each candidate chunk for relevance and reorders the list. Operates on a configurable candidate pool (default 15); only `top_k` results are returned. A separate `utility_llm_model` can be set to use a faster, smaller model for reranking without affecting the main response model.
+
+### Retrieval Probe
+
+The Retrieval Probe lets you test queries against the full retrieval pipeline without invoking the LLM for the final answer. Enter a question, choose which methods to run (BM25, semantic, hybrid), and get back a ranked list of chunks with scores broken out per method — BM25 score, cosine similarity, and fused RRF score shown individually for each result.
+
+The result list visualises the `top_k` cut-off: chunks inside `top_k` render normally; chunks beyond it are dimmed and labelled, so you can see exactly what the RAG would discard. When reranking is enabled, the pool of reranker candidates is shown the same way. This makes the effect of tuning `top_k`, toggling BM25, or enabling reranking immediately legible without running a full chat query.
+
+Accessible from the Retrieval Explorer page (`/explorer → Retrieval Probe tab`), alongside the RAG Config sidebar.
+
+### Chunk Browser
+
+The Chunk Browser exposes the raw contents of the vector store for inspection. Filter by source file using a typeahead input, or add metadata filter conditions (author, document class, chunk index, or any other stored field) to narrow results. Results are fetched with server-side pagination — only 50 rows at a time, never the full KB — with a "Load more" button to append the next page.
+
+Results are displayed in a table with fixed baseline columns (`#`, File, Title, Index, Type) and additional columns derived automatically from whatever metadata keys are present in the result set. Clicking a row expands it to show the full chunk text, rendered as markdown. Useful for verifying that a document was indexed correctly, spotting bad chunking, and checking what metadata was stored alongside each chunk.
+
+Accessible from the Retrieval Explorer page (`/explorer → Chunk Browser tab`).
 
 ---
 
@@ -85,7 +125,7 @@ Restrict access at the network level (firewall, VPN, or reverse proxy with addit
 
 ## The Name
 
-Lancy comes from *Calathea lancifolia*, the plant in the project icon. Turns out it is also a town near Geneva, Switzerland - fitting for the project's origin.
+The name Lancy was derived from *Calathea lancifolia*, the plant whose leaf is shown in the project icon. The name was intended to be something neutral, giving the project an abstract identity. Turns out it is also a town near Geneva, Switzerland - fitting for the project's origin.
 
 ---
 

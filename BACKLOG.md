@@ -257,10 +257,39 @@ Three configurable strategies, selectable per session or preset:
 
 **Likely outcome:** a chunking strategy ADR that maps content type → chunking method, with a smarter pre-filter before indexing.
 
-
 ---
 
+
 ## UI & Settings
+
+### Align design of left and right sidebar
+**Both look nice now** but they are not really aligned with each other. Not fully necessary, but is an inconsitency.
+
+### Align design of Retrieval Explorer
+**Both look nice now** but the right-handside sidebar has different title design language and fonts. Blue main titles for example.
+
+### Improve design of source citation window
+**Definitely does not look nice now** but is hard to design as just raw markdown is shown. We can still improve this visually and align more with our design.
+
+### Neighbour Chunk Expansion
+
+**Current behaviour:** retrieval returns exactly `top_k` chunks. Each chunk is an isolated slice of the source document — the text immediately before and after it is not included, even if it would provide useful context.
+
+**What's needed:** a toggleable option (e.g. `neighbour_chunks: bool`, default off) that, after retrieval, fetches the preceding and succeeding chunks from the same source file for each result (i.e. `chunk_index - 1` and `chunk_index + 1`). The expanded set is deduplicated (a neighbour retrieved independently stays once) and passed to the LLM in place of the bare result set.
+
+**Use case:** documents where a retrieved chunk contains a partial answer — the conclusion of a paragraph, a table row without its header, or a clause that references the sentence above. Adding neighbours restores that immediate context without changing what was retrieved.
+
+**Warning to surface in the UI:** enabling this option can up to triple the number of tokens sent to the LLM (up to `3 × top_k` chunks after dedup). It requires a model with a large enough context window and will noticeably increase latency and token cost.
+
+**Implementation notes:**
+- `ContextWindowRetriever` in `context_window_retriever.py` already implements this fully — it wraps any base retriever, fetches `chunk_index ± window_size` neighbours from the same `source_file`, and stitches them into an expanded content block. It is currently unused (not wired up).
+- Backend change: wrap the active retriever with `ContextWindowRetriever` when the option is enabled in the RAG query path, before context assembly
+- Config: `neighbour_chunks` bool (or `window_size: int`) added to `RagConfig`; surfaced in the RAG Config panel next to `top_k`
+
+**Variant — source citation view only (no LLM cost):**
+Instead of (or in addition to) feeding neighbours to the LLM, show them in the sources panel when the user expands a citation. The retrieved chunk renders normally; the preceding and succeeding chunks render below/above it in a muted style (e.g. dimmed text, lighter background) to show what surrounded it in the document. This gives the user reading context without touching the LLM prompt at all — cheaper, zero latency impact, and always safe to enable. The backend would return `neighbour_content_before` / `neighbour_content_after` alongside each source chunk in the RAG response.
+
+---
 
 ### Retrieval Explorer — top_k / candidate pool validation
 
@@ -272,6 +301,18 @@ Three configurable strategies, selectable per session or preset:
 - Both: frontend prevents the bad state; backend guards anyway
 
 **Why it matters:** affects both normal RAG queries and the Retrieval Explorer probe. A user changing top_k without adjusting the pool would silently get degraded results.
+
+---
+
+### Chunk Browser — Server-side File Search for Large KBs
+
+**Current behaviour:** the file typeahead in the Chunk Browser fetches the full file list from `GET /api/v1/rag/store-info` on tab switch and filters client-side as the user types. Works fine for KBs with up to a few hundred files; for large KBs (thousands of source files) the upfront fetch becomes expensive.
+
+**What's needed:** a dedicated `GET /api/v1/rag/files?q=<prefix>` endpoint that searches filenames server-side and returns only matches (e.g. top 20). The typeahead would then fetch on each keystroke (debounced) instead of loading all filenames upfront.
+
+**Blocker:** ChromaDB has no native metadata prefix-search — a full scan is required to filter by filename, making it no cheaper than the current approach unless results are cached. pgvector's SQL `LIKE` query would make this trivial and cheap. Worth revisiting when pgvector support matures or if a separate filename index is introduced.
+
+**For now:** the client-side typeahead is kept. It avoids rendering a giant `<select>` DOM, which was the main UX problem at small-to-medium scale.
 
 ---
 
@@ -362,46 +403,6 @@ Three configurable strategies, selectable per session or preset:
 ---
 
 ## Admin Tooling
-
-### Retrieval Debugger — Chunk Inspector & Retrieval Probe
-
-**Goal:** an admin-only UI panel that exposes the internals of the retrieval pipeline, allowing configuration tuning and quality assessment without going through the LLM.
-
-**Why:** currently the only way to assess retrieval quality is to run a full RAG query and judge the answer. That conflates LLM quality with retrieval quality. A dedicated retrieval view lets you tune k, compare ranking methods, and inspect what was actually indexed — independently of the LLM.
-
-**Two modes:**
-
-*Chunk browser*
-- Query the vector store directly by filename, source metadata, or keyword
-- Display raw chunks: content, source file, chunk index, file hash, any other stored metadata
-- Useful for verifying what was indexed from a given document and spotting bad chunking
-
-*Retrieval probe*
-- Enter a natural language question; run the full retrieval pipeline but stop before the LLM
-- Display the top-k results as a ranked list with scores broken out by method:
-  - BM25 score
-  - Semantic (vector) score
-  - RRF combined rank
-- Allow adjusting k in the UI and seeing immediately how the result set changes
-- Useful for: setting k, diagnosing why a relevant chunk isn't surfacing, comparing the effect of toggling BM25 on/off
-
-**Backend:**
-
-Add `POST /api/v1/rag/retrieve` — takes a query string and retrieval parameters (k, bm25 on/off, reranking on/off), runs the retrieval pipeline, and returns the chunks with per-method scores. No LLM call. The retrieval step is already decoupled from the LLM in the existing code, so this is mostly exposure work.
-
-**Frontend:**
-
-The admin view is a dedicated full-width page layout, not a panel crammed into the existing sidebar. Layout: large main content area on the left for the chunk browser / retrieval probe, with the existing RAG config sidebar sitting beside it on the right — same sidebar, different screen context with more room to breathe.
-
-Two sub-views in the main area, selectable by toggle or tabs: chunk browser and retrieval probe.
-
-*Retrieval probe results list:*
-
-Each result is a card with a large rank number on the left (bold, prominent), then the chunk content and scores. The list shows **k + y** results total, where k is the current configured cutoff and y is a configurable lookahead (e.g. +5). The first k cards render normally; the remaining y cards are visually dimmed — lower opacity, maybe a subtle "outside k" label — so you can see exactly what the RAG would discard. This makes the effect of changing k immediately legible: raise k by 2 and two grayed cards become active.
-
-**Scope note:** the UI cards are non-trivial but not complex — a ranked list with expandable text. Generic vector store UIs (ChromaDB-UI etc.) don't know about the BM25/RRF pipeline, so building this in-app is the only way to get the full picture.
-
-
 
 ### Knowledge Base Analytics Page
 

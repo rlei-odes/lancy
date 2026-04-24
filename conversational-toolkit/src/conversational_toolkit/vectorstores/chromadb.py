@@ -87,30 +87,39 @@ class ChromaDBVectorStore(VectorStore):
 
         return chunk_matches
 
-    async def get_chunks_by_filter(self, filters: dict[str, Any] | None = None) -> list[ChunkRecord]:
-        """
-        Return all chunks matching the given metadata filters (no embedding needed).
+    @staticmethod
+    def _to_chroma_where(filters: dict[str, Any]) -> dict[str, Any]:
+        """Translate neutral {field: value} dict to ChromaDB $eq/$and filter format."""
+        items = list(filters.items())
+        if len(items) == 1:
+            k, v = items[0]
+            return {k: {"$eq": v}}
+        return {"$and": [{k: {"$eq": v}} for k, v in items]}
 
-        Uses ChromaDB's 'collection.get(where=filters)'. Supports ChromaDB filter
-        operators: '$eq', '$ne', '$gt', '$lt', '$gte', '$lte', '$and', '$or'.
+    async def get_chunks_by_filter(
+        self,
+        filters: dict[str, Any] | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[ChunkRecord]:
+        """Return chunks matching the given metadata filters (no embedding needed).
 
-        Example — fetch all chunks from a specific file at a given index:
-            filters = {
-                "$and": [
-                    {"source_file": {"$eq": "report.pdf"}},
-                    {"chunk_index": {"$eq": 3}},
-                ]
-            }
+        Accepts a neutral {field: value} dict and translates to ChromaDB $eq/$and format.
         """
         import asyncio
         import logging as _log
 
         _log.getLogger("uvicorn").debug("chromadb: get_chunks_by_filter START")
         loop = asyncio.get_running_loop()
-        if not filters:
-            results = await loop.run_in_executor(None, self.collection.get)
-        else:
-            results = await loop.run_in_executor(None, lambda: self.collection.get(where=filters))  # type: ignore[arg-type]
+        where = self._to_chroma_where(filters) if filters else None
+        kwargs: dict[str, Any] = {}
+        if where is not None:
+            kwargs["where"] = where
+        if limit is not None:
+            kwargs["limit"] = limit
+        if offset:
+            kwargs["offset"] = offset
+        results = await loop.run_in_executor(None, lambda: self.collection.get(**kwargs))
         _log.getLogger("uvicorn").debug(
             f"chromadb: get_chunks_by_filter DONE, {len(results['ids']) if results and results['ids'] else 0} results"
         )

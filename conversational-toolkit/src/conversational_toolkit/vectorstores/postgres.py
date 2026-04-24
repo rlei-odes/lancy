@@ -141,14 +141,23 @@ class PGVectorStore(VectorStore):
             ]
         return chunks
 
-    async def get_chunks_by_filter(self, filters: dict[str, Any] | None = None) -> list[ChunkRecord]:
-        """Return all chunks matching the given metadata filters."""
+    async def get_chunks_by_filter(
+        self,
+        filters: dict[str, Any] | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[ChunkRecord]:
+        """Return chunks matching the given metadata filters."""
         await self._ensure_initialized()
         async with self.SessionLocal() as session:
             query = select(self.table)
             if filters:
                 conditions = [self.table.c.chunk_metadata[key].astext == str(value) for key, value in filters.items()]
                 query = query.where(and_(*conditions))
+            if offset:
+                query = query.offset(offset)
+            if limit is not None:
+                query = query.limit(limit)
 
             result = await session.execute(query)
             return [

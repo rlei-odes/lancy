@@ -128,6 +128,35 @@ class RetrieveResponse(BaseModel):
     reranking_skipped: bool = False
 
 
+# ─── Chunk browser ───────────────────────────────────────────────────────────
+
+
+class FilterCondition(BaseModel):
+    key: str = Field(..., max_length=100)
+    op: Literal["eq"] = "eq"
+    value: str = Field(..., max_length=500)
+
+
+class ChunkBrowseRequest(BaseModel):
+    filters: list[FilterCondition] = Field(default_factory=list)
+    limit: int = Field(50, ge=1, le=200)
+    offset: int = Field(0, ge=0)
+
+
+class ChunkBrowseItem(BaseModel):
+    id: str
+    content: str
+    title: str
+    metadata: dict[str, Any]
+
+
+class ChunkBrowseResponse(BaseModel):
+    chunks: list[ChunkBrowseItem]
+    returned: int
+    offset: int
+    has_more: bool
+
+
 # ─── Router factory ───────────────────────────────────────────────────────────
 
 
@@ -335,5 +364,27 @@ def create_rag_router(
         if retrieve_callback is None:
             raise HTTPException(status_code=501, detail="Retrieval probe not configured.")
         return await retrieve_callback(req)
+
+    @router.post("/chunks", response_model=ChunkBrowseResponse)
+    async def browse_chunks(req: ChunkBrowseRequest) -> ChunkBrowseResponse:
+        """Browse indexed chunks by metadata filter with server-side pagination."""
+        try:
+            vs = vector_store_factory()
+            eq_filters = {f.key: f.value for f in req.filters if f.op == "eq"} or None
+            chunks = await vs.get_chunks_by_filter(eq_filters, limit=req.limit + 1, offset=req.offset)
+            has_more = len(chunks) > req.limit
+            page = chunks[: req.limit]
+            return ChunkBrowseResponse(
+                chunks=[
+                    ChunkBrowseItem(id=c.id, content=c.content, title=c.title, metadata=c.metadata)
+                    for c in page
+                ],
+                returned=len(page),
+                offset=req.offset,
+                has_more=has_more,
+            )
+        except Exception as exc:
+            log.warning(f"browse-chunks error: {exc}")
+            raise HTTPException(status_code=500, detail=str(exc))
 
     return router

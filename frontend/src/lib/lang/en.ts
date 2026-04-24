@@ -89,7 +89,7 @@ export const app = {
     explorer: {
         pageTitle: "Retrieval Explorer",
         backToChat: "Back to chat",
-        subtitle: "— probe the retrieval pipeline without the LLM",
+        subtitle: "— probe the retrieval pipeline and find chunks",
         probeTitle: "Retrieval Probe",
         keyboardHint: "Enter to run · Shift+Enter for newline",
         queryPlaceholder: "Enter a query to probe the retrieval pipeline…",
@@ -105,6 +105,26 @@ export const app = {
         emptyStateSubtitle: "Results show ranked chunks with per-method scores.",
         expand: "expand",
         collapse: "collapse",
+        // Tab labels
+        tabProbe: "Retrieval Probe",
+        tabBrowser: "Chunk Browser",
+        // Chunk browser controls
+        browserFileLabel: "File",
+        browserFileAll: "All files",
+        browserAddFilter: "Add filter",
+        browserFilterKeyPlaceholder: "metadata key…",
+        browserFilterValuePlaceholder: "value…",
+        browserBrowse: "Browse",
+        browserBrowsing: "Loading…",
+        // Chunk browser results
+        browserResultsSummary: "Showing {{shown}} chunks",
+        browserLoadMore: "Load more",
+        browserColNum: "#",
+        browserColFile: "File",
+        browserColChunkIndex: "Index",
+        // Chunk browser states
+        browserEmptyTitle: "No chunks matched the current filters.",
+        browserIdleTitle: "Add a filter and click Browse to inspect indexed chunks.",
     },
     rag: {
         title: "RAG Parameters",
