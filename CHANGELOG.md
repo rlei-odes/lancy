@@ -32,6 +32,24 @@ Second tab on the `/explorer` page for browsing the raw vector store contents wi
 - `get_chunks_by_filter` in both vector store backends updated to accept neutral `{field: value}` filter dicts (translated to ChromaDB `$eq`/`$and` internally) and `limit`/`offset` for true server-side pagination — previously the method loaded the full collection
 - `ContextWindowRetriever` fixed to use the neutral filter format; it was passing ChromaDB-native `$and`/`$eq` syntax directly, which would have silently failed against the pgvector backend
 
+
+
+### Added — KB Analytics (Retrieval Explorer v3)
+
+Third tab on the `/explorer` page showing health and indexing statistics for any Knowledge Base without querying the vector store at runtime. See `DESIGN_DOC_KB_Analytics.md` for the full design record.
+
+- Stats sidecar `db/kb_stats_{kb_id}.json` written at the end of every ingestion run — zero cost on page load; survives server restarts
+- Full recompute on reset runs; incremental merge on partial runs (new hash entries inserted, bucket counts added, `chunks_per_document_distribution` recomputed, history entry appended)
+- `chunk_chars` metadata field stamped on every chunk in `load_chunks()` (shared prerequisite with the planned chunk-length filter)
+- `GET /api/v1/kb/{kb_id}/stats` endpoint — reads sidecar, 404 if KB has not been indexed yet
+- `KbAnalytics` frontend component — KB selector (defaults to active KB), four panels:
+  - **Summary strip** — total chunks, total documents, avg / P50 (median) / P95 chunk size
+  - **Chunk size distribution** — bar chart in 200-char buckets (0–200 … 2000+)
+  - **Chunks per document distribution** — 101-bar histogram (1–100 individual bars + 100+), scaled to any KB size
+  - **Ingestion history** — stacked bar chart grouped by calendar day; incremental runs and reset runs shown as separate colour segments
+- Recharts installed; CSS variables resolved via `getComputedStyle` so charts respond to light/dark mode
+- All four UI languages updated (en, de, fr, it)
+
 ### Fixed
 
 - `vs_path` in the default KB registry corrected to point within the project directory; previously pointed to a stale absolute path from the predecessor project

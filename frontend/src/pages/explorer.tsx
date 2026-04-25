@@ -11,14 +11,20 @@ import { cn } from "@/lib/lorem";
 import { RagConfigSidebar } from "@/components/sections/rag-config-sidebar";
 import { RetrievalProbe } from "@/components/sections/retrieval-probe";
 import { ChunkBrowser } from "@/components/sections/chunk-browser";
+import { KbAnalytics } from "@/components/sections/kb-analytics";
 
-type Tab = "probe" | "browser";
+type Tab = "probe" | "browser" | "analytics";
 
 export default function ExplorerPage() {
     const { cssClass } = useTheme();
     const { isMobile } = useMediaQuery();
     const { t } = useTranslation("app");
     const [activeTab, setActiveTab] = useState<Tab>("probe");
+    const tabLabels: Record<Tab, string> = {
+        probe: t("explorer.tabProbe"),
+        browser: t("explorer.tabBrowser"),
+        analytics: t("explorer.tabAnalytics"),
+    };
 
     return (
         <>
@@ -47,7 +53,7 @@ export default function ExplorerPage() {
 
                     {/* Tab strip */}
                     <div className="flex items-center gap-1 px-5 py-2 border-b border-border bg-muted/20 shrink-0">
-                        {(["probe", "browser"] as Tab[]).map(tab => (
+                        {(["probe", "browser", "analytics"] as Tab[]).map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
@@ -58,16 +64,17 @@ export default function ExplorerPage() {
                                         : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                                 )}
                             >
-                                {tab === "probe" ? t("explorer.tabProbe") : t("explorer.tabBrowser")}
+                                {tabLabels[tab]}
                             </button>
                         ))}
                     </div>
 
                     {/* Scrollable content area */}
                     <div className="flex-1 overflow-y-auto">
-                        <div className={cn(activeTab === "browser" ? "max-w-6xl" : "max-w-3xl", "mx-auto px-5 py-6")}>
+                        <div className={cn(activeTab === "probe" ? "max-w-3xl" : "max-w-6xl", "mx-auto px-5 py-6")}>
                             {activeTab === "probe" && <RetrievalProbe />}
                             {activeTab === "browser" && <ChunkBrowser active={activeTab === "browser"} />}
+                            {activeTab === "analytics" && <KbAnalytics active={activeTab === "analytics"} />}
                         </div>
                     </div>
                 </div>

@@ -571,6 +571,7 @@ def load_chunks(
                 chunk.metadata["source"] = file_path.name
                 chunk.metadata["title"] = chunk.title
                 chunk.metadata["file_hash"] = h
+                chunk.metadata["chunk_chars"] = len(chunk.content)
             all_chunks.extend(file_chunks)
             logger.debug(f"  {file_path.name}: {len(file_chunks)} chunks")
             if on_progress:

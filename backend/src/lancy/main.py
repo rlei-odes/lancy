@@ -92,6 +92,7 @@ from lancy.feature0_baseline_rag import (
     _make_retriever,
 )
 from lancy.kb_router import KBInfo, create_kb_router
+from lancy.kb_stats import write_kb_stats
 from lancy.openai_compat_router import create_openai_compat_router
 from lancy.rag_router import (
     ChunkResult,
@@ -715,6 +716,19 @@ async def _run_ingestion(kb: KBInfo, reset: bool) -> tuple[int, int, int, int]:
             f"{n_skipped_store} skipped (already in store), "
             f"{n_skipped_batch} skipped (duplicate in batch)"
         )
+        if text_chunks:
+            try:
+                write_kb_stats(
+                    db_dir=_DB_DIR,
+                    kb_id=kb.id,
+                    chunks=text_chunks,
+                    was_reset=reset,
+                    files_added=n_files,
+                    files_skipped_store=n_skipped_store,
+                    files_skipped_batch=n_skipped_batch,
+                )
+            except Exception as exc:
+                log.warning(f"Failed to write KB stats for '{kb.id}': {exc}")
         return len(chunks), n_files, n_skipped_store, n_skipped_batch
     except _IndexingCancelled:
         log.info("Indexing cancelled by user request.")

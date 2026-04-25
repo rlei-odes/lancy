@@ -334,6 +334,23 @@ Instead of (or in addition to) feeding neighbours to the LLM, show them in the s
 
 ---
 
+### Chunk Browser — Filter for Chunks by Length
+
+**Goal:** let the user filter the chunk browser by chunk character count — e.g. "show only chunks shorter than 100 chars" to find near-empty chunks, or "show only chunks over 1500 chars" to find runaway pages.
+
+**Why:** the analytics histogram shows the distribution; this feature lets the user drill into the actual outliers. It's the natural complement to the KB Analytics tab.
+
+**Prerequisite — store `chunk_chars` as metadata at ingestion:** chunk length is not currently recorded in the vector store. It needs to be stamped onto `chunk.metadata["chunk_chars"] = len(chunk.content)` in `load_chunks()` in `feature0_baseline_rag.py` before chunks are inserted. This is a one-liner, but **existing KBs require a re-index** to pick it up. The same field is useful to the analytics stats computation, so both features share this prerequisite.
+
+**Backend:** ChromaDB's `$gte`/`$lte` operators support numeric range filters natively, but `_to_chroma_where()` in `chromadb.py` currently only translates equality (`$eq`) filters. It needs extending to pass through range operators when the value is a dict rather than a scalar. The chunk browser endpoint then accepts optional `min_chars` / `max_chars` query params and builds the appropriate where clause.
+
+**Frontend:** a compact range input (two number fields or a dual-handle slider) in the Chunk Browser filter bar, alongside the existing source-file typeahead. Filters apply on submit, not on every keystroke.
+
+**pgvector:** metadata is stored as JSONB; a `chunk_chars` numeric range filter maps to a SQL `WHERE (metadata->>'chunk_chars')::int BETWEEN $1 AND $2` clause.
+
+---
+
+
 ### Chunk Browser — Server-side File Search for Large KBs
 
 **Current behaviour:** the file typeahead in the Chunk Browser fetches the full file list from `GET /api/v1/rag/store-info` on tab switch and filters client-side as the user types. Works fine for KBs with up to a few hundred files; for large KBs (thousands of source files) the upfront fetch becomes expensive.
@@ -433,27 +450,6 @@ Instead of (or in addition to) feeding neighbours to the LLM, show them in the s
 ---
 
 ## Admin Tooling
-
-### Knowledge Base Analytics Page
-
-**Goal:** a dedicated stats/analytics view in the admin UI that gives a quick health overview of the indexed knowledge base — corpus composition, ingestion history, and retrieval activity.
-
-**Why:** once a KB grows beyond a few dozen documents, it becomes hard to reason about what is in it, how it is chunked, and how actively it is being used. Dashboards answer these questions without needing to query the vector store manually.
-
-**Proposed diagrams and panels:**
-
-- **Chunk size distribution** — histogram bucketing chunks by character count (e.g. 0–200, 200–500, 500–1000, 1000+). Reveals over-chunking, under-chunking, and runaway pages (OCR noise, headers, footers).
-- **Chunks per document** — scatter or bar chart: documents on x-axis ordered by chunk count, chunk count on y-axis. Identifies outliers — a single document producing 10× the average chunk count may indicate a problem.
-- **Ingestion timeline** — bar chart of chunks (or documents) indexed per day or month. Shows when the KB was last populated and whether ingestion is a one-time event or ongoing.
-- **Retrieval hit frequency** (optional) — which chunks appear most often in retrieval results; which documents are never retrieved. Useful for corpus hygiene: documents that are never retrieved may be poorly chunked, off-topic, or redundant.
-
-**Placement:** a third tab in the Retrieval Explorer admin view ("Analytics"), alongside the existing chunk browser and retrieval probe tabs. Shares the same full-width layout.
-
-**Implementation approach:** replace the removed `matplotlib` dependency with a backend `/api/v1/rag/stats` endpoint that returns raw JSON (chunk size buckets, per-document counts, ingestion timeline). The frontend renders this with **Recharts** (already a common choice in Next.js/Tailwind stacks) — gives hover effects, responsive layout, and a design that fits the existing UI. Static matplotlib images would not.
-
-**Performance note:** chunk size and count statistics require a full metadata scan of the vector store. For large KBs (tens of thousands of chunks) this should be pre-computed and cached — not run on every page load. A background job triggered at the end of each indexing run is the natural hook.
-
----
 
 ### User Feedback — Thumbs Up / Down
 

@@ -213,6 +213,16 @@ def create_kb_router(
         log.info(f"Activated KB '{kb.name}' (id={kb_id})")
         return kb
 
+    @router.get("/kb/{kb_id}/stats")
+    async def get_kb_stats(kb_id: str):
+        stats_path = db_dir / f"kb_stats_{kb_id}.json"
+        if not stats_path.exists():
+            raise HTTPException(404, f"No stats available for KB '{kb_id}' — re-index to generate analytics")
+        try:
+            return json.loads(stats_path.read_text())
+        except Exception as exc:
+            raise HTTPException(500, f"Could not read stats: {exc}")
+
     @router.get("/files/{filename:path}")
     async def serve_file(filename: str):
         """Serve a source document (PDF, XLSX, …) from any configured data directory.

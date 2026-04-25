@@ -25,6 +25,7 @@ retrieval settings, and generation stats — no black box. Investigate your docu
 | **RAG config panel** | Collapsible right-side panel with presets and live parameter tuning |
 | **Retrieval Probe** | Test queries against the retrieval pipeline without the LLM — returns ranked chunks with per-method scores (BM25, semantic, RRF), reranking cut-off visualised, and a lookahead window showing what the RAG discards |
 | **Chunk Browser** | Browse the raw vector store by metadata filter (file, author, document class, and more); paginated server-side so large KBs are never fully loaded; expandable rows render chunk content as markdown |
+| **KB Analytics** | Pre-computed health dashboard per KB: chunk size distribution, chunks-per-document histogram, stacked ingestion history, and a summary strip with avg / P50 / P95 chunk sizes — zero query-time cost |
 | **Transparent sessions** | Per-conversation config snapshot: KB · LLM · T= · emb: · k= · BM25 · Rerank · HyDE displayed as badges |
 | **Generation stats** | Query duration, tokens/second, and model name shown per response |
 | **Source citations** | Every answer links back to the source chunks it was grounded on |
@@ -74,6 +75,21 @@ The Chunk Browser exposes the raw contents of the vector store for inspection. F
 Results are displayed in a table with fixed baseline columns (`#`, File, Title, Index, Type) and additional columns derived automatically from whatever metadata keys are present in the result set. Clicking a row expands it to show the full chunk text, rendered as markdown. Useful for verifying that a document was indexed correctly, spotting bad chunking, and checking what metadata was stored alongside each chunk.
 
 Accessible from the Retrieval Explorer page (`/explorer → Chunk Browser tab`).
+
+### KB Analytics
+
+The Analytics tab gives a health overview of any indexed Knowledge Base at a glance. Stats are pre-computed at the end of each indexing run and stored as a sidecar JSON file — the page loads instantly regardless of KB size.
+
+Four panels are shown:
+
+- **Summary strip** — total chunks, total documents, average / P50 (median) / P95 chunk size in characters.
+- **Chunk size distribution** — bar chart in 200-character buckets (0–200 … 2000+). Reveals over-chunking, under-chunking, and outlier chunks from OCR noise or header/footer extraction.
+- **Chunks per document** — histogram with one bar per integer 1–100 plus a `100+` bucket on the x-axis, and document count on the y-axis. Shows the shape of the distribution across the corpus without labelling individual files.
+- **Ingestion history** — bar chart grouped by calendar day. Incremental runs and reset runs are shown as separately coloured segments in stacked bars, so multiple runs on the same day are not lost.
+
+A KB selector at the top defaults to the active KB but can inspect any KB independently without switching the active one. The "Last updated" timestamp in the header reflects when that specific KB was last indexed.
+
+Accessible from the Retrieval Explorer page (`/explorer → Analytics tab`).
 
 ---
 
