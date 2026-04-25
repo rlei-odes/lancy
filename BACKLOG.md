@@ -765,3 +765,30 @@ FastAPI auto-generates an OpenAPI schema and exposes a Swagger UI at `/docs` and
 - Add `model_config = ConfigDict(json_schema_extra={"examples": [...]})` to the key request models: `RagConfig`, `KBCreate`, `RetrieveRequest`, `MessageInput`, and `ChatCompletionRequest` — one realistic example payload per model is enough
 - The auto-generated response schemas are already complete; adding a few `response_description` strings to the route decorators improves readability
 - Consider locking `/docs` and `/redoc` behind the existing auth check for non-development deployments — currently anyone who knows the URL can browse and call the API without a passcode
+
+---
+
+## Maintenance / Chores
+
+### Dependency Updates
+
+#### Frontend
+
+No urgent updates. The following are worth revisiting when there is a concrete reason:
+
+- **Tailwind CSS v3 → v4** — v4 replaces `tailwind.config.js` with a CSS-first config. Real migration effort, not a version bump. Only worth doing if a v4-specific feature is needed.
+- **React 18 → 19** — React 19 is stable. Gains are moderate for a chat app; breaking changes are mostly legacy API removals. Low risk, low urgency.
+- **`@types/node: ^20` → `^22`** — Node 22 is LTS. Trivial bump with no real risk.
+
+Minor/patch updates within existing major versions (`^` ranges in `package.json`) are picked up automatically by `npm update` and can be run periodically without concern.
+
+#### Python
+
+The pinned versions in `requirements.txt` are the higher-priority concern — they don't auto-update and can drift from security or bug fixes. Packages to watch:
+
+- **`docling`** — updates frequently, has had breaking changes between minor versions
+- **`chromadb`** — actively developed, API surface has shifted across releases
+- **`ollama`** — Python client tracks new Ollama features; worth updating alongside Ollama server upgrades
+
+Run `pip list --outdated` periodically and update these selectively. Avoid bulk upgrades — test retrieval and ingestion after any chromadb or docling bump.
+
