@@ -877,8 +877,143 @@ def build_server():
         _probe_bm25 = None
         log.info(f"Agent ready for KB '{kb.name}'")
 
+    async def ingest_uploaded_file(file_path: Path, kb: KBInfo, extra_metadata: dict) -> None:
+        """Ingest a single uploaded file into the active KB, then delete the temp file.
+
+        Replaces existing chunks for the same document_id before inserting new ones.
+        Called as a background task from POST /api/v1/kb/{id}/documents.
+        kb_router is captured by name — resolved at call time, after it is defined below.
+        """
+        if _index_status.get("indexing"):
+            log.warning("Upload ignored — indexing already in progress")
+            file_path.unlink(missing_ok=True)
+            return
+
+        document_id: str = extra_metadata["document_id"]
+        _index_status.update({
+            "indexing": True,
+            "phase": "loading",
+            "current_file": file_path.name,
+            "file_index": 0,
+            "total_files": 1,
+            "chunks_so_far": 0,
+            "embed_batch": 0,
+            "embed_total_batches": 0,
+            "kb_name": kb.name,
+            "finished_at": "",
+            "last_result": None,
+        })
+
+        loop = asyncio.get_event_loop()
+        try:
+            vs = object.__getattribute__(vs_proxy, "_obj")
+            deleted = await vs.delete_chunks_by_document_id(document_id)
+            if deleted:
+                log.info(f"Removed {deleted} existing chunk(s) for document_id='{document_id}'")
+
+            h = await loop.run_in_executor(None, lambda: file_hash(file_path))
+
+            chunks = await loop.run_in_executor(
+                None,
+                lambda: load_chunks(
+                    include_files=[file_path],
+                    file_hashes={file_path: h},
+                    pdf_ocr_enabled=kb.pdf_ocr_enabled,
+                    max_chunk_tokens=getattr(kb, "max_chunk_tokens", 0),
+                    write_images=False,
+                ),
+            )
+
+            if not chunks:
+                log.warning(f"No chunks produced from uploaded file '{file_path.name}'")
+                return
+
+            for chunk in chunks:
+                chunk.metadata.update(extra_metadata)
+
+            text_chunks = [c for c in chunks if c.mime_type.startswith("text")]
+
+            emb = build_embedding_model(
+                kb.embedding_backend,
+                kb.embedding_model,
+                ollama_host=kb.embedding_ollama_host or "",
+                custom_base_url=kb.embedding_custom_base_url or "",
+                custom_api_key=kb.embedding_custom_api_key or "",
+            )
+            _index_status["phase"] = "embedding"
+
+            def _on_embed_progress(batch_idx: int, total_batches: int) -> None:
+                _index_status.update({"embed_batch": batch_idx, "embed_total_batches": total_batches})
+
+            def _sync_embed_insert():
+                new_loop = asyncio.new_event_loop()
+                try:
+                    vs_instance = object.__getattribute__(vs_proxy, "_obj")
+                    return new_loop.run_until_complete(
+                        build_vector_store(
+                            chunks=text_chunks,
+                            embedding_model=emb,
+                            db_path=Path(kb.vs_path),
+                            reset=False,
+                            on_embed_progress=_on_embed_progress,
+                            batch_size=kb.embedding_batch_size,
+                            vector_store=vs_instance,
+                            existing_hashes=set(),  # replacement already handled above
+                        )
+                    )
+                finally:
+                    new_loop.close()
+
+            await loop.run_in_executor(None, _sync_embed_insert)
+
+            if text_chunks:
+                try:
+                    write_kb_stats(
+                        db_dir=_DB_DIR,
+                        kb_id=kb.id,
+                        chunks=text_chunks,
+                        was_reset=False,
+                        files_added=1,
+                        files_skipped_store=0,
+                        files_skipped_batch=0,
+                    )
+                except Exception as exc:
+                    log.warning(f"Failed to write KB stats for '{kb.id}': {exc}")
+
+            try:
+                total_count = await vs.count()
+                total_files = len(await vs.get_source_files())
+            except Exception:
+                total_count = len(chunks)
+                total_files = 1
+            kb_router.update_stats(kb.id, total_count, total_files)
+
+            result = ReindexResult(
+                chunks_indexed=len(chunks),
+                files_processed=1,
+                files_skipped=0,
+                files_skipped_store=0,
+                files_skipped_batch=0,
+                reset=False,
+            )
+            _index_status["last_result"] = result.model_dump()
+            _index_status["finished_at"] = datetime.now(timezone.utc).isoformat()
+            log.info(
+                f"Upload ingest complete: {len(chunks)} chunks from '{file_path.name}' "
+                f"(document_id='{document_id}')"
+            )
+        except Exception as exc:
+            log.error(f"Upload ingestion failed for '{file_path.name}': {exc!r}")
+            raise
+        finally:
+            _index_status["indexing"] = False
+            file_path.unlink(missing_ok=True)
+
     kb_router = create_kb_router(
-        db_dir=_DB_DIR, activate_callback=on_kb_activate, project_root=_ROOT
+        db_dir=_DB_DIR,
+        activate_callback=on_kb_activate,
+        project_root=_ROOT,
+        upload_callback=ingest_uploaded_file,
     )
     app.include_router(kb_router)
 
@@ -934,7 +1069,6 @@ def build_server():
         chunks_n, files_n, skipped_store_n, skipped_batch_n = await _run_ingestion(
             kb, reset
         )
-        kb_router.update_stats(kb.id, chunks_n, files_n)
 
         # Rebuild so BM25 re-indexes new content
         new_vs, new_agent, new_emb = _build_components(kb, cfg)
@@ -942,6 +1076,17 @@ def build_server():
         base_prompt = cfg.system_prompt.strip() or _load_system_prompt()
         await _inject_source_files(new_agent, new_vs, base_prompt)
         vs_proxy.switch(new_vs)
+
+        # Use the actual VS total, not just the delta from this run.
+        # When all files are already indexed (incremental run, nothing new),
+        # chunks_n == 0, which would overwrite the correct count with 0.
+        try:
+            total_count = await new_vs.count()
+            total_files = len(await new_vs.get_source_files())
+        except Exception:
+            total_count = chunks_n
+            total_files = files_n
+        kb_router.update_stats(kb.id, total_count, total_files)
         agent_proxy.switch(new_agent)
         emb_proxy.switch(new_emb)
 

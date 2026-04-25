@@ -20,12 +20,13 @@ import json
 import logging
 import re
 import shutil
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Awaitable, Callable, Literal
 from urllib.parse import unquote
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -74,6 +75,7 @@ class KBRegistry(BaseModel):
 # ─── Callback types ───────────────────────────────────────────────────────────
 
 ActivateCallback = Callable[[KBInfo], Awaitable[None]]
+UploadCallback = Callable[[Path, KBInfo, dict], Awaitable[None]]
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -95,6 +97,7 @@ def create_kb_router(
     db_dir: Path,
     activate_callback: ActivateCallback,
     project_root: Path | None = None,
+    upload_callback: UploadCallback | None = None,
 ) -> APIRouter:
     """
     Args:
@@ -256,5 +259,48 @@ def create_kb_router(
         raise HTTPException(
             404, f"File '{filename}' not found in any configured data directory"
         )
+
+    @router.post("/kb/{kb_id}/documents")
+    async def upload_document(
+        kb_id: str,
+        background_tasks: BackgroundTasks,
+        file: UploadFile = File(...),
+        metadata: str = Form("{}"),
+    ) -> dict:
+        """Upload a document into a KB and trigger incremental indexing.
+
+        The file is saved to a temporary location, ingested, then deleted.
+        `metadata` must be a JSON string containing at least `document_id`
+        (a stable identifier for versioning — same document, new version, same id).
+        """
+        if upload_callback is None:
+            raise HTTPException(503, "Upload not available — backend not fully initialized")
+
+        reg = _load()
+        if kb_id not in reg.bases:
+            raise HTTPException(404, f"KB '{kb_id}' not found")
+
+        try:
+            meta: dict = json.loads(metadata)
+        except json.JSONDecodeError:
+            raise HTTPException(422, "metadata must be valid JSON")
+
+        if not meta.get("document_id"):
+            raise HTTPException(
+                422,
+                "document_id is required — use a stable identifier for this document "
+                "(e.g. DMS record ID or canonical filename) so future versions can replace existing chunks",
+            )
+
+        original_filename = file.filename or "upload"
+        suffix = Path(original_filename).suffix or ".bin"
+        tmp_path = Path(tempfile.mktemp(suffix=suffix))
+        tmp_path.write_bytes(await file.read())
+
+        meta.setdefault("source_file", original_filename)
+
+        kb = reg.bases[kb_id]
+        background_tasks.add_task(upload_callback, tmp_path, kb, meta)
+        return {"started": True, "document_id": meta["document_id"], "filename": file.filename}
 
     return router

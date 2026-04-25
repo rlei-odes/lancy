@@ -1,3 +1,4 @@
+import time
 from collections.abc import AsyncGenerator
 from typing import Any, Literal, cast
 
@@ -81,7 +82,7 @@ class OpenAILLM(LLM):
         if response_format is None:
             response_format = {"type": "text"}
 
-        self.client = AsyncOpenAI(api_key=openai_api_key, base_url=base_url)
+        self.client = AsyncOpenAI(api_key=openai_api_key or "dummy", base_url=base_url)
         self.model = model_name
         self.temperature = temperature
         self.seed = seed
@@ -178,6 +179,7 @@ class OpenAILLM(LLM):
 
         parsed_tool_calls: list[ToolCall] = []
         last_chunk = None
+        stream_start = time.monotonic()
 
         async for chunk in response:
             last_chunk = chunk
@@ -212,10 +214,15 @@ class OpenAILLM(LLM):
                     self._update_tool_call_from_chunk(tool_call, tool_call_chunk)
 
         if last_chunk is not None:
+            usage = last_chunk.usage
+            elapsed = time.monotonic() - stream_start
+            completion_tokens = usage.completion_tokens if usage else None
+            tps = round(completion_tokens / elapsed, 1) if completion_tokens and elapsed > 0 else None
             MetadataProvider.add_metadata(
                 {
                     "model": last_chunk.model,
-                    "usage": last_chunk.usage.to_dict() if last_chunk.usage else {},
+                    "usage": usage.to_dict() if usage else {},
+                    "tokens_per_second": tps,
                 }
             )
 

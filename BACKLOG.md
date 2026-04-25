@@ -748,13 +748,24 @@ Standard RAG retrieves isolated chunks. Graph-RAG builds a knowledge graph over 
 
 ### Add API Landscape and Description in Architecture
 
-Current API landscape summary:
-POST /api/v1/messages: Full RAG Chat (Retrieval + LLM).
-GET /api/v1/rag/config: Session parameters.
-POST /api/v1/rag/reindex: Ingestion/Indexing.
-GET /api/v1/kb: Knowledge Base management.
-POST /api/v1/rag/retrieve (New): Standalone Retrieval for the Explorer.
-This new endpoint will essentially be a "dry run" of the retrieval logic that the main chat uses, but with the added ability to return those detailed scores (BM25, Semantic, etc.) that are usually discarded before the LLM sees them.
+**Done:** `docs/API_Endpoints.md` covers all current endpoints. `docs/ARCHITECTURE.md` references them.
+
+Current API landscape:
+- `POST /api/v1/rag/query` — Full RAG Chat (Retrieval + LLM), SSE streaming
+- `GET  /api/v1/rag/reindex-status` — Indexing progress
+- `POST /api/v1/rag/reindex` — Ingestion/Indexing (incremental or reset)
+- `POST /api/v1/rag/reindex/cancel` — Cancel in-progress indexing
+- `GET  /api/v1/kb` — List Knowledge Bases
+- `POST /api/v1/kb` — Create KB
+- `PUT  /api/v1/kb/{id}` — Update KB config
+- `DELETE /api/v1/kb/{id}` — Delete KB
+- `POST /api/v1/kb/{id}/activate` — Hot-swap active KB
+- `GET  /api/v1/kb/{id}/stats` — KB analytics
+- `POST /api/v1/kb/{id}/documents` — Upload and ingest a document (incremental, temp-file, document_id versioning)
+- `GET  /api/v1/files/{path}` — Serve source document
+- `POST /v1/chat/completions` — OpenAI-compatible chat completions
+- `GET  /v1/models` — OpenAI-compatible model list (maps to KBs)
+- `POST /api/v1/rag/retrieve` — Standalone Retrieval for the Explorer; returns per-chunk BM25, semantic, and RRF scores with optional reranking.
 
 ### Interactive API Documentation with Example Payloads
 

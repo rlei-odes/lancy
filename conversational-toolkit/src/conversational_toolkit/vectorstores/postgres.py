@@ -193,3 +193,19 @@ class PGVectorStore(VectorStore):
                 .where(self.table.c.chunk_metadata["file_hash"].astext.isnot(None))
             )
             return {row[0] for row in result if row[0]}
+
+    async def delete_chunks_by_document_id(self, document_id: str) -> int:
+        await self._ensure_initialized()
+        async with self.SessionLocal() as session:
+            result = await session.execute(
+                select(self.table.c.id).where(
+                    self.table.c.chunk_metadata["document_id"].astext == document_id
+                )
+            )
+            ids = [row[0] for row in result]
+            if ids:
+                await session.execute(
+                    self.table.delete().where(self.table.c.id.in_(ids))
+                )
+                await session.commit()
+            return len(ids)

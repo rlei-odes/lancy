@@ -5,6 +5,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.2.32] — 2026-04-25 · rlei-odes
+
+### Added — Document Upload API
+
+New endpoint for pushing documents into a KB over HTTP without requiring shared filesystem access. Designed as the ingestion path for remote deployments (e.g. DGX Spark) and as a webhook target for DMS automation pipelines.
+
+- `POST /api/v1/kb/{id}/documents` — accepts multipart file + JSON metadata, ingests the document into the target KB via the existing ingestion pipeline, then discards the temp file
+- `document_id` (required) enables versioning: re-uploading the same `document_id` deletes existing chunks before inserting new ones
+- `source_file` defaults to the uploaded filename so citations show the real name rather than the temp path
+- Full DMS metadata schema supported: `title`, `author`, `document_class`, `document_type`, `document_created_at`, `document_released_at`, `source_url`, `tags` — all fields are optional and stored verbatim on every chunk
+- KB analytics sidecar (`kb_stats_{kb_id}.json`) is now updated after upload ingestion, keeping the Analytics tab in sync with incrementally uploaded documents
+- `VectorStore.delete_chunks_by_document_id()` abstract method added; implemented for both ChromaDB and pgvector backends
+
+### Added — Spark deployment scripts
+
+Scripts for deploying the backend on a DGX Spark (or any Ubuntu/ARM machine):
+
+- `scripts/spark-install.sh` — one-time setup: system packages, venv, pip install
+- `scripts/start-backend.sh` — start backend-only in the background (no frontend, no Ollama check); prints LAN IP on start
+- `scripts/stop-backend.sh` — stop via PID file, fall back to port kill
+
+### Added — API documentation
+
+- `docs/API_Endpoints.md` — full endpoint reference covering all KB, RAG, file serving, and OpenAI-compatible endpoints with request/response schemas
+
+### Fixed
+
+- Sidebar chunk count showed 0 / "not yet indexed" after incremental reindex — `update_stats` was using the delta count instead of the actual vector store total
+- `source_file` in uploaded document chunks was set to the temp filename; now defaults to the original uploaded filename
+
+---
 
 ## [Lancy v0.2.31] — 2026-04-22 · rlei-odes
 

@@ -91,3 +91,12 @@ class VectorStore(ABC):
         before deduplication was introduced).
         """
         pass
+
+    @abstractmethod
+    async def delete_chunks_by_document_id(self, document_id: str) -> int:
+        """Delete all chunks whose metadata contains the given document_id.
+
+        Returns the number of chunks deleted. Used by the upload endpoint to replace
+        an existing document version before inserting the new one.
+        """
+        pass

@@ -74,6 +74,11 @@ new KB immediately. No re-init, no restart.
 A `_cancel_requested` global flag enables mid-indexing cancellation. The endpoint returns
 a 409 if indexing is already running.
 
+**Document Upload:** `POST /kb/{id}/documents` accepts a multipart file + JSON metadata,
+saves it to a temp path, and triggers the same ingestion pipeline via `BackgroundTasks`.
+The temp file is always deleted after ingestion. Requires a stable `document_id` in metadata;
+re-uploading the same `document_id` replaces the existing chunks (delete-then-insert).
+
 ### Ingestion Pipeline
 
 Ingestion converts documents on disk into embedded chunks stored in the vector store.

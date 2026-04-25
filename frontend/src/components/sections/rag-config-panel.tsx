@@ -1073,7 +1073,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                             </FieldRow>
                             {session.llm_backend === "custom" && (
                                 <>
-                                    <FieldRow label="Base URL" hint="OpenAI-kompatibler Endpoint, z.B. https://api.anthropic.com/v1">
+                                    <FieldRow label={t("rag.fieldCustomUrl")} hint={t("rag.fieldCustomUrlHint")}>
                                         <input
                                             type="text"
                                             value={session.custom_base_url}

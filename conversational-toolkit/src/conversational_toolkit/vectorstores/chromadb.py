@@ -160,6 +160,20 @@ class ChromaDBVectorStore(VectorStore):
         result = await loop.run_in_executor(None, lambda: self.collection.get(include=["metadatas"]))
         return {m["file_hash"] for m in (result.get("metadatas") or []) if m and "file_hash" in m}
 
+    async def delete_chunks_by_document_id(self, document_id: str) -> int:
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+
+        def _delete():
+            result = self.collection.get(where={"document_id": {"$eq": document_id}})
+            ids = result.get("ids") or []
+            if ids:
+                self.collection.delete(ids=ids)
+            return len(ids)
+
+        return await loop.run_in_executor(None, _delete)
+
     async def get_chunks_by_ids(self, chunk_ids: int | list[int]) -> list[Chunk]:
         """
         Retrieve chunks by their IDs.
