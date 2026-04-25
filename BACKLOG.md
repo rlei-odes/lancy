@@ -259,8 +259,39 @@ Three configurable strategies, selectable per session or preset:
 
 ---
 
+### Minimum Chunk Quality — Filter Near-Empty Chunks at Ingestion
+
+**Problem:** the current pipeline indexes chunks that contain almost no retrievable content. A typical example from a PDF-converted document:
+
+```
+## Water-Activated Tape
+
+<!-- image -->
+```
+
+This is a heading with an image placeholder — no prose, no facts, nothing an embedding model can meaningfully represent. When retrieved (e.g. by a keyword match on "Water"), it contributes noise to the context window and can dilute or displace useful chunks.
+
+**Root cause:** Markdown conversion of PDFs often produces heading-only or image-only fragments when a section starts with a figure before any prose. Fixed-token chunking then slices these into their own chunk rather than merging them with the next substantive paragraph.
+
+**What to address:**
+- Add a minimum content threshold at ingestion time: merge forward any chunk below N non-whitespace characters or M meaningful tokens after stripping Markdown syntax (`#`, `<!-- ... -->`, `![]()`, etc.) — the heading or image placeholder becomes a prefix of the next substantive chunk rather than a standalone entry
+- Optionally log merged chunks so the user can see what was fused and why
+- Consider a "content score" heuristic: chunks with only headings, only image tags, or only whitespace score 0 and are candidates for merging
+
+**The tricky part:** merge direction and merge limits. A heading should merge forward into the paragraph that follows it — but what if the next chunk is also near-empty? A merging loop with a maximum merged size cap (respecting `max_chunk_tokens`) is needed to avoid creating oversized chunks.
+
+**Why it matters:** retrieved chunks go directly into the LLM context. A useless chunk at rank 1 wastes a slot, confuses the reranker, and can cause the LLM to return "I don't have enough information" when the real answer exists just one chunk away.
+
+---
+
+
+
 
 ## UI & Settings
+
+### Analyze and Improve the Status Message of the Chatbot
+Currently, when asking a question in the main chat window, the status stays on **Retrieving documents...** for a long time. This while we see that the actual retrieving is very fast, the time spent is more the llm call at the end. Investigate and find ways to more accurately display what is being done and what stage we're at. If things are done in parallel, that could be displayed too.
+
 
 ### Align design of left and right sidebar
 **Both look nice now** but they are not really aligned with each other. Not fully necessary, but is an inconsitency.
@@ -270,6 +301,19 @@ Three configurable strategies, selectable per session or preset:
 
 ### Improve design of source citation window
 **Definitely does not look nice now** but is hard to design as just raw markdown is shown. We can still improve this visually and align more with our design.
+
+### Audit form element styling for consistent font and colour inheritance
+
+Investigate first: how is UI design and styling implemented in the app? Target picture: global styling defaults that apply everywhere, UI building blocks can individually add to these (more styling), or if warranted, deviate from these (changed settings from the global default). The latter should be prevented where possible. The main source for the global default should be the righthand sidebar.
+
+Several form elements across the UI rely on browser defaults rather than the design system. Native `<select>` elements in particular do not always inherit `font-family` or `font-size` from the document, causing inconsistencies between components even when the same Tailwind size class is applied.
+
+**Tackle in order:**
+1. **Dropdowns (`<select>`)** — add `[font:inherit]` and verify `text-foreground`/`bg-muted` classes are applied consistently everywhere (Chunk Browser done; audit remaining components)
+2. **Text inputs** — same font-inherit check; ensure `text-xs` vs `text-[10px]` usage is intentional and consistent
+3. **Everything else** — textarea, combobox/typeahead, number inputs — pass over once dropdowns and text inputs are clean
+
+---
 
 ### Neighbour Chunk Expansion
 
