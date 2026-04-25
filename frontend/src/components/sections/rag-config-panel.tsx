@@ -195,7 +195,7 @@ const SelectInput: FunctionComponent<{
     <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-muted border border-border text-foreground text-xs rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors w-full max-w-[260px]"
+        className="bg-muted border border-border text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors w-full max-w-[260px]"
     >
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
     </select>
@@ -275,7 +275,7 @@ const KBForm: FunctionComponent<KBFormProps> = ({ initial, onSubmit, onCancel, i
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) onSubmit(name.trim(), dirs); if (e.key === "Escape") onCancel(); }}
                 placeholder={t("rag.kbNamePlaceholder")}
-                className="w-full bg-card border border-blue-500/60 text-foreground text-xs rounded px-2 py-1 focus:outline-none focus:border-blue-400 font-mono"
+                className="w-full bg-card border border-blue-500/60 text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400"
             />
             <div>
                 <p className="text-[10px] text-muted-foreground mb-1">{t("rag.kbDirsLabel")}</p>
@@ -285,7 +285,7 @@ const KBForm: FunctionComponent<KBFormProps> = ({ initial, onSubmit, onCancel, i
                             <input
                                 value={dir}
                                 onChange={(e) => updateDir(i, e.target.value)}
-                                className="flex-1 bg-card border border-border text-foreground text-xs rounded px-2 py-1 focus:outline-none focus:border-blue-400 font-mono"
+                                className="flex-1 bg-card border border-border text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400"
                             />
                             {dirs.length > 1 && (
                                 <button onClick={() => removeDir(i)} className="px-1.5 rounded text-muted-foreground hover:text-red-400 hover:bg-red-900/20 transition-colors">
@@ -850,7 +850,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                     <select
                         value={activeKb?.id ?? ""}
                         onChange={(e) => switchKb(e.target.value)}
-                        className="flex-1 bg-muted border border-border text-foreground text-xs rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                        className="flex-1 bg-muted border border-border text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
                     >
                         {kbList.map((kb) => (
                             <option key={kb.id} value={kb.id}>{kb.name}</option>
@@ -930,7 +930,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                     <select
                         value={selectedPreset}
                         onChange={(e) => loadPreset(e.target.value)}
-                        className="flex-1 bg-muted border border-border text-foreground text-xs rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                        className="flex-1 bg-muted border border-border text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
                     >
                         {allPresets.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
                     </select>
@@ -959,7 +959,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                             onChange={(e) => setSaveAsName(e.target.value)}
                             onKeyDown={(e) => { if (e.key === "Enter") saveAsPreset(); if (e.key === "Escape") setShowSaveAs(false); }}
                             placeholder={t("rag.presetNamePlaceholder")}
-                            className="flex-1 bg-muted border border-blue-500 text-foreground text-xs rounded px-2 py-1 focus:outline-none font-mono"
+                            className="flex-1 bg-muted border border-blue-500 text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none"
                         />
                         <button onClick={saveAsPreset} disabled={!saveAsName.trim()} className="px-2 py-1 rounded text-xs bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 transition-colors">OK</button>
                         <button onClick={() => setShowSaveAs(false)} className="px-2 py-1 rounded text-xs bg-muted hover:bg-accent/20 text-foreground transition-colors">✕</button>
@@ -988,7 +988,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                     placeholder={t("rag.fieldSystemPromptPlaceholder")}
                                     rows={8}
                                     maxLength={20000}
-                                    className="bg-muted border border-border text-foreground text-[10px] rounded px-2 py-1.5 focus:outline-none focus:border-blue-400 w-full font-mono resize-y leading-relaxed"
+                                    className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1.5 focus:outline-none focus:border-blue-400 w-full resize-y leading-relaxed"
                                 />
                             </div>
                         </div>
@@ -1014,7 +1014,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                         value={session.ollama_host}
                                         onChange={(e) => updateSession("ollama_host", e.target.value)}
                                         placeholder="http://192.168.1.x:11434"
-                                        className="bg-muted border border-border text-foreground text-[10px] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full font-mono"
+                                        className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full"
                                     />
                                 </FieldRow>
                             )}
@@ -1034,7 +1034,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                             value={session.llm_model}
                                             onChange={(e) => updateSession("llm_model", e.target.value)}
                                             placeholder="anthropic/claude-haiku-4-5-20251001"
-                                            className="bg-muted border border-border text-foreground text-[10px] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-44 font-mono"
+                                            className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-44"
                                         />
                                     )
                                 ) : session.llm_backend === "custom" ? (
@@ -1043,7 +1043,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                         value={session.llm_model}
                                         onChange={(e) => updateSession("llm_model", e.target.value)}
                                         placeholder="claude-haiku-4-5-20251001"
-                                        className="bg-muted border border-border text-foreground text-[10px] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-44 font-mono"
+                                        className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-44"
                                     />
                                 ) : session.llm_backend === "ollama" ? (
                                     ollamaLlmLoading ? (
@@ -1060,7 +1060,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                             value={session.llm_model}
                                             onChange={(e) => updateSession("llm_model", e.target.value)}
                                             placeholder="mistral-nemo:12b"
-                                            className="bg-muted border border-border text-foreground text-[10px] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-44 font-mono"
+                                            className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-44"
                                         />
                                     )
                                 ) : (
@@ -1079,7 +1079,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                             value={session.custom_base_url}
                                             onChange={(e) => updateSession("custom_base_url", e.target.value)}
                                             placeholder="https://api.anthropic.com/v1"
-                                            className="bg-muted border border-border text-foreground text-[10px] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full font-mono"
+                                            className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full"
                                         />
                                     </FieldRow>
                                     <FieldRow label="API Key">
@@ -1088,7 +1088,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                             value={session.custom_api_key}
                                             onChange={(e) => updateSession("custom_api_key", e.target.value)}
                                             placeholder="sk-ant-..."
-                                            className="bg-muted border border-border text-foreground text-[10px] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full font-mono"
+                                            className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full"
                                         />
                                     </FieldRow>
                                 </>
@@ -1102,7 +1102,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                     value={session.utility_llm_model}
                                     onChange={(e) => updateSession("utility_llm_model", e.target.value)}
                                     placeholder={t("rag.fieldUtilityModelPlaceholder")}
-                                    className="bg-muted border border-border text-foreground text-[10px] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full font-mono"
+                                    className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full"
                                 />
                             </FieldRow>
                             {session.llm_backend === "ollama" && (
@@ -1144,7 +1144,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                         value={kbConfig.vs_connection_string}
                                         onChange={(e) => updateKbConfig("vs_connection_string", e.target.value)}
                                         placeholder="postgresql://user:pass@localhost:5432/rag"
-                                        className="bg-muted border border-border text-foreground text-[10px] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full font-mono"
+                                        className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full"
                                     />
                                 </FieldRow>
                             )}
@@ -1163,7 +1163,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                         value={kbConfig.embedding_ollama_host}
                                         onChange={(e) => updateKbConfig("embedding_ollama_host", e.target.value)}
                                         placeholder="http://192.168.1.x:11434"
-                                        className="bg-muted border border-border text-foreground text-[10px] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full font-mono"
+                                        className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full"
                                     />
                                     {t("rag.fieldOllamaHostHint") && <p className="text-[10px] text-muted-foreground leading-relaxed">{t("rag.fieldOllamaHostHint")}</p>}
                                 </div>
@@ -1175,7 +1175,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                         value={kbConfig.embedding_custom_base_url}
                                         onChange={(e) => updateKbConfig("embedding_custom_base_url", e.target.value)}
                                         placeholder="https://api.openai.com/v1"
-                                        className="bg-muted border border-border text-foreground text-[10px] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-40 font-mono"
+                                        className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-40"
                                     />
                                 </FieldRow>
                                 <FieldRow label={t("rag.fieldCustomKey")}>
@@ -1184,7 +1184,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                         value={kbConfig.embedding_custom_api_key}
                                         onChange={(e) => updateKbConfig("embedding_custom_api_key", e.target.value)}
                                         placeholder="sk-..."
-                                        className="bg-muted border border-border text-foreground text-[10px] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-40 font-mono"
+                                        className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-40"
                                     />
                                 </FieldRow>
                             </>)}
@@ -1204,7 +1204,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                             value={kbConfig.embedding_model}
                                             onChange={(e) => updateKbConfig("embedding_model", e.target.value)}
                                             placeholder="voyage/voyage-3"
-                                            className="bg-muted border border-border text-foreground text-[10px] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-40 font-mono"
+                                            className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-40"
                                         />
                                     )
                                 ) : kbConfig.embedding_backend === "ollama" ? (
@@ -1222,7 +1222,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                             value={kbConfig.embedding_model}
                                             onChange={(e) => updateKbConfig("embedding_model", e.target.value)}
                                             placeholder="nomic-embed-text"
-                                            className="bg-muted border border-border text-foreground text-[10px] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-40 font-mono"
+                                            className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-40"
                                         />
                                     )
                                 ) : (

@@ -103,7 +103,7 @@ export const History: FunctionComponent<Props> = (props: Props) => {
                                 onClick={(e) => { e.stopPropagation(); setIsDeleteAllOpen(true); }}
                                 className="w-4 h-4 mr-1 text-muted-foreground hover:text-destructive transition-colors"
                             />
-                            <SquarePen onClick={createNewConversation} className="w-5 h-5 mr-2" />
+                            <SquarePen onClick={createNewConversation} className="w-5 h-5 mr-2 text-muted-foreground hover:text-primary transition-colors cursor-pointer" />
                         </div>
                     )}
                 </div>
@@ -187,7 +187,7 @@ export const History: FunctionComponent<Props> = (props: Props) => {
                     <IndexingStatus />
                     <div className="flex gap-2 py-1 px-2 mx-2">
                         <div
-                            className="flex flex-1 py-2 px-3 cursor-pointer border border-border rounded-md justify-center hover:bg-muted"
+                            className="flex flex-1 py-2 px-3 border border-border rounded-md justify-center ripple"
                             onClick={onClickWebhook}
                         >
                             <div className="flex text-sm items-center gap-1 text-muted-foreground">
@@ -197,7 +197,7 @@ export const History: FunctionComponent<Props> = (props: Props) => {
                     </div>
                     <div className="flex gap-2 py-1 px-2 mx-2">
                         <div
-                            className="flex flex-1 py-2 px-3 cursor-pointer border border-border rounded-md justify-center hover:bg-muted"
+                            className="flex flex-1 py-2 px-3 border border-border rounded-md justify-center ripple"
                             onClick={onClickHelp}
                         >
                             <div className="flex text-sm items-center gap-1 text-muted-foreground">
@@ -205,7 +205,7 @@ export const History: FunctionComponent<Props> = (props: Props) => {
                             </div>
                         </div>
                         <div
-                            className="flex flex-1 py-2 px-3 cursor-pointer border border-border rounded-md justify-center hover:bg-muted"
+                            className="flex flex-1 py-2 px-3 border border-border rounded-md justify-center ripple"
                             onClick={onClickSettings}
                         >
                             <div className="flex text-sm items-center gap-1 text-muted-foreground">
@@ -216,7 +216,7 @@ export const History: FunctionComponent<Props> = (props: Props) => {
                     <div className="py-1 px-2 mx-2">
                         <Link
                             href="/explorer"
-                            className="flex w-full py-2 px-3 border border-border rounded-md justify-center hover:bg-muted transition-colors"
+                            className="flex w-full py-2 px-3 border border-border rounded-md justify-center ripple"
                         >
                             <div className="flex text-sm items-center gap-1.5 text-muted-foreground">
                                 <FlaskConical className="h-4 w-4" /> Retrieval Explorer

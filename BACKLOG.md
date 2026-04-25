@@ -293,25 +293,11 @@ This is a heading with an image placeholder — no prose, no facts, nothing an e
 Currently, when asking a question in the main chat window, the status stays on **Retrieving documents...** for a long time. This while we see that the actual retrieving is very fast, the time spent is more the llm call at the end. Investigate and find ways to more accurately display what is being done and what stage we're at. If things are done in parallel, that could be displayed too.
 
 
-### Align design of left and right sidebar
-**Both look nice now** but they are not really aligned with each other. Not fully necessary, but is an inconsitency.
-
-### Align design of Retrieval Explorer
-**Both look nice now** but the right-handside sidebar has different title design language and fonts. Blue main titles for example.
+### Align design of left and right sidebar, main chat page
+**All three look nice now** but they are not really aligned with each other. Not necessary, but is an inconsitency.
 
 ### Improve design of source citation window
 **Definitely does not look nice now** but is hard to design as just raw markdown is shown. We can still improve this visually and align more with our design.
-
-### Audit form element styling for consistent font and colour inheritance
-
-Investigate first: how is UI design and styling implemented in the app? Target picture: global styling defaults that apply everywhere, UI building blocks can individually add to these (more styling), or if warranted, deviate from these (changed settings from the global default). The latter should be prevented where possible. The main source for the global default should be the righthand sidebar.
-
-Several form elements across the UI rely on browser defaults rather than the design system. Native `<select>` elements in particular do not always inherit `font-family` or `font-size` from the document, causing inconsistencies between components even when the same Tailwind size class is applied.
-
-**Tackle in order:**
-1. **Dropdowns (`<select>`)** — add `[font:inherit]` and verify `text-foreground`/`bg-muted` classes are applied consistently everywhere (Chunk Browser done; audit remaining components)
-2. **Text inputs** — same font-inherit check; ensure `text-xs` vs `text-[10px]` usage is intentional and consistent
-3. **Everything else** — textarea, combobox/typeahead, number inputs — pass over once dropdowns and text inputs are clean
 
 ---
 

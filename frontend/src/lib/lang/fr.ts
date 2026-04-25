@@ -1,7 +1,7 @@
 export const app = {
     notFound: "Page non trouvée",
     messagePlaceholder: "Posez une question ou tapez un message...",
-    disclaimer: "{{name}} peut faire des erreurs. Pensez à vérifier les informations importantes.",
+    disclaimer: "{{name}} peut faire des erreurset manquer des sources pertinentes. Pensez à vérifier les informations importantes.",
     credits: "Lancy with 💙 by <1>SDSC</1><2/><3>Vonlanthen INSIGHT</3> & <4>Lancy</4>",
     welcome: "Que voulez-vous savoir ?",
     settings: "Paramètres",
