@@ -836,7 +836,7 @@ The pinned versions in `requirements.txt` are the higher-priority concern — th
 
 Run `pip list --outdated` periodically and update these selectively. Avoid bulk upgrades — test retrieval and ingestion after any chromadb or docling bump.
 
-### Refactor: Extract ingestion pipeline from main.py
+### Refactor: Reduce Size of main.py
 
 Done: Extract ingestion pipeline from main.py
 
@@ -857,15 +857,4 @@ The sources already arrive in the final stream chunk, so the GET call is redunda
 - Drop `setThread` from the `onEnd` GET result; use it only for sidebar/title refresh
 - Move source fetching out of `get_conversation_by_id` into a separate on-demand endpoint
 - Send sources as a lightweight reference (id + filename only) in the stream, fetch full content lazily on click
-
-### Bug: Reranking always fails silently with vLLM / custom backend
-
-When the LLM backend is `custom` (vLLM, Anthropic, etc.), `response_format` is set to the full RAG JSON schema (`{"type": "json_schema", "json_schema": {...}}`). This schema is also used for the reranking `generate()` call inside `RerankingRetriever`. vLLM enforces the schema, so the model wraps its ranking inside the `"answer"` field instead of returning a plain `{"ranking": [...]}` object. The reranking parser fails to find the `"ranking"` key and logs a warning, then falls back to original order — silently wasting the round-trip (observed: ~1.6 s for 676 tokens).
-
-Confirmed in backend log:
-```
-WARNING: RerankingRetriever LLM call failed, using original order: 'ranking'
-```
-
-**Fix direction:** `RerankingRetriever` should build its LLM with `response_format=None` (or a reranking-specific schema) rather than inheriting the RAG answer schema. The utility LLM is already a separate instance — reranking just needs its own `response_format`.
 

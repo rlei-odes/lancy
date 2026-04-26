@@ -95,11 +95,15 @@ class RerankingRetriever(Retriever[ChunkMatch]):
 
         try:
             response = await self.llm.generate(messages)
-            data = json.loads(response.content[0].text or "")
+            text = response.content[0].text or ""
+            # Some models wrap JSON in markdown fences — extract the object directly.
+            start, end = text.find("{"), text.rfind("}")
+            data = json.loads(text[start : end + 1] if start != -1 and end != -1 else text)
             ranking: list[int] = [int(i) for i in data["ranking"] if 0 <= int(i) < len(candidates)]
             # Append any missing indices at the end (graceful fallback for partial rankings)
             seen = set(ranking)
             ranking += [i for i in range(len(candidates)) if i not in seen]
+            logger.info(f"RerankingRetriever: reranked {len(candidates)} candidates → {ranking[:self.top_k]}")
             return ranking
         except Exception as exc:
             logger.warning(f"RerankingRetriever LLM call failed, using original order: {exc}")

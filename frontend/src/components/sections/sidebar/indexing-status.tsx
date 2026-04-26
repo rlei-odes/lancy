@@ -34,6 +34,8 @@ export const IndexingStatus: FunctionComponent = () => {
 
     useEffect(() => {
         let active = true;
+        let timer: ReturnType<typeof setTimeout>;
+        const isIndexingRef = { current: false };
 
         const poll = async () => {
             try {
@@ -41,6 +43,7 @@ export const IndexingStatus: FunctionComponent = () => {
                 if (r.ok) {
                     const data: IndexStatus = await r.json();
                     if (!active) return;
+                    isIndexingRef.current = data.indexing;
                     setStatus(data);
 
                     // When indexing just finished (finished_at changed), show done banner
@@ -52,13 +55,15 @@ export const IndexingStatus: FunctionComponent = () => {
                     }
                 }
             } catch { /* ignore */ }
+            if (active) {
+                timer = setTimeout(poll, isIndexingRef.current ? 2000 : 10000);
+            }
         };
 
         poll();
-        const id = setInterval(poll, 2000);
         return () => {
             active = false;
-            clearInterval(id);
+            clearTimeout(timer);
             if (doneTimer.current) clearTimeout(doneTimer.current);
         };
     }, []);

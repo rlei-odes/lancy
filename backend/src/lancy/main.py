@@ -8,6 +8,9 @@ Environment variables:
     OPENAI_API_KEY    — Required when BACKEND=openai or EMBEDDING_BACKEND=openai
     ANTHROPIC_API_KEY — Required when BACKEND=anthropic
     ALLOW_ORIGINS     — Comma-separated CORS origins, e.g. https://your-domain.example.com
+    LOG_FILE          — Path to the log file (enables rotating file logging). See logging_config.py.
+    LOG_MAX_BYTES     — Max file size before rotation (default: 10 MB)
+    LOG_BACKUP_COUNT  — Number of rotated files to keep (default: 5)
 
 Multi-KB:
     Knowledge bases are managed via /api/v1/kb endpoints.
@@ -50,6 +53,8 @@ if _litellm_env.exists():
                 os.environ[_k.strip()] = _v.strip()
 
 import uvicorn
+
+from lancy.logging_config import build_log_config, configure_loguru
 
 from conversational_toolkit.agents.base import AgentAnswer
 from conversational_toolkit.agents.rag import RAG
@@ -359,26 +364,28 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
         )
 
     # Use a separate smaller/faster model for preprocessing (query rewriting, HyDE, reranking).
-    # Falls back to the main LLM if no utility model is configured or build fails.
-    utility_model = cfg.utility_llm_model.strip()
-    if utility_model and utility_model != (cfg.llm_model or "").strip():
-        try:
-            utility_llm = build_llm(
-                backend=cfg.llm_backend,
-                model_name=utility_model,
-                temperature=cfg.llm_temperature,
-                ollama_host=ollama_host,
-                num_ctx=cfg.num_ctx,
-                custom_base_url=getattr(cfg, "custom_base_url", ""),
-                custom_api_key=getattr(cfg, "custom_api_key", ""),
-            )
-            log.info(f"Utility LLM: {cfg.llm_backend}/{utility_model}")
-        except Exception as exc:
-            log.warning(
-                f"Utility LLM build failed ({exc}), using main LLM for preprocessing"
-            )
-            utility_llm = llm
-    else:
+    # Always built without response_format — utility tasks use their own output schemas, not the
+    # RAG answer schema. Falling back to llm is a last resort; that instance carries
+    # response_format and will cause reranking to fail on strict backends (vLLM, Anthropic).
+    _utility_model_cfg = cfg.utility_llm_model.strip()
+    _has_separate = _utility_model_cfg and _utility_model_cfg != (cfg.llm_model or "").strip()
+    _utility_model_name = _utility_model_cfg if _has_separate else (cfg.llm_model or None)
+    try:
+        utility_llm = build_llm(
+            backend=cfg.llm_backend,
+            model_name=_utility_model_name,
+            temperature=cfg.llm_temperature,
+            ollama_host=ollama_host,
+            num_ctx=cfg.num_ctx,
+            custom_base_url=getattr(cfg, "custom_base_url", ""),
+            custom_api_key=getattr(cfg, "custom_api_key", ""),
+        )
+        if _has_separate:
+            log.info(f"Utility LLM: {cfg.llm_backend}/{_utility_model_name}")
+    except Exception as exc:
+        log.warning(
+            f"Utility LLM build failed ({exc}), using main LLM for preprocessing"
+        )
         utility_llm = llm
 
     final_retriever = (
@@ -591,6 +598,7 @@ def build_server():
 
     # ── Startup: auto-ingest active KB if VS is empty ─────────────────────
     async def _startup() -> None:
+        configure_loguru()
         vs = object.__getattribute__(vs_proxy, "_obj")
         agent = object.__getattribute__(agent_proxy, "_obj")
         count = await vs.count()
@@ -818,34 +826,6 @@ def build_server():
 
 app = build_server()
 
-_LOG_CONFIG = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "default": {
-            "()": "uvicorn.logging.DefaultFormatter",
-            "fmt": "%(asctime)s.%(msecs)03d %(levelprefix)s %(message)s",
-            "datefmt": "%Y-%m-%d %H:%M:%S",
-            "use_colors": None,
-        },
-        "access": {
-            "()": "uvicorn.logging.AccessFormatter",
-            "fmt": '%(asctime)s.%(msecs)03d %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s',
-            "datefmt": "%Y-%m-%d %H:%M:%S",
-            "use_colors": None,
-        },
-    },
-    "handlers": {
-        "default": {"formatter": "default", "class": "logging.StreamHandler", "stream": "ext://sys.stderr"},
-        "access": {"formatter": "access", "class": "logging.StreamHandler", "stream": "ext://sys.stdout"},
-    },
-    "loggers": {
-        "uvicorn": {"handlers": ["default"], "level": "INFO", "propagate": False},
-        "uvicorn.error": {"level": "INFO"},
-        "uvicorn.access": {"handlers": ["access"], "level": "INFO", "propagate": False},
-    },
-}
-
 if __name__ == "__main__":
     uvicorn.run(
         app,
@@ -853,5 +833,5 @@ if __name__ == "__main__":
         port=int(os.environ.get("PORT", 8080)),
         reload=False,
         log_level="info",
-        log_config=_LOG_CONFIG,
+        log_config=build_log_config(),
     )

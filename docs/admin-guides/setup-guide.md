@@ -19,7 +19,7 @@
 ./stop.sh
 ```
 
-Logs are written to `logs/backend.log` and `logs/frontend.log`.
+Logs are written to `logs/backend.log` and `logs/frontend.log`. The backend log rotates automatically at 10 MB (keeps 5 backups). Override with `LOG_FILE`, `LOG_MAX_BYTES`, and `LOG_BACKUP_COUNT` env vars.
 
 ### Manual setup
 

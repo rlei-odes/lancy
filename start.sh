@@ -64,8 +64,9 @@ fi
 echo "Starting backend (Ollama / mistral-nemo:12b) on port 8080..."
 PYTHONPATH="$REPO/backend/src" \
 BACKEND=ollama \
+LOG_FILE="$LOG_DIR/backend.log" \
   "$VENV/bin/python" -m lancy.main \
-  > "$LOG_DIR/backend.log" 2>&1 &
+  > /dev/null 2>&1 &
 echo $! > "$LOG_DIR/backend.pid"
 echo "  Backend PID: $(cat $LOG_DIR/backend.pid)"
 
