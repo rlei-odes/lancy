@@ -392,6 +392,14 @@ Especially with Neighbour Chunk Expansion, we have many variable that control ho
 
 ---
 
+### Preset UI — End-to-End Review and UX Improvement
+
+The preset save/load flow has grown organically and needs a thorough walkthrough. Known issues include `image_retrieval_enabled` being saved to the wrong config layer (fixed), but other fields may have similar misrouting. The UI interaction (save, load, "Standard" reset, switching KBs) is also unintuitive in places.
+
+**To do:** sit down with the full preset flow — create, save, load, switch KB, reload page — and verify every field round-trips correctly. Identify UX rough edges and improve them.
+
+---
+
 ### Preset Scope — Query Presets vs. Ingestion Presets
 
 **Current behaviour:** a preset saves the full combined state — both session/query parameters (`RagConfig`: top-k, BM25, reranking, LLM model, temperature, etc.) and KB-level embedding/ingestion parameters (embedding backend, model, batch size, chunk tokens, OCR, image toggles). Presets are already per-KB: stored in `rag_presets_{kb_id}.json`, so a preset saved for KB "A" does not appear for KB "B".

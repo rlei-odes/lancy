@@ -22,6 +22,7 @@ interface KBConfig {
     vs_connection_string: string;
     image_indexing_enabled: boolean;
     image_embedding_model: string;
+    image_retrieval_enabled: boolean;
 }
 
 /** Session-level config: retrieval, LLM, prompt. No re-index needed. */
@@ -42,7 +43,6 @@ interface SessionConfig {
     llm_max_tokens: number;
     system_prompt: string;
     follow_up_count: number;
-    image_retrieval_enabled: boolean;
     image_retriever_top_k: number;
     custom_base_url: string;
     custom_api_key: string;
@@ -101,6 +101,7 @@ const DEFAULT_KB_CONFIG: KBConfig = {
     vs_connection_string: "",
     image_indexing_enabled: false,
     image_embedding_model: "Qwen/Qwen3-VL-Embedding-2B",
+    image_retrieval_enabled: false,
 };
 
 const DEFAULT_SESSION: SessionConfig = {
@@ -120,7 +121,6 @@ const DEFAULT_SESSION: SessionConfig = {
     llm_max_tokens: 6144,
     system_prompt: "",
     follow_up_count: 3,
-    image_retrieval_enabled: false,
     image_retriever_top_k: 1,
     custom_base_url: "",
     custom_api_key: "",
@@ -417,6 +417,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                     vs_connection_string: kb.vs_connection_string ?? "",
                     image_indexing_enabled: kb.image_indexing_enabled ?? false,
                     image_embedding_model: kb.image_embedding_model ?? "Qwen/Qwen3-VL-Embedding-2B",
+                    image_retrieval_enabled: kb.image_retrieval_enabled ?? false,
                 });
                 setUserPresets(await fetchUserPresets(kb.id));
             }
@@ -586,6 +587,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                     vs_connection_string: kb.vs_connection_string ?? "",
                     image_indexing_enabled: kb.image_indexing_enabled ?? false,
                     image_embedding_model: kb.image_embedding_model ?? "Qwen/Qwen3-VL-Embedding-2B",
+                    image_retrieval_enabled: kb.image_retrieval_enabled ?? false,
                 });
                 const loaded = await fetchUserPresets(kb.id);
                 setUserPresets(loaded);
@@ -765,6 +767,7 @@ export const RagConfigPanel: FunctionComponent = () => {
             vs_connection_string: preset.data.vs_connection_string ?? "",
             image_indexing_enabled: preset.data.image_indexing_enabled ?? false,
             image_embedding_model: preset.data.image_embedding_model ?? "Qwen/Qwen3-VL-Embedding-2B",
+            image_retrieval_enabled: preset.data.image_retrieval_enabled ?? false,
         });
         setSession({
             retriever_top_k: preset.data.retriever_top_k,
@@ -782,7 +785,6 @@ export const RagConfigPanel: FunctionComponent = () => {
             num_ctx: preset.data.num_ctx ?? 8192,
             system_prompt: preset.data.system_prompt,
             follow_up_count: preset.data.follow_up_count,
-            image_retrieval_enabled: preset.data.image_retrieval_enabled ?? false, 
             image_retriever_top_k: preset.data.image_retriever_top_k ?? 1,
             custom_base_url: (preset.data as any).custom_base_url ?? "",
             custom_api_key: (preset.data as any).custom_api_key ?? "",
@@ -1300,9 +1302,9 @@ export const RagConfigPanel: FunctionComponent = () => {
                                 </FieldRow>
                             )}
                             <FieldRow label={t("rag.fieldImageRetrieval")} hint={t("rag.fieldImageRetrievalHint")}>
-                                <Toggle checked={session.image_retrieval_enabled} onChange={(v) => updateSession("image_retrieval_enabled", v)} />
+                                <Toggle checked={kbConfig.image_retrieval_enabled} onChange={(v) => updateKbConfig("image_retrieval_enabled", v)} />
                             </FieldRow>
-                            {session.image_retrieval_enabled && (
+                            {kbConfig.image_retrieval_enabled && (
                                 <FieldRow label={t("rag.fieldImageRetrieverTopK")} hint={t("rag.fieldImageRetrieverTopKHint")}>
                                     <NumberInput value={session.image_retriever_top_k} min={1} max={4} step={1} onChange={(v) => updateSession("image_retriever_top_k", v)} />
                                 </FieldRow>
