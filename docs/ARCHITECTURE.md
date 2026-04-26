@@ -90,7 +90,7 @@ store is empty.
 ```
 POST /reindex (reset: bool)
   │
-  ├── _run_ingestion(kb, reset)               main.py
+  ├── run_ingestion(kb, reset, db_dir)         ingestion.py
   │     │
   │     ├── make_vector_store(...)             create VS instance in async context
   │     │     (ChromaDB: reused below;
@@ -145,7 +145,7 @@ applies — two identical files in one run always produce one set of chunks.
 | `load_chunks(..., include_files, file_hashes)` | `feature0_baseline_rag.py` | Parse files, stamp `chunk.metadata["file_hash"]` |
 | `build_vector_store(..., existing_hashes)` | `feature0_baseline_rag.py` | Embed and persist; skips chunks already in store |
 | `VectorStore.get_file_hashes()` | `vectorstores/base.py` | Abstract: return set of hashes in the store |
-| `_run_ingestion(kb, reset)` | `main.py` | Orchestrates all steps above; returns `(chunks, files, skipped)` |
+| `run_ingestion(kb, reset, db_dir)` | `ingestion.py` | Orchestrates all steps above; returns `(chunks, files, skipped)` |
 
 #### Threading Model
 
@@ -153,7 +153,7 @@ The ingestion pipeline has three distinct blocking phases, each isolated to avoi
 blocking the FastAPI event loop:
 
 ```
-async context (_run_ingestion)
+async context (run_ingestion)
   │
   ├── await vs.get_file_hashes()      [async — ChromaDB uses run_in_executor internally]
   │

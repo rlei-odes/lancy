@@ -71,7 +71,7 @@ echo "  Backend PID: $(cat $LOG_DIR/backend.pid)"
 
 # --- Frontend ---
 echo "Starting frontend on port 3000..."
-cd "$REPO/frontend" && npm run dev > "$LOG_DIR/frontend.log" 2>&1 &
+cd "$REPO/frontend" && npm run dev 2>&1 | awk '{ print strftime("%Y-%m-%d %H:%M:%S"), $0; fflush(); }' > "$LOG_DIR/frontend.log" &
 echo $! > "$LOG_DIR/frontend.pid"
 echo "  Frontend PID: $(cat $LOG_DIR/frontend.pid)"
 

@@ -50,6 +50,7 @@ class RagConfig(BaseModel):
     num_ctx: int = Field(
         8192, ge=512, le=131072
     )  # Ollama KV-cache window; 16384+ overflows VRAM on <16GB GPUs → CPU fallback
+    llm_max_tokens: int = Field(6144, ge=128, le=32768)  # max output tokens (custom/litellm backends)
     custom_base_url: str = Field(
         "", max_length=500
     )  # custom: OpenAI-compat base URL, e.g. https://api.anthropic.com/v1

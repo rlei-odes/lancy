@@ -17,6 +17,7 @@ class LocalLLM(LLM):
         api_key: str = "",
         response_format: dict | None = None,
         display_name: str = "",
+        max_tokens: int | None = None,
     ):
         self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
         self.model = model_name
@@ -24,6 +25,7 @@ class LocalLLM(LLM):
         self.temperature = temperature
         self.seed = seed
         self.response_format = response_format
+        self.max_tokens = max_tokens
         logger.debug(f"Local LLM loaded: {model_name}; temperature: {temperature}; seed: {seed}")
 
     async def generate(self, conversation: list[LLMMessage]) -> LLMMessage:
@@ -42,6 +44,8 @@ class LocalLLM(LLM):
         }
         if self.response_format:
             kwargs["response_format"] = self.response_format
+        if self.max_tokens is not None:
+            kwargs["max_tokens"] = self.max_tokens
 
         t_start = time.monotonic()
         completion = await self.client.chat.completions.create(**kwargs)  # type: ignore

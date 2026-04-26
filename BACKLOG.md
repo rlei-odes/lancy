@@ -307,6 +307,10 @@ Currently, when asking a question in the main chat window, the status stays on *
 
 **What's needed:** a toggleable option (e.g. `neighbour_chunks: bool`, default off) that, after retrieval, fetches the preceding and succeeding chunks from the same source file for each result (i.e. `chunk_index - 1` and `chunk_index + 1`). The expanded set is deduplicated (a neighbour retrieved independently stays once) and passed to the LLM in place of the bare result set.
 
+**Option:** Instead of a bool, we make it an int variable, in increments of two. Zero means no Neighbours get taken into account. Four would mean to preceeding and two succeeding chunks. Maximum value should be 6.
+
+**Option 2:** More automation, i.E. if the found chunk is very small, do an automatic expansion looking for neighbours. Stop at a maximum number of chunks as well as a maximum number of character length of the combined result.
+
 **Use case:** documents where a retrieved chunk contains a partial answer — the conclusion of a paragraph, a table row without its header, or a clause that references the sentence above. Adding neighbours restores that immediate context without changing what was retrieved.
 
 **Warning to surface in the UI:** enabling this option can up to triple the number of tokens sent to the LLM (up to `3 × top_k` chunks after dedup). It requires a model with a large enough context window and will noticeably increase latency and token cost.
@@ -318,6 +322,13 @@ Currently, when asking a question in the main chat window, the status stays on *
 
 **Variant — source citation view only (no LLM cost):**
 Instead of (or in addition to) feeding neighbours to the LLM, show them in the sources panel when the user expands a citation. The retrieved chunk renders normally; the preceding and succeeding chunks render below/above it in a muted style (e.g. dimmed text, lighter background) to show what surrounded it in the document. This gives the user reading context without touching the LLM prompt at all — cheaper, zero latency impact, and always safe to enable. The backend would return `neighbour_content_before` / `neighbour_content_after` alongside each source chunk in the RAG response.
+
+---
+
+### RAG Settings: LLM Call Calculation
+
+Especially with Neighbour Chunk Expansion, we have many variable that control how many chunks could get sent to the helper llm and the main model. We should have text based preview telling the user that maximum value each. If no helper model is selected, it should show that all reranking etc. calls go to the main model. The stats are: number of calls, max. number of chunks, for each.
+
 
 ---
 
@@ -453,7 +464,7 @@ Instead of (or in addition to) feeding neighbours to the LLM, show them in the s
 
 ### User Feedback — Thumbs Up / Down
 
-**Goal:** let users rate individual answers with a thumbs up or down. Capture the active RAG configuration at the time of rating so quality can be correlated with retrieval settings.
+**Goal:** let users rate individual answers with a thumbs up or down. Capture the active RAG configuration at the time of rating so quality can be correlated with retrieval settings. The thumbs up / down function is already implemented in the UI.
 
 **Why:** RAG quality is hard to judge in aggregate without structured feedback. Recording which configuration settings (k, BM25, reranking, model, temperature) were active when a good or bad answer was given lets admins identify which presets actually work on the real corpus.
 
@@ -464,6 +475,28 @@ Instead of (or in addition to) feeding neighbours to the LLM, show them in the s
 - Optional aggregation: rating counts per model, per KB, per preset — useful for spotting that a specific LLM or k value consistently gets low ratings
 
 **Privacy note:** feedback entries are stored server-side in the existing DB; no external service involved. On public or multi-user deployments, the feedback log should be admin-only.
+
+---
+
+### Session Logs
+
+**Goal:** Expanding on the Thumbs Up / Down Log, we want to capture valuable statistics about each user query run.
+
+**Why:** RAG performance is hard to judge in aggregate without structured feedback. Query parameters helps with optimizing the setup
+
+**Scope:**
+Capture the following query run statistics:
+- Used kb
+- Used model (main and helper model)
+- Duration in seconds (as displayed to the user)
+- Calculated Token per Second (as displayed to the user)
+- Considered Chunks during the process (i.e. total including candidates, neighbour expansion)
+- Chunks sent to reranking
+- Chunks sent to the main model
+- The above three stats, but in length (numer of characters)
+
+**Technical solution** Evaluate how to implement this requirement, and what else would be already available to collect in the code. 
+
 
 ---
 
@@ -802,4 +835,37 @@ The pinned versions in `requirements.txt` are the higher-priority concern — th
 - **`ollama`** — Python client tracks new Ollama features; worth updating alongside Ollama server upgrades
 
 Run `pip list --outdated` periodically and update these selectively. Avoid bulk upgrades — test retrieval and ingestion after any chromadb or docling bump.
+
+### Refactor: Extract ingestion pipeline from main.py
+
+Done: Extract ingestion pipeline from main.py
+
+Still, `main.py` has grown quite large. More potential optimizations need to be identified.
+
+**Not in scope:** wrapping `build_server` shared state in a class — larger refactor, more risk, deferred.
+
+### Performance: Source display lag after streaming
+
+After the LLM finishes streaming, there is a noticeable delay before sources appear in the UI. Two contributing factors:
+
+1. **Large final chunk**: sources (full chunk text) are sent only in the last stream chunk, after the LLM finishes. For many or large sources this chunk is heavy.
+2. **Redundant GET call**: `onEnd` in `useMessaging.tsx` fires `conversationService.get(activeConversationId)` immediately after the stream closes. This hits `GET /api/v1/conversations/{id}` on our backend, which re-fetches every message in the conversation and does a sequential `await source_db.get_sources_by_message_id()` per message. The result then overwrites `setThread`, which is what actually renders the sources.
+
+The sources already arrive in the final stream chunk, so the GET call is redundant for display purposes. The original intent appears to be refreshing the conversation sidebar title and confirming persistence — not fetching sources.
+
+**Possible directions** (needs design decision):
+- Drop `setThread` from the `onEnd` GET result; use it only for sidebar/title refresh
+- Move source fetching out of `get_conversation_by_id` into a separate on-demand endpoint
+- Send sources as a lightweight reference (id + filename only) in the stream, fetch full content lazily on click
+
+### Bug: Reranking always fails silently with vLLM / custom backend
+
+When the LLM backend is `custom` (vLLM, Anthropic, etc.), `response_format` is set to the full RAG JSON schema (`{"type": "json_schema", "json_schema": {...}}`). This schema is also used for the reranking `generate()` call inside `RerankingRetriever`. vLLM enforces the schema, so the model wraps its ranking inside the `"answer"` field instead of returning a plain `{"ranking": [...]}` object. The reranking parser fails to find the `"ranking"` key and logs a warning, then falls back to original order — silently wasting the round-trip (observed: ~1.6 s for 676 tokens).
+
+Confirmed in backend log:
+```
+WARNING: RerankingRetriever LLM call failed, using original order: 'ranking'
+```
+
+**Fix direction:** `RerankingRetriever` should build its LLM with `response_format=None` (or a reranking-specific schema) rather than inheriting the RAG answer schema. The utility LLM is already a separate instance — reranking just needs its own `response_format`.
 

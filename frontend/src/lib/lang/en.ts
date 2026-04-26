@@ -252,6 +252,8 @@ export const app = {
         fieldUtilityModelPlaceholder: "e.g. qwen2.5:3b (empty = main model)",
         fieldNumCtx: "Context window (num_ctx)",
         fieldNumCtxHint: "KV-cache size. 16384+ overflows VRAM on <16GB GPUs → CPU fallback → 20–50× slower. Default: 8192",
+        fieldMaxTokens: "Max output tokens",
+        fieldMaxTokensHint: "Maximum tokens the model may generate per response. Caps runaway generation on vLLM / custom endpoints. Default: 6144",
         fieldFollowUp: "Follow-up questions",
         fieldFollowUpHint: "Number of follow-up questions (0 = disabled)",
         fieldImageRetrieverTopK: "Image Results (top k)",

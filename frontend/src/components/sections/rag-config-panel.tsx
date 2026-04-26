@@ -39,6 +39,7 @@ interface SessionConfig {
     ollama_host: string;
     utility_llm_model: string;
     num_ctx: number;
+    llm_max_tokens: number;
     system_prompt: string;
     follow_up_count: number;
     image_retrieval_enabled: boolean;
@@ -116,6 +117,7 @@ const DEFAULT_SESSION: SessionConfig = {
     ollama_host: "",
     utility_llm_model: "",
     num_ctx: 8192,
+    llm_max_tokens: 6144,
     system_prompt: "",
     follow_up_count: 3,
     image_retrieval_enabled: false,
@@ -1108,6 +1110,11 @@ export const RagConfigPanel: FunctionComponent = () => {
                             {session.llm_backend === "ollama" && (
                                 <FieldRow label={t("rag.fieldNumCtx")} hint={t("rag.fieldNumCtxHint")}>
                                     <NumberInput value={session.num_ctx} min={512} max={131072} step={512} onChange={(v) => updateSession("num_ctx", v)} />
+                                </FieldRow>
+                            )}
+                            {session.llm_backend !== "ollama" && (
+                                <FieldRow label={t("rag.fieldMaxTokens")} hint={t("rag.fieldMaxTokensHint")}>
+                                    <NumberInput value={session.llm_max_tokens} min={128} max={32768} step={128} onChange={(v) => updateSession("llm_max_tokens", v)} />
                                 </FieldRow>
                             )}
                         </div>

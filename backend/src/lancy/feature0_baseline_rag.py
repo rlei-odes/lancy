@@ -269,6 +269,7 @@ def build_llm(
     response_format=None,
     ollama_host: str | None = None,
     num_ctx: int = 8192,
+    max_tokens: int | None = None,
     custom_base_url: str = "",
     custom_api_key: str = "",
 ) -> LLM:
@@ -308,6 +309,7 @@ def build_llm(
                 seed=SEED,
                 response_format=response_format,
                 display_name=f"litellm/{name}",
+                max_tokens=max_tokens,
             )
         case "custom":
             # OpenAI-compatible custom endpoint (Anthropic, OpenAI, local vLLM, etc.)
@@ -322,6 +324,7 @@ def build_llm(
                 openai_api_key=key or None,
                 base_url=url or None,
                 response_format=response_format,
+                max_tokens=max_tokens,
             )
         case "openai" | "anthropic" | "qwen":
             # Legacy / internal: route through custom with env-based credentials

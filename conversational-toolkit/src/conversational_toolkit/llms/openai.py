@@ -75,6 +75,7 @@ class OpenAILLM(LLM):
         response_format: completion_create_params.ResponseFormat | None = None,
         openai_api_key: str | None = None,
         base_url: str | None = None,
+        max_tokens: int | None = None,
     ):
         # TODO: Currently only supports text output
 
@@ -89,8 +90,9 @@ class OpenAILLM(LLM):
         self.tools = tools
         self.tool_choice: Literal["none", "auto", "required"] | None = tool_choice
         self.response_format: completion_create_params.ResponseFormat = response_format
+        self.max_tokens = max_tokens
         logger.debug(
-            f"OpenAI LLM loaded: {model_name}; temperature: {temperature}; seed: {seed}; tools: {tools}; tool_choice: {tool_choice}; response_format: {response_format}"
+            f"OpenAI LLM loaded: {model_name}; temperature: {temperature}; seed: {seed}; tools: {tools}; tool_choice: {tool_choice}; response_format: {response_format}; max_tokens: {max_tokens}"
         )
 
     async def generate(self, conversation: list[LLMMessage]) -> LLMMessage:
@@ -102,6 +104,7 @@ class OpenAILLM(LLM):
             messages=messages_as_openai,
             temperature=self.temperature,
             seed=self.seed,
+            max_tokens=self.max_tokens if self.max_tokens is not None else omit,
             tools=(
                 cast(
                     list[ChatCompletionToolParam],
@@ -163,6 +166,7 @@ class OpenAILLM(LLM):
             messages=messages_as_openai,
             temperature=self.temperature,
             seed=self.seed,
+            max_tokens=self.max_tokens if self.max_tokens is not None else omit,
             tools=(
                 cast(
                     list[ChatCompletionToolParam],

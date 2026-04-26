@@ -5,7 +5,50 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [Lancy v0.2.32] — 2026-04-25 · rlei-odes
+## [Lancy v0.2.33] — 2026-04-26 · rlei-odes
+
+### Added — `max_tokens` cap for vLLM / custom LLM backend
+
+Exposes a configurable output token limit for the `custom` and `litellm` backends (vLLM, Anthropic, OpenAI-compatible endpoints). Prevents runaway generation when the model fails to produce a clean EOS token.
+
+- New `llm_max_tokens` field in `RagConfig` (default: 6144, range: 128–32768)
+- Passed as `max_tokens` in every `create()` call inside `OpenAILLM` and `LocalLLM`; Ollama uses `num_predict` separately and is unaffected
+- UI slider added to the LLM section of the RAG parameters panel (visible for `custom` and `litellm` backends only)
+
+### Fixed — Follow-up questions slider had no effect at zero
+
+Setting follow-up count to 0 still produced three suggested questions. The `follow_up_count` config value was stored but never enforced — the model always generated three from training bias.
+
+- `CustomRAG` now takes `follow_up_count` as a constructor argument
+- `_answer_post_processing` slices the model output to `[:self.follow_up_count]`, so 0 always returns an empty list regardless of what the model generates
+
+### Fixed — Source list appeared slow after streaming
+
+After the LLM finished streaming, sources were delayed because `onEnd` in `useMessaging.tsx` waited for a full `GET /api/v1/conversations/{id}` round-trip before calling `setThread`. Sources already arrive in the final stream chunk, so this GET was redundant for display. Removed `setThread` from the existing-conversation `onEnd` path; the GET still runs to keep `setMessages` in sync.
+
+### Added — Timestamps in backend and frontend logs
+
+- Backend: custom `log_config` passed to `uvicorn.run()` — access and error log lines now include millisecond timestamps matching the loguru format (`2026-04-26 13:00:33.149`)
+- Frontend: `start.sh` pipes `npm run dev` through `awk` to prepend second-level timestamps on every log line
+
+---
+
+## [Lancy v0.2.32] — 2026-04-26 · rlei-odes
+
+### Refactored — Extract ingestion pipeline to `ingestion.py`
+
+Moved the ingestion pipeline out of `main.py` into a new `backend/src/lancy/ingestion.py` module. No behaviour change.
+
+- `run_ingestion(kb, reset, db_dir)`, `ingest_uploaded_file(...)`, `cancel_indexing()`, `_index_status`, and `_cancel_requested` now live in `ingestion.py`
+- `main.py` shrunk from 1260 to 822 lines; `ingestion.py` is 470 lines
+- `ingest_uploaded_file` promoted from a closure to a proper function; `vs_proxy`, `kb_router`, and `db_dir` are now explicit parameters instead of captured variables
+- Orphaned imports (`Counter`, `VS_PATH`, `file_hash`, `load_chunks`, `build_vector_store`, `_collect_candidate_files`) removed from `main.py`
+
+### Fixed
+
+- Cancelling an in-progress ingestion caused a `ValueError: not enough values to unpack` — `run_ingestion` returned a 3-tuple on cancellation but callers unpack 4 values; fixed to `return 0, 0, 0, 0`
+
+---
 
 ### Added — Document Upload API
 

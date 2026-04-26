@@ -247,6 +247,8 @@ export const app = {
         fieldUtilityModelPlaceholder: "z.B. qwen2.5:3b (leer = Hauptmodell)",
         fieldNumCtx: "Kontextfenster (num_ctx)",
         fieldNumCtxHint: "KV-Cache-Grösse. 16384+ überfüllt VRAM bei <16GB GPUs → CPU-Fallback → 20–50× langsamer. Standard: 8192",
+        fieldMaxTokens: "Max. Ausgabe-Tokens",
+        fieldMaxTokensHint: "Maximale Tokens pro Antwort. Verhindert unkontrollierte Generierung bei vLLM / Custom-Endpunkten. Standard: 6144",
         fieldFollowUp: "Folgefragen",
         fieldFollowUpHint: "Anzahl Folgefragen (0 = deaktiviert)",
         fieldImageRetrieverTopK: "Bildergebnisse (top k)",

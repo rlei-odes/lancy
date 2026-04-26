@@ -304,9 +304,11 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
                         }
                     });
                 } else {
+                    // Sources already arrived in the final stream chunk — don't call setThread
+                    // here, which would delay source display by a full GET round-trip.
+                    // The GET still runs to keep setMessages (history state) in sync.
                     conversationService.get(activeConversationId).then((conversation) => {
                         setMessages(conversation?.messages || []);
-                        setThread(getMessageThread(conversation?.messages || [], newCursor));
                     });
                 }
             },
