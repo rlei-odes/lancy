@@ -374,6 +374,7 @@ async def ingest_uploaded_file(
 
         h = await loop.run_in_executor(None, lambda: file_hash(file_path))
 
+        log.info(f"Chunking '{extra_metadata.get('source_file', file_path.name)}' (document_id='{document_id}')")
         chunks = await loop.run_in_executor(
             None,
             lambda: load_chunks(
@@ -381,7 +382,7 @@ async def ingest_uploaded_file(
                 file_hashes={file_path: h},
                 pdf_ocr_enabled=kb.pdf_ocr_enabled,
                 max_chunk_tokens=getattr(kb, "max_chunk_tokens", 0),
-                write_images=False,
+                write_images=kb.image_indexing_enabled,
             ),
         )
 
@@ -393,6 +394,7 @@ async def ingest_uploaded_file(
             chunk.metadata.update(extra_metadata)
 
         text_chunks = [c for c in chunks if c.mime_type.startswith("text")]
+        image_chunks = [c for c in chunks if c.mime_type.startswith("image")]
 
         emb = build_embedding_model(
             kb.embedding_backend,
@@ -426,6 +428,47 @@ async def ingest_uploaded_file(
                 new_loop.close()
 
         await loop.run_in_executor(None, _sync_embed_insert)
+
+        if kb.image_indexing_enabled and image_chunks:
+            vs_type = getattr(kb, "vs_type", "chromadb") or "chromadb"
+            vs_conn = getattr(kb, "vs_connection_string", "") or ""
+            image_vs_path = Path(kb.vs_path + "_images") if vs_type == "chromadb" else None
+            image_vs_for_delete = make_vector_store(
+                vs_type=vs_type,
+                db_path=image_vs_path,
+                embedding_model_name=kb.image_embedding_model,
+                vs_connection_string=vs_conn,
+                table_name=f"rag_{kb.id.replace('-', '_')}_images",
+            )
+            deleted_images = await image_vs_for_delete.delete_chunks_by_document_id(document_id)
+            if deleted_images:
+                log.info(f"Removed {deleted_images} existing image chunk(s) for document_id='{document_id}'")
+            image_emb = build_embedding_model("qwen3vl", kb.image_embedding_model)
+
+            def _sync_embed_images():
+                new_loop = asyncio.new_event_loop()
+                try:
+                    image_vs = make_vector_store(
+                        vs_type=vs_type,
+                        db_path=image_vs_path,
+                        embedding_model_name=kb.image_embedding_model,
+                        vs_connection_string=vs_conn,
+                        table_name=f"rag_{kb.id.replace('-', '_')}_images",
+                    )
+                    return new_loop.run_until_complete(
+                        build_vector_store(
+                            chunks=image_chunks,
+                            embedding_model=image_emb,
+                            vector_store=image_vs,
+                            reset=False,
+                            existing_hashes=set(),
+                        )
+                    )
+                finally:
+                    new_loop.close()
+
+            await loop.run_in_executor(None, _sync_embed_images)
+            log.info(f"Image upload ingest complete: {len(image_chunks)} image chunk(s).")
 
         if text_chunks:
             try:

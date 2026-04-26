@@ -45,20 +45,28 @@ echo ""
 
 wait_for_idle() {
     local elapsed=0
+    local fail_streak=0
     while true; do
         local response
-        response=$(curl -sf --max-time 5 "$STATUS_URL" 2>/dev/null)
+        response=$(curl -sf --max-time 5 "$STATUS_URL" 2>/dev/null) || response=""
         if [ -z "$response" ]; then
-            echo ""
-            echo "ERROR: Lost connection to backend while waiting for indexing."
-            exit 1
+            fail_streak=$((fail_streak + 1))
+            if [ "$fail_streak" -ge 3 ]; then
+                echo ""
+                echo "ERROR: Lost connection to backend (3 consecutive failures)."
+                exit 1
+            fi
+            sleep 10
+            elapsed=$((elapsed + 10))
+            continue
         fi
+        fail_streak=0
         local indexing
         indexing=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('indexing', False))" 2>/dev/null)
         [ "$indexing" = "False" ] && break
         printf "."
-        sleep 3
-        elapsed=$((elapsed + 3))
+        sleep 10
+        elapsed=$((elapsed + 10))
         if [ "$elapsed" -ge "$WAIT_TIMEOUT" ]; then
             echo ""
             echo "ERROR: Timed out after ${WAIT_TIMEOUT}s waiting for indexing to finish."
@@ -95,10 +103,11 @@ for file in "${files[@]}"; do
 
     printf "  [%d/%d] %s ... " "$((success + failed + 1))" "$total" "$relpath"
 
+    metadata=$(python3 -c "import json,sys; print(json.dumps({'document_id': sys.argv[1], 'source_file': sys.argv[2]}))" "$doc_id" "$filename")
     http_code=$(curl -s -o /dev/null -w "%{http_code}" \
         -X POST "$ENDPOINT" \
-        -F "file=@${file};filename=${filename}" \
-        -F "metadata={\"document_id\": \"${doc_id}\", \"source_file\": \"${filename}\"}")
+        -F "file=@\"${file}\";filename=\"${filename}\"" \
+        -F "metadata=${metadata}")
 
     if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
         printf "uploaded, indexing"

@@ -63,12 +63,6 @@ Currently all authenticated users share a single password and have full access t
 
 ## Ingestion
 
-### Reindex Success Toast — UX Improvements
-
-- ~~**Split skip counts**~~ ✓ done — `files_skipped_store` and `files_skipped_batch` now separate fields in `ReindexResult`; toast shows e.g. "38 already up to date, 1 duplicate in batch"
-- ~~**Timestamp**~~ ✓ done — completion time appended to toast ("· 14:32")
-- **Auto-dismiss vs. persistent:** left as-is for now — current behaviour is acceptable.
-
 ### ~~Image Retrieval — Multimodal Pipeline~~ ✓ done
 
 ~~Investigation complete (see `UPSTREAM_SYNC_PLAN.md`). Decision taken.~~

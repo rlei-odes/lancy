@@ -553,7 +553,7 @@ export const RagConfigPanel: FunctionComponent = () => {
             } catch { /* ignore */ }
         };
         poll();
-        const id = setInterval(poll, 3000);
+        const id = setInterval(poll, 5000);
         return () => { active = false; clearInterval(id); };
     }, [t, fetchKbRegistry]);
 

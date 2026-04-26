@@ -163,20 +163,20 @@ def _load_system_prompt() -> str:
 json_schema = {
     "type": "object",
     "name": "AnswerSchema",
-    "description": "Strukturierte Antwort mit Quellenangaben und Follow-up-Fragen.",
+    "description": "Structured answer with source citations and follow-up questions.",
     "properties": {
         "answer": {
             "type": "string",
-            "description": "Die Antwort auf die Frage des Nutzers im Markdown-Format.",
+            "description": "The answer to the user's question in Markdown format.",
         },
         "used_sources_id": {
             "type": "array",
-            "description": "IDs der verwendeten Quellen. Keine erfundenen IDs.",
+            "description": "IDs of the sources used. No invented IDs.",
             "items": {"type": "string"},
         },
         "follow_up_questions": {
             "type": "array",
-            "description": "Mögliche Folgefragen basierend auf den Quellen. Nur wenn Quellen verwendet wurden.",
+            "description": "Possible follow-up questions based on the sources. Only when sources were used.",
             "items": {"type": "string"},
         },
     },
@@ -441,7 +441,7 @@ async def _inject_source_files(agent: Any, vs: VectorStore, base_prompt: str) ->
         file_list = "\n".join(f"- {f}" for f in indexed_files)
         agent.system_prompt = (
             base_prompt
-            + f"\n\nINDEXIERTE DATEIEN ({len(indexed_files)} Dateien):\n{file_list}"
+            + f"\n\nINDEXED FILES ({len(indexed_files)} files):\n{file_list}"
         )
 
 

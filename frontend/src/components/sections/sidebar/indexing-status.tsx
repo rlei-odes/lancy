@@ -60,7 +60,7 @@ export const IndexingStatus: FunctionComponent = () => {
                 }
             } catch { /* ignore */ }
             if (active) {
-                timer = setTimeout(poll, isIndexingRef.current ? 2000 : 10000);
+                timer = setTimeout(poll, isIndexingRef.current ? 5000 : 15000);
             }
         };
 
