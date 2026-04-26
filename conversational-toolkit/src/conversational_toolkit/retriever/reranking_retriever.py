@@ -34,6 +34,7 @@ class RerankingRetriever(Retriever[ChunkMatch]):
         super().__init__(top_k)
         self.retriever = retriever
         self.llm = llm
+        self.phase_callback: Any = None
 
     async def retrieve(self, query: str) -> list[ChunkMatch]:
         """Fetch candidates from the base retriever and rerank them with the LLM."""
@@ -41,6 +42,8 @@ class RerankingRetriever(Retriever[ChunkMatch]):
         if not candidates:
             return []
 
+        if self.phase_callback:
+            self.phase_callback("reranking")
         ranked_indices = await self._llm_rerank(query, candidates)
         n = len(ranked_indices)
         results: list[ChunkMatch] = []

@@ -17,6 +17,7 @@ interface IndexStatus {
     kb_name: string;
     finished_at: string;
     last_result?: { reset: boolean } | null;
+    queued: number;
 }
 
 export const IndexingStatus: FunctionComponent = () => {
@@ -119,6 +120,9 @@ export const IndexingStatus: FunctionComponent = () => {
                                 ? (status.embed_total_batches > 0 ? `Batch ${status.embed_batch}/${status.embed_total_batches}` : "…")
                                 : `${status.file_index}/${status.total_files} · ${status.chunks_so_far} Chunks`
                             }
+                            {status.queued > 0 && (
+                                <span className="ml-1.5 opacity-60">+{status.queued} queued</span>
+                            )}
                         </span>
                     </div>
                 </div>

@@ -95,6 +95,7 @@ class IndexStatus(BaseModel):
     kb_name: str = ""  # name of the KB being indexed
     finished_at: str = ""  # ISO timestamp set when indexing completes
     last_result: ReindexResult | None = None  # result of the last completed reindex
+    queued: int = 0  # files waiting in the upload queue
 
 
 # ─── Retrieval probe ──────────────────────────────────────────────────────────

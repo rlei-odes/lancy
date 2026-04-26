@@ -36,8 +36,14 @@ _index_status: dict = {
     "kb_name": "",
     "finished_at": "",
     "last_result": None,
+    "queued": 0,
 }
 _cancel_requested: bool = False
+
+# ---------------------------------------------------------------------------
+# Upload queue — serialises single-file uploads so they never run concurrently
+# ---------------------------------------------------------------------------
+_upload_queue: asyncio.Queue = asyncio.Queue()
 
 
 class _IndexingCancelled(Exception):
@@ -342,18 +348,13 @@ async def ingest_uploaded_file(
     """Ingest a single uploaded file into the active KB, then delete the temp file.
 
     Replaces existing chunks for the same document_id before inserting new ones.
-    Called as a background task from POST /api/v1/kb/{id}/documents.
+    Called by the upload worker — never call directly from request handlers.
     """
-    if _index_status.get("indexing"):
-        log.warning("Upload ignored — indexing already in progress")
-        file_path.unlink(missing_ok=True)
-        return
-
     document_id: str = extra_metadata["document_id"]
     _index_status.update({
         "indexing": True,
         "phase": "loading",
-        "current_file": file_path.name,
+        "current_file": extra_metadata.get("source_file", file_path.name),
         "file_index": 0,
         "total_files": 1,
         "chunks_so_far": 0,
@@ -468,3 +469,35 @@ async def ingest_uploaded_file(
     finally:
         _index_status["indexing"] = False
         file_path.unlink(missing_ok=True)
+
+
+async def enqueue_upload(
+    file_path: Path,
+    kb: KBInfo,
+    extra_metadata: dict,
+    *,
+    vs_proxy: Any,
+    kb_router: Any,
+    db_dir: Path,
+) -> None:
+    """Queue a file for ingestion. Returns immediately; processing is serialised."""
+    _index_status["queued"] = _upload_queue.qsize() + 1
+    await _upload_queue.put((file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir))
+
+
+async def upload_worker() -> None:
+    """Drain the upload queue one file at a time. Start once at app startup."""
+    while True:
+        file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir = await _upload_queue.get()
+        _index_status["queued"] = _upload_queue.qsize()
+        try:
+            await ingest_uploaded_file(
+                file_path, kb, extra_metadata,
+                vs_proxy=vs_proxy,
+                kb_router=kb_router,
+                db_dir=db_dir,
+            )
+        except Exception:
+            pass  # already logged inside ingest_uploaded_file
+        finally:
+            _upload_queue.task_done()

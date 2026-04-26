@@ -31,6 +31,26 @@ After the LLM finished streaming, sources were delayed because `onEnd` in `useMe
 - Backend: custom `log_config` passed to `uvicorn.run()` — access and error log lines now include millisecond timestamps matching the loguru format (`2026-04-26 13:00:33.149`)
 - Frontend: `start.sh` pipes `npm run dev` through `awk` to prepend second-level timestamps on every log line
 
+### Added — Granular RAG query status phases
+
+The loading indicator now progresses through up to four named phases instead of two: `preprocessing` (query rewriting / expansion / HyDE, when active), `retrieving`, `reranking` (when enabled), and `generating`. Implemented via an optional `phase_callback` passed through `RAG.answer_stream()` and `RerankingRetriever`.
+
+### Improved — `upload-docs.sh` batch upload script
+
+- Reachability check before starting; clear error if backend is unreachable
+- Upload-then-wait ordering so results appear immediately rather than after silent pre-upload pause
+- Dot progress during indexing wait, with configurable timeout and connection-loss detection
+- Relative paths shown for files in subdirectories
+- Recursive scan up to 5 levels deep (was top-level only)
+
+### Fixed — Indexing status showed temp filename during upload ingestion
+
+The live indexing modal showed the backend temp file name (`tmpXXXX.pdf`) instead of the original document name. `current_file` in `_index_status` now reads from `source_file` in the upload metadata.
+
+### Fixed — LLM error message was Ollama-specific
+
+"Cannot reach Ollama. Is it running? Run: ollama serve" replaced with the backend-neutral "Cannot reach the LLM. Is it running?"
+
 ---
 
 ## [Lancy v0.2.32] — 2026-04-26 · rlei-odes

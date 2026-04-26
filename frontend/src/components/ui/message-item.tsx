@@ -85,7 +85,9 @@ export const MessageItem: FunctionComponent<MessageItemProps> = (props: MessageI
             {isLoading ? (
                 <div className="flex flex-row pl-9 text-foreground items-center gap-2">
                     {content}
+                    {queryPhase === "preprocessing" && <span className="text-[11px] text-foreground/50">{t("rag.queryPhasePreprocessing")}</span>}
                     {queryPhase === "retrieving" && <span className="text-[11px] text-foreground/50">{t("rag.queryPhaseRetrieving")}</span>}
+                    {queryPhase === "reranking" && <span className="text-[11px] text-foreground/50">{t("rag.queryPhaseReranking")}</span>}
                     {queryPhase === "generating" && <span className="text-[11px] text-foreground/50">{t("rag.queryPhaseGenerating")}</span>}
                     <div className="rounded-full w-3 h-3 bg-foreground blink"></div>
                 </div>

@@ -189,6 +189,7 @@ Only `document_id` is required for versioning. All other fields are optional and
 - Ingestion pipeline: when a file carries a `document_id` that already exists in the store, delete the old chunks before adding the new ones
 - `ReindexResult` extended with `files_updated` count (replacements) alongside existing skip counts
 - Reindex toast updated: N added / N updated / N skipped
+- Optional optimisation: if the incoming file hash matches the hash already stored in the existing chunks' metadata, and no metadata fields differ, the delete+reindex cycle can be skipped entirely — treating it as a no-op rather than an update
 
 **Stale version protection:**
 
@@ -245,6 +246,33 @@ Three configurable strategies, selectable per session or preset:
 
 ---
 
+### Ingestion Pipeline — File-by-File Processing for Crash Recovery
+
+**Current architecture:** `run_ingestion` processes all files in two sequential sweeps — Docling parses every file first (phase 1), then all resulting chunks are embedded and written to the vector store (phase 2). A crash mid-embedding loses all Docling work for the remaining files; they must be re-parsed on the next run.
+
+**The fix:** process one file at a time — Docling → embed → store → next file. A crash then costs at most one file; everything already committed is safe and will be skipped by the hash-based dedup on the next run.
+
+**Progress indication:** the current two-phase model at least makes phase boundaries clear (loading / embedding). The file-by-file model must preserve meaningful progress visibility: current file name, file N of M, chunks so far, and ideally an overall percentage. The phase label should reflect what is happening to the *current* file (parsing / embedding), not the batch as a whole.
+
+**Why deferred:** meaningful refactor of `run_ingestion` and `load_chunks`. The dedup and image indexing paths also need updating. Low urgency while corpora are small enough that a full re-run is tolerable.
+
+The main things to untangle:
+
+1. Embedding model initialization — currently build_embedding_model() is called once for the whole batch. In a per-file loop you'd still want to do this once before the loop, not once per file. Easy to extract.
+
+2. build_vector_store() already accepts any chunk list — you can call it with one file's chunks at a time. It already works incrementally; we're just currently handing it everything at once. No API change needed.
+
+3. The pre-pass stays as-is — still useful to run upfront to identify which files to skip via hash dedup. It just no longer loads chunks.
+
+4. Image chunks — currently handled as a separate sweep after all text. Per-file, you'd store each file's image chunks immediately after its text chunks. The image vector store just needs to be initialized once before the loop too.
+
+5. Progress reporting — actually gets simpler. Instead of "loading phase / embedding phase" across the whole batch, each file has its own mini-lifecycle. The status can say "parsing file 3/34" then "embedding file 3/34".
+
+So it's really: pull model and store initialization out of the batch logic, wrap the chunk-embed-store steps in a per-file loop, update the progress callbacks. Probably 1-2 hours of careful work with good test coverage.
+
+
+---
+
 ### Chunking Strategy Investigation — Lessons from Large-Scale Ingestion
 
 **Trigger:** Practitioner account of ingesting 20k documents / 600k pages. Key insight: not all pages need to be chunked — the pipeline must first analyze each page and chunk only relevant content. Images and tables require separate handling, not the same path as prose text.
@@ -288,10 +316,6 @@ This is a heading with an image placeholder — no prose, no facts, nothing an e
 
 
 ## UI & Settings
-
-### Analyze and Improve the Status Message of the Chatbot
-Currently, when asking a question in the main chat window, the status stays on **Retrieving documents...** for a long time. This while we see that the actual retrieving is very fast, the time spent is more the llm call at the end. Investigate and find ways to more accurately display what is being done and what stage we're at. If things are done in parallel, that could be displayed too.
-
 
 ### Align design of left and right sidebar, main chat page
 **All three look nice now** but they are not really aligned with each other. Not necessary, but is an inconsitency.

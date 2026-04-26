@@ -58,26 +58,39 @@ Leave `NEXT_PUBLIC_API_BASE` empty. Restart the frontend after changing.
 ./start-backend.sh
 ```
 
-See `scripts/start-backend.sh` below. Mirrors the existing `start.sh` but omits the
-frontend and skips the Ollama check (vLLM handles LLM inference on the Spark).
+**Important:** `rag_config.json` is gitignored and will not be present on a fresh clone.
+Without it the backend defaults to Ollama + `mistral-nemo:12b`. After starting, open the
+frontend, go to **RAG Parameters**, and configure the LLM backend (e.g. `custom`,
+`http://localhost:8000/v1`, your model name). The config is saved automatically.
 
 ### Step 5 — Ingest documents via the upload endpoint
 
-With the backend running on the Spark, push documents from the local machine:
+The file ingestion endpoint is a standard HTTP multipart upload — use any tool or
+programming language that fits your workflow (Python `requests`, Postman, a custom
+pipeline, etc.). The script below is a simple baseline example.
+
+Use the batch upload script to push a local directory of documents to the Spark:
 
 ```bash
-curl -X POST http://192.168.1.141:8080/api/v1/kb/default/documents \
-  -F "file=@/path/to/document.pdf" \
-  -F 'metadata={"document_id": "my-doc-001", "title": "My Document"}'
+./scripts/upload-docs.sh http://192.168.1.141:8080 <kb-id> /path/to/your/docs/
 ```
 
-Poll ingestion progress:
+Supported formats: `.pdf` `.md` `.txt` `.png` `.jpg` `.jpeg` `.gif` `.tiff` `.bmp` `.webp`
+
+The script uploads files one by one and reports success/failure per file. Ingestion runs
+in the background on the Spark after each upload — monitor progress in the UI or via:
 
 ```bash
 curl http://192.168.1.141:8080/api/v1/rag/reindex-status
 ```
 
-See `docs/API_Endpoints.md` for the full metadata field reference.
+To upload a single file manually:
+
+```bash
+curl -X POST http://192.168.1.141:8080/api/v1/kb/default/documents \
+  -F "file=@/path/to/document.pdf" \
+  -F 'metadata={"document_id": "my-doc-001", "source_file": "document.pdf"}'
+```
 
 ### Step 6 — (Optional) Set up a systemd user service for auto-start
 
@@ -107,6 +120,7 @@ The scripts live at `scripts/` in the repo root and are executable.
 | [`scripts/stop-backend.sh`](../../scripts/stop-backend.sh) | Stop the backend via PID file, fall back to port kill |
 | [`scripts/start-frontend.sh`](../../scripts/start-frontend.sh) | Start the frontend only (local machine, Spark backend) |
 | [`scripts/stop-frontend.sh`](../../scripts/stop-frontend.sh) | Stop the frontend via PID file, fall back to port kill |
+| [`scripts/upload-docs.sh`](../../scripts/upload-docs.sh) | Batch upload a local directory of documents to the Spark backend |
 
 ---
 

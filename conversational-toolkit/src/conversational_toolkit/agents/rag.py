@@ -5,11 +5,12 @@ Retrieval-Augmented Generation (RAG) agent.
 """
 
 import asyncio
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, Callable
 
 from conversational_toolkit.agents.base import Agent, AgentAnswer, QueryWithContext
 from conversational_toolkit.llms.base import LLM, LLMMessage, Roles, MessageContent
 from conversational_toolkit.retriever.base import Retriever
+from conversational_toolkit.retriever.reranking_retriever import RerankingRetriever
 from conversational_toolkit.utils.retriever import (
     make_query_standalone,
     query_expansion,
@@ -55,9 +56,17 @@ class RAG(Agent):
         self.number_query_expansion = number_query_expansion
         self.enable_hyde = enable_hyde
 
-    async def answer_stream(self, query_with_context: QueryWithContext) -> AsyncGenerator[AgentAnswer, None]:  # noqa: PLR0912
+    async def answer_stream(  # noqa: PLR0912
+        self,
+        query_with_context: QueryWithContext,
+        phase_callback: Callable[[str], None] | None = None,
+    ) -> AsyncGenerator[AgentAnswer, None]:
         query = query_with_context.query
         history = query_with_context.history
+
+        has_preprocessing = len(history) > 0 or self.number_query_expansion > 0 or self.enable_hyde
+        if has_preprocessing and phase_callback:
+            phase_callback("preprocessing")
 
         if len(history) > 0:
             query = await make_query_standalone(self.utility_llm, history, query)
@@ -71,6 +80,12 @@ class RAG(Agent):
         if self.enable_hyde:
             hyde_expansion_message = await hyde_expansion(query, self.utility_llm)
             queries.append(hyde_expansion_message)
+
+        if phase_callback:
+            phase_callback("retrieving")
+        for retriever in self.retrievers:
+            if isinstance(retriever, RerankingRetriever):
+                retriever.phase_callback = phase_callback
 
         async def _retrieve_one(retriever) -> list[ChunkRecord]:
             results = await asyncio.gather(*[retriever.retrieve(q) for q in queries])

@@ -92,8 +92,9 @@ from lancy.feature0_baseline_rag import (
 from lancy.ingestion import (
     _index_status,
     cancel_indexing,
-    ingest_uploaded_file,
+    enqueue_upload,
     run_ingestion,
+    upload_worker,
 )
 from lancy.kb_router import KBInfo, create_kb_router
 from lancy.kb_stats import write_kb_stats
@@ -203,9 +204,13 @@ class CustomRAG(RAG):
 
     async def answer_stream(self, query_with_context):
         _query_status.update({"active": True, "phase": "retrieving"})
+
+        def update_phase(phase: str) -> None:
+            _query_status["phase"] = phase
+
         try:
             first = True
-            async for chunk in super().answer_stream(query_with_context):
+            async for chunk in super().answer_stream(query_with_context, phase_callback=update_phase):
                 if first:
                     _query_status["phase"] = "generating"
                     first = False
@@ -217,7 +222,7 @@ class CustomRAG(RAG):
             if "not found" in error_text and "404" in error_text:
                 msg = f"LLM model not found. Run: ollama pull {self.llm.model}"
             elif "connection" in error_text.lower() or "refused" in error_text.lower():
-                msg = "Cannot reach Ollama. Is it running? Run: ollama serve"
+                msg = "Cannot reach the LLM. Is it running?"
             else:
                 msg = f"LLM error: {error_text}"
             log.error(f"LLM stream error: {exc}")
@@ -581,7 +586,7 @@ def build_server():
         log.info(f"Agent ready for KB '{kb.name}'")
 
     async def _upload_cb(file_path: Path, kb: KBInfo, extra_metadata: dict) -> None:
-        await ingest_uploaded_file(
+        await enqueue_upload(
             file_path, kb, extra_metadata,
             vs_proxy=vs_proxy, kb_router=kb_router, db_dir=_DB_DIR,
         )
@@ -596,6 +601,7 @@ def build_server():
 
     # ── Startup: load stats if VS is already populated ────────────────────
     async def _startup() -> None:
+        asyncio.create_task(upload_worker())  # noqa: RUF006
         configure_loguru()
         vs = object.__getattribute__(vs_proxy, "_obj")
         agent = object.__getattribute__(agent_proxy, "_obj")
