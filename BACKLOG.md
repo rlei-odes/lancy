@@ -392,6 +392,14 @@ Especially with Neighbour Chunk Expansion, we have many variable that control ho
 
 ---
 
+### Disable RAG Config Panel During KB Switch
+
+While a KB switch is in progress (`POST /api/v1/kb/{id}/activate`), the RAG config sidebar remains fully interactive. A user who saves config changes mid-switch could write state that gets immediately overwritten by the incoming KB config, or cause a race between the config save and the agent rebuild triggered by the switch.
+
+**Fix:** disable (or visually lock) the config panel while a switch is pending — show a brief loading state on the KB selector and prevent saves until the activate response returns.
+
+---
+
 ### Preset UI — End-to-End Review and UX Improvement
 
 The preset save/load flow has grown organically and needs a thorough walkthrough. Known issues include `image_retrieval_enabled` being saved to the wrong config layer (fixed), but other fields may have similar misrouting. The UI interaction (save, load, "Standard" reset, switching KBs) is also unintuitive in places.

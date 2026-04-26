@@ -165,7 +165,7 @@ export const MessageItem: FunctionComponent<MessageItemProps> = (props: MessageI
 
 // eslint-disable-next-line react/display-name
 const MessageContent = memo(({ content, sources }: { content: string; sources?: Message["sources"] }) => (
-    <div className="pl-9 text-foreground text-justify">
+    <div className="pl-9 text-foreground">
         <Markdown content={content} sources={sources} />
     </div>
 ));

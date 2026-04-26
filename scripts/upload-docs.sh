@@ -46,16 +46,18 @@ echo ""
 wait_for_idle() {
     local elapsed=0
     local fail_streak=0
+    local max_fail_streak=60  # tolerate up to ~10 min of backend unavailability (e.g. model load)
     while true; do
         local response
-        response=$(curl -sf --max-time 5 "$STATUS_URL" 2>/dev/null) || response=""
+        response=$(curl -sf --max-time 10 "$STATUS_URL" 2>/dev/null) || response=""
         if [ -z "$response" ]; then
             fail_streak=$((fail_streak + 1))
-            if [ "$fail_streak" -ge 3 ]; then
+            if [ "$fail_streak" -ge "$max_fail_streak" ]; then
                 echo ""
-                echo "ERROR: Lost connection to backend (3 consecutive failures)."
+                echo "ERROR: Lost connection to backend (${max_fail_streak} consecutive failures)."
                 exit 1
             fi
+            printf "~"  # distinguish unreachable backend from active indexing
             sleep 10
             elapsed=$((elapsed + 10))
             continue

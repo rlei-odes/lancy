@@ -380,6 +380,7 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
             temperature=cfg.llm_temperature,
             ollama_host=ollama_host,
             num_ctx=cfg.num_ctx,
+            max_tokens=512 if cfg.llm_backend != "ollama" else None,
             custom_base_url=getattr(cfg, "custom_base_url", ""),
             custom_api_key=getattr(cfg, "custom_api_key", ""),
         )
