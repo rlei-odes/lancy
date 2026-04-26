@@ -281,6 +281,7 @@ export const app = {
         indexingDoneIncremental: "Incremental indexing{{kb}} completed at {{time}}",
         indexingDoneFull: "Full re-indexing{{kb}} completed at {{time}}",
         indexingDone: "Indexing{{kb}} completed at {{time}}",
+        indexingCancelling: "Cancelling…",
         indexingStopBtn: "Stop",
         indexingStopTitle: "Cancel indexing?",
         indexingStopDesc: "The running indexing job will be stopped. Already indexed chunks are preserved.",

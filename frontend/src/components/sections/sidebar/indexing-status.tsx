@@ -24,12 +24,14 @@ export const IndexingStatus: FunctionComponent = () => {
     const [status, setStatus] = useState<IndexStatus | null>(null);
     const [showDone, setShowDone] = useState(false);
     const [confirmStop, setConfirmStop] = useState(false);
+    const [cancelling, setCancelling] = useState(false);
     const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const prevFinishedAt = useRef<string>("");
 
     const handleStop = async () => {
         await fetch(`${API_BASE}/api/v1/rag/reindex-cancel`, { method: "POST", credentials: "include" });
         setConfirmStop(false);
+        setCancelling(true);
     };
 
     useEffect(() => {
@@ -45,6 +47,7 @@ export const IndexingStatus: FunctionComponent = () => {
                     if (!active) return;
                     isIndexingRef.current = data.indexing;
                     setStatus(data);
+                    if (!data.indexing) setCancelling(false);
 
                     // When indexing just finished (finished_at changed), show done banner
                     if (!data.indexing && data.finished_at && data.finished_at !== prevFinishedAt.current) {
@@ -81,19 +84,23 @@ export const IndexingStatus: FunctionComponent = () => {
                     <div className="flex items-center gap-1.5 font-medium">
                         <Loader2 className="h-3 w-3 animate-spin shrink-0" />
                         <span className="flex-1 truncate">
-                            {isEmbedding ? t("rag.indexingPhaseEmbedding") : t("rag.indexingPhaseLoading")}
-                            {status.kb_name && (
+                            {cancelling
+                                ? t("rag.indexingCancelling")
+                                : isEmbedding ? t("rag.indexingPhaseEmbedding") : t("rag.indexingPhaseLoading")}
+                            {!cancelling && status.kb_name && (
                                 <span className="opacity-60 font-normal"> · {status.kb_name}</span>
                             )}
                         </span>
-                        <button
-                            onClick={() => setConfirmStop(true)}
-                            className="shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] bg-red-900/60 hover:bg-red-800/80 text-red-300 transition-colors"
-                            title={t("rag.indexingStopTitle")}
-                        >
-                            <Square className="h-2.5 w-2.5" />
-                            {t("rag.indexingStopBtn")}
-                        </button>
+                        {!cancelling && (
+                            <button
+                                onClick={() => setConfirmStop(true)}
+                                className="shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] bg-red-900/60 hover:bg-red-800/80 text-red-300 transition-colors"
+                                title={t("rag.indexingStopTitle")}
+                            >
+                                <Square className="h-2.5 w-2.5" />
+                                {t("rag.indexingStopBtn")}
+                            </button>
+                        )}
                     </div>
                     {!isEmbedding && status.current_file && (
                         <div className="truncate opacity-70" title={status.current_file}>

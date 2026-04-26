@@ -276,6 +276,7 @@ export const app = {
         indexingDoneIncremental: "Indicizzazione incrementale{{kb}} completata alle {{time}}",
         indexingDoneFull: "Reindicizzazione completa{{kb}} completata alle {{time}}",
         indexingDone: "Indicizzazione{{kb}} completata alle {{time}}",
+        indexingCancelling: "Annullamento…",
         indexingStopBtn: "Ferma",
         indexingStopTitle: "Annullare l'indicizzazione?",
         indexingStopDesc: "Il processo di indicizzazione verrà fermato. I chunk già indicizzati vengono conservati.",

@@ -4,7 +4,6 @@ FastAPI server entry point — Lancy
 Environment variables:
     BACKEND           — LLM backend: 'ollama' (default) | 'openai' | 'anthropic'
     MODEL             — Override LLM model name
-    RESET_VS          — '1' to rebuild vector store from scratch on startup
     OPENAI_API_KEY    — Required when BACKEND=openai or EMBEDDING_BACKEND=openai
     ANTHROPIC_API_KEY — Required when BACKEND=anthropic
     ALLOW_ORIGINS     — Comma-separated CORS origins, e.g. https://your-domain.example.com
@@ -116,7 +115,6 @@ log = logging.getLogger("uvicorn")
 # Environment
 # ---------------------------------------------------------------------------
 BACKEND = os.getenv("BACKEND", "ollama")
-RESET_VS = os.getenv("RESET_VS", "0") == "1"
 
 # Comma-separated list of allowed CORS origins.
 # Example: ALLOW_ORIGINS=https://rag.example.com,https://demo.example.com
@@ -596,16 +594,13 @@ def build_server():
     )
     app.include_router(kb_router)
 
-    # ── Startup: auto-ingest active KB if VS is empty ─────────────────────
+    # ── Startup: load stats if VS is already populated ────────────────────
     async def _startup() -> None:
         configure_loguru()
         vs = object.__getattribute__(vs_proxy, "_obj")
         agent = object.__getattribute__(agent_proxy, "_obj")
         count = await vs.count()
-        if not RESET_VS and count > 0:
-            log.info(
-                f"Vector store already populated ({count} chunks) — skipping ingestion."
-            )
+        if count > 0:
             try:
                 indexed_files = await vs.get_source_files()
                 n_files = len(indexed_files)
@@ -615,25 +610,9 @@ def build_server():
             kb_router.update_stats(active_kb.id, count, n_files)
             base_prompt = session_cfg.system_prompt.strip() or _load_system_prompt()
             await _inject_source_files(agent, vs, base_prompt)
-            return
-        msg = (
-            "RESET_VS=1 — rebuilding."
-            if RESET_VS
-            else "Vector store empty — starting background ingestion."
-        )
-        log.info(msg)
-
-        async def _bg_ingest() -> None:
-            chunks_n, files_n, skipped_store_n, skipped_batch_n = await run_ingestion(
-                active_kb, RESET_VS, db_dir=_DB_DIR
-            )
-            kb_router.update_stats(active_kb.id, chunks_n, files_n)
-            log.info(
-                f"Auto-ingestion complete: {chunks_n} chunks from {files_n} files ({skipped_store_n} already in store, {skipped_batch_n} duplicate in batch)."
-            )
-
-        asyncio.create_task(_bg_ingest())  # noqa: RUF006
-        log.info("Auto-ingestion running in background — HTTP server is ready.")
+            log.info(f"Vector store loaded: {count} chunks from {n_files} files.")
+        else:
+            log.info("Vector store empty — use the UI to index a knowledge base.")
 
     app.add_event_handler("startup", _startup)
 

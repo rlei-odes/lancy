@@ -105,6 +105,8 @@ The scripts live at `scripts/` in the repo root and are executable.
 | [`scripts/spark-install.sh`](../../scripts/spark-install.sh) | One-time setup: system packages, venv, pip install |
 | [`scripts/start-backend.sh`](../../scripts/start-backend.sh) | Start the backend in the background, log to `logs/backend.log` |
 | [`scripts/stop-backend.sh`](../../scripts/stop-backend.sh) | Stop the backend via PID file, fall back to port kill |
+| [`scripts/start-frontend.sh`](../../scripts/start-frontend.sh) | Start the frontend only (local machine, Spark backend) |
+| [`scripts/stop-frontend.sh`](../../scripts/stop-frontend.sh) | Stop the frontend via PID file, fall back to port kill |
 
 ---
 
