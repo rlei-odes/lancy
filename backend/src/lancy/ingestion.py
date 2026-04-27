@@ -292,7 +292,7 @@ async def run_ingestion(
                 on_progress=_on_progress,
                 pdf_ocr_enabled=kb.pdf_ocr_enabled,
                 max_chunk_tokens=getattr(kb, "max_chunk_tokens", 0),
-                write_images=kb.image_indexing_enabled,
+                write_images=kb.image_indexing_enabled or kb.image_captioning_enabled,
             ),
         )
         if not chunks:
@@ -494,7 +494,7 @@ async def ingest_uploaded_file(
                 file_hashes={file_path: h},
                 pdf_ocr_enabled=kb.pdf_ocr_enabled,
                 max_chunk_tokens=getattr(kb, "max_chunk_tokens", 0),
-                write_images=kb.image_indexing_enabled,
+                write_images=kb.image_indexing_enabled or kb.image_captioning_enabled,
             ),
         )
 

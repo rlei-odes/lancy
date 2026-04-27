@@ -231,14 +231,14 @@ def create_rag_router(
         return _load_config()
 
     @router.post("/config", response_model=RagConfig)
-    async def save_config(cfg: RagConfig) -> RagConfig:
+    async def save_config(cfg: RagConfig, background_tasks: BackgroundTasks) -> RagConfig:
         _save_config(cfg)
         log.info(
             f"Session config saved: llm={cfg.llm_backend}/{cfg.llm_model} "
             f"top_k={cfg.retriever_top_k} temp={cfg.llm_temperature}"
         )
         if agent_rebuild_callback is not None:
-            agent_rebuild_callback(cfg)
+            background_tasks.add_task(agent_rebuild_callback, cfg)
         return cfg
 
     @router.get("/store-info", response_model=StoreInfo)
