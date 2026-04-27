@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+_PROMPTS_DIR = Path(__file__).parent.parent.parent.parent / "prompts"
+
 from conversational_toolkit.chunking.base import Chunk
 from conversational_toolkit.llms.base import LLM, LLMMessage, MessageContent, Roles
 from lancy.feature0_baseline_rag import (
@@ -51,16 +53,14 @@ _cancel_requested: bool = False
 _upload_queue: asyncio.Queue = asyncio.Queue()
 
 
-_CAPTIONING_PROMPT = (
-    "You are captioning an image for a document retrieval system.\n\n"
-    "1. Extract all visible text exactly as it appears (labels, numbers, headings, table cells, legends). "
-    "If there is no visible text, write \"none\".\n"
-    "2. In 2-3 sentences, describe what the image shows. Only describe what is visually present — "
-    "no interpretation, no speculation, no background knowledge.\n\n"
-    "Respond in this exact format:\n"
-    "VISIBLE TEXT: <extracted text or \"none\">\n"
-    "DESCRIPTION: <visual description>"
-)
+def _load_captioning_prompt() -> str:
+    for name in ("image_captioning_prompt.custom.md", "image_captioning_prompt.default.md"):
+        p = _PROMPTS_DIR / name
+        if p.exists():
+            content = p.read_text().strip()
+            if content:
+                return content
+    raise FileNotFoundError("No image captioning prompt found in prompts/")
 
 
 async def _caption_image_chunks(
@@ -89,17 +89,30 @@ async def _caption_image_chunks(
         )
 
     _index_status["caption_total"] = n_images
+    prompt = _load_captioning_prompt()
 
     async def _call_llm(image_chunk: Chunk) -> str:
         user_msg = LLMMessage(
             role=Roles.USER,
             content=[
-                MessageContent(type="text", text=_CAPTIONING_PROMPT),
+                MessageContent(type="text", text=prompt),
                 MessageContent(type="image", image_url=image_chunk.content),
             ],
         )
         response = await llm.generate([user_msg])
         return "".join(mc.text or "" for mc in response.content).strip()
+
+    def _useful(caption: str) -> bool:
+        if "SKIP_RESULT" in caption:
+            return False
+        # Require at least some visible text — descriptions of purely visual
+        # images (logos, illustrations) almost never contain extractable text.
+        visible = ""
+        for line in caption.splitlines():
+            if line.upper().startswith("VISIBLE TEXT:"):
+                visible = line.split(":", 1)[-1].strip()
+                break
+        return visible.lower() not in ("", "none")
 
     for k in range(n_to_replace):
         _index_status["caption_index"] = k + 1
@@ -108,11 +121,17 @@ async def _caption_image_chunks(
         log.info(f"Captioning image {k + 1}/{n_images} from '{source}' …")
         try:
             caption = await _call_llm(image_chunks[k])
-            text_chunks[chunk_idx].content = text_chunks[chunk_idx].content.replace(
-                "<!-- image -->",
-                f"<!-- image content -->\n{caption}\n<!-- end image content -->",
-                1,
-            )
+            if not _useful(caption):
+                log.info(f"Skipping image {k + 1} — no retrieval value (SKIP_RESULT or no visible text)")
+                text_chunks[chunk_idx].content = text_chunks[chunk_idx].content.replace(
+                    "<!-- image -->", "", 1
+                )
+            else:
+                text_chunks[chunk_idx].content = text_chunks[chunk_idx].content.replace(
+                    "<!-- image -->",
+                    f"<!-- image content -->\n{caption}\n<!-- end image content -->",
+                    1,
+                )
         except Exception as exc:
             log.error(f"Captioning failed for image {k + 1} from '{source}': {exc}")
 
@@ -123,6 +142,9 @@ async def _caption_image_chunks(
         log.info(f"Captioning standalone image {k + 1}/{n_images} from '{source}' …")
         try:
             caption = await _call_llm(image_chunks[k])
+            if not _useful(caption):
+                log.info(f"Skipping standalone image {k + 1} — no retrieval value (SKIP_RESULT or no visible text)")
+                continue
             text_chunks.append(
                 Chunk(
                     title=image_chunks[k].title,

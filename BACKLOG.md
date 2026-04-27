@@ -88,7 +88,7 @@ Implemented. See `IMAGE_RETRIEVAL_DESIGN.md` for the full design and implementat
 - Manual test: pgvector KB with image toggles on — index a PDF, query, confirm images surface
 
 ### Image Retrieval — Source Citations with Image Preview
-
+Test Learning: this seems to be partially working already.
 **Goal:** display retrieved images as source citations in the chat, alongside existing text chunk citations.
 
 **Why:** currently images are injected into LLM context but the source panel only shows text chunks. Users have no way to see which images the answer drew on or verify them.
@@ -106,10 +106,6 @@ Two separate features both deal with "images in PDFs" but solve different proble
 - **Image retrieval** (`image_indexing_enabled`) — extracts *embedded figures, charts, and diagrams* from PDFs as images and stores them as visual embeddings in `vs_image`. Requires Qwen3VL + GPU. Useful for technical documents with data visualisations.
 
 They are complementary, not alternatives — it is reasonable to have both on. A scanned annual report benefits from OCR (to read the text pages) and image indexing (to retrieve the charts). Needs a short guidance note in the UI or documentation to help users understand when to enable each.
-
-### Image Retrieval — Optional Caption Pipeline (low priority)
-
-`IMAGE_MODE=caption` alternative: at ingest, a lightweight VL model (e.g. `minicpm-v` via Ollama) generates a text description of each image; caption stored as a text chunk in `vs_text`. Works with any text-only LLM, no GPU required for retrieval. Useful when the corpus has important image content but large hardware is not available.
 
 ### Image Retrieval — Automatic Multimodal LLM Validation (optional)
 

@@ -45,6 +45,7 @@ node_modules/
 
 # Custom prompts (may contain internal/confidential instructions)
 prompts/system_prompt.custom.md
+prompts/image_captioning_prompt.custom.md
 
 # Customer data (never commit)
 data */
