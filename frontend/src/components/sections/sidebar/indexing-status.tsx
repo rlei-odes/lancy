@@ -14,6 +14,8 @@ interface IndexStatus {
     chunks_so_far: number;
     embed_batch: number;
     embed_total_batches: number;
+    caption_index: number;
+    caption_total: number;
     kb_name: string;
     finished_at: string;
     last_result?: { reset: boolean } | null;
@@ -75,9 +77,20 @@ export const IndexingStatus: FunctionComponent = () => {
     // Show progress banner while indexing
     if (status?.indexing) {
         const isEmbedding = status.phase === "embedding";
+        const isCaptioning = status.phase === "captioning";
         const pct = isEmbedding
             ? (status.embed_total_batches > 0 ? Math.round((status.embed_batch / status.embed_total_batches) * 100) : 0)
-            : (status.total_files > 0 ? Math.round((status.file_index / status.total_files) * 100) : 0);
+            : isCaptioning
+                ? (status.caption_total > 0 ? Math.round((status.caption_index / status.caption_total) * 100) : 0)
+                : (status.total_files > 0 ? Math.round((status.file_index / status.total_files) * 100) : 0);
+
+        const phaseLabel = cancelling
+            ? t("rag.indexingCancelling")
+            : isEmbedding
+                ? t("rag.indexingPhaseEmbedding")
+                : isCaptioning
+                    ? t("rag.indexingPhaseCaptioning")
+                    : t("rag.indexingPhaseLoading");
 
         return (
             <>
@@ -85,9 +98,7 @@ export const IndexingStatus: FunctionComponent = () => {
                     <div className="flex items-center gap-1.5 font-medium">
                         <Loader2 className="h-3 w-3 animate-spin shrink-0" />
                         <span className="flex-1 truncate">
-                            {cancelling
-                                ? t("rag.indexingCancelling")
-                                : isEmbedding ? t("rag.indexingPhaseEmbedding") : t("rag.indexingPhaseLoading")}
+                            {phaseLabel}
                             {!cancelling && status.kb_name && (
                                 <span className="opacity-60 font-normal"> · {status.kb_name}</span>
                             )}
@@ -103,7 +114,7 @@ export const IndexingStatus: FunctionComponent = () => {
                             </button>
                         )}
                     </div>
-                    {!isEmbedding && status.current_file && (
+                    {!isEmbedding && !isCaptioning && status.current_file && (
                         <div className="truncate opacity-70" title={status.current_file}>
                             {status.current_file}
                         </div>
@@ -118,7 +129,9 @@ export const IndexingStatus: FunctionComponent = () => {
                         <span className="opacity-70 shrink-0">
                             {isEmbedding
                                 ? (status.embed_total_batches > 0 ? `Batch ${status.embed_batch}/${status.embed_total_batches}` : "…")
-                                : `${status.file_index}/${status.total_files} · ${status.chunks_so_far} Chunks`
+                                : isCaptioning
+                                    ? (status.caption_total > 0 ? `${status.caption_index}/${status.caption_total} images` : "…")
+                                    : `${status.file_index}/${status.total_files} · ${status.chunks_so_far} Chunks`
                             }
                             {status.queued > 0 && (
                                 <span className="ml-1.5 opacity-60">+{status.queued} queued</span>

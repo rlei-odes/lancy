@@ -23,6 +23,7 @@ interface KBConfig {
     image_indexing_enabled: boolean;
     image_embedding_model: string;
     image_retrieval_enabled: boolean;
+    image_captioning_enabled: boolean;
 }
 
 /** Session-level config: retrieval, LLM, prompt. No re-index needed. */
@@ -102,6 +103,7 @@ const DEFAULT_KB_CONFIG: KBConfig = {
     image_indexing_enabled: false,
     image_embedding_model: "Qwen/Qwen3-VL-Embedding-2B",
     image_retrieval_enabled: false,
+    image_captioning_enabled: false,
 };
 
 const DEFAULT_SESSION: SessionConfig = {
@@ -418,6 +420,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                     image_indexing_enabled: kb.image_indexing_enabled ?? false,
                     image_embedding_model: kb.image_embedding_model ?? "Qwen/Qwen3-VL-Embedding-2B",
                     image_retrieval_enabled: kb.image_retrieval_enabled ?? false,
+                    image_captioning_enabled: kb.image_captioning_enabled ?? false,
                 });
                 setUserPresets(await fetchUserPresets(kb.id));
             }
@@ -588,6 +591,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                     image_indexing_enabled: kb.image_indexing_enabled ?? false,
                     image_embedding_model: kb.image_embedding_model ?? "Qwen/Qwen3-VL-Embedding-2B",
                     image_retrieval_enabled: kb.image_retrieval_enabled ?? false,
+                    image_captioning_enabled: kb.image_captioning_enabled ?? false,
                 });
                 const loaded = await fetchUserPresets(kb.id);
                 setUserPresets(loaded);
@@ -768,6 +772,7 @@ export const RagConfigPanel: FunctionComponent = () => {
             image_indexing_enabled: preset.data.image_indexing_enabled ?? false,
             image_embedding_model: preset.data.image_embedding_model ?? "Qwen/Qwen3-VL-Embedding-2B",
             image_retrieval_enabled: preset.data.image_retrieval_enabled ?? false,
+            image_captioning_enabled: preset.data.image_captioning_enabled ?? false,
         });
         setSession({
             retriever_top_k: preset.data.retriever_top_k,
@@ -783,6 +788,7 @@ export const RagConfigPanel: FunctionComponent = () => {
             ollama_host: preset.data.ollama_host ?? "",
             utility_llm_model: preset.data.utility_llm_model ?? "",
             num_ctx: preset.data.num_ctx ?? 8192,
+            llm_max_tokens: preset.data.llm_max_tokens ?? 0,
             system_prompt: preset.data.system_prompt,
             follow_up_count: preset.data.follow_up_count,
             image_retriever_top_k: preset.data.image_retriever_top_k ?? 1,
@@ -1269,6 +1275,9 @@ export const RagConfigPanel: FunctionComponent = () => {
                                     />
                                 </FieldRow>
                             )}
+                            <FieldRow label={t("rag.fieldImageCaptioning")} hint={t("rag.fieldImageCaptioningHint")}>
+                                <Toggle checked={kbConfig.image_captioning_enabled} onChange={(v) => updateKbConfig("image_captioning_enabled", v)} />
+                            </FieldRow>
                         </div>
                     )}
                 </div>

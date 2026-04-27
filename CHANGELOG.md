@@ -5,6 +5,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.2.34] — 2026-04-27 · rlei-odes
+
+### Added — Image captioning pipeline
+
+At ingest time, the main LLM can now generate a text caption for each extracted image and store it inline in the document chunk, replacing the `<!-- image -->` placeholder with a structured `<!-- image content -->` block containing extracted visible text and a visual description. This makes image content searchable via standard text retrieval (BM25, semantic, RRF) without requiring a separate VL embedding model or image vector store at query time.
+
+- New `image_captioning_enabled` toggle on each KB (KB-level, re-index required)
+- Captioning runs between file loading and embedding as a distinct `captioning` phase; the main LLM is reused — no additional model is loaded
+- Images without a matching text placeholder are stored as standalone caption chunks
+- Progress displayed in the indexing status bar as `2/3 Captioning images… x/y images`
+- Phase labels updated from `1/2 / 2/2` to `1/3 / 2/3 / 3/3` to account for the new phase
+- Compatible with `image_indexing_enabled` — both can be active simultaneously
+- Requires a multimodal main LLM (e.g. `llava`, `qwen2-vl`, `gemma3` via Ollama); fails loudly if the model rejects an image payload
+- Design doc: `docs/DESIGN_DOC_Image_Captioning.md`
+
+### Fixed — Preset load dropped `llm_max_tokens` from session state
+
+Loading a saved preset silently omitted `llm_max_tokens` from the `setSession` call, causing a TypeScript error and resetting the field to the state default rather than the preset value.
+
+---
+
 ## [Lancy v0.2.33] — 2026-04-26 · rlei-odes
 
 ### Added — `max_tokens` cap for vLLM / custom LLM backend

@@ -55,6 +55,7 @@ class KBCreate(BaseModel):
     image_indexing_enabled: bool = False
     image_retrieval_enabled: bool = False
     image_embedding_model: str = Field("Qwen/Qwen3-VL-Embedding-2B", max_length=200)
+    image_captioning_enabled: bool = False
 
 
 class KBInfo(KBCreate):

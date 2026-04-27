@@ -5,11 +5,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from conversational_toolkit.chunking.base import Chunk
+from conversational_toolkit.llms.base import LLM, LLMMessage, MessageContent, Roles
 from lancy.feature0_baseline_rag import (
     _ROOT,
     VS_PATH,
     _collect_candidate_files,
     build_embedding_model,
+    build_llm,
     build_vector_store,
     file_hash,
     load_chunks,
@@ -17,7 +20,7 @@ from lancy.feature0_baseline_rag import (
 )
 from lancy.kb_router import KBInfo
 from lancy.kb_stats import write_kb_stats
-from lancy.rag_router import ReindexResult
+from lancy.rag_router import RagConfig, ReindexResult
 
 log = logging.getLogger("uvicorn")
 
@@ -33,6 +36,8 @@ _index_status: dict = {
     "chunks_so_far": 0,
     "embed_batch": 0,
     "embed_total_batches": 0,
+    "caption_index": 0,
+    "caption_total": 0,
     "kb_name": "",
     "finished_at": "",
     "last_result": None,
@@ -46,6 +51,90 @@ _cancel_requested: bool = False
 _upload_queue: asyncio.Queue = asyncio.Queue()
 
 
+_CAPTIONING_PROMPT = (
+    "You are captioning an image for a document retrieval system.\n\n"
+    "1. Extract all visible text exactly as it appears (labels, numbers, headings, table cells, legends). "
+    "If there is no visible text, write \"none\".\n"
+    "2. In 2-3 sentences, describe what the image shows. Only describe what is visually present — "
+    "no interpretation, no speculation, no background knowledge.\n\n"
+    "Respond in this exact format:\n"
+    "VISIBLE TEXT: <extracted text or \"none\">\n"
+    "DESCRIPTION: <visual description>"
+)
+
+
+async def _caption_image_chunks(
+    text_chunks: list[Chunk],
+    image_chunks: list[Chunk],
+    llm: LLM,
+) -> None:
+    """Replace <!-- image --> placeholders in text_chunks with LLM-generated captions.
+
+    Mutates text_chunks in-place. Images without a matching placeholder are appended
+    as new standalone text chunks.
+    """
+    # Collect placeholder positions (chunk_idx, nth occurrence) in document order.
+    placeholders: list[tuple[int, int]] = []
+    for i, chunk in enumerate(text_chunks):
+        for j in range(chunk.content.count("<!-- image -->")):
+            placeholders.append((i, j))
+
+    n_images = len(image_chunks)
+    n_to_replace = min(len(placeholders), n_images)
+
+    if len(placeholders) != n_images:
+        log.warning(
+            f"Image caption: {len(placeholders)} placeholder(s) in text but "
+            f"{n_images} image chunk(s) — captioning {n_to_replace}."
+        )
+
+    _index_status["caption_total"] = n_images
+
+    async def _call_llm(image_chunk: Chunk) -> str:
+        user_msg = LLMMessage(
+            role=Roles.USER,
+            content=[
+                MessageContent(type="text", text=_CAPTIONING_PROMPT),
+                MessageContent(type="image", image_url=image_chunk.content),
+            ],
+        )
+        response = await llm.generate([user_msg])
+        return "".join(mc.text or "" for mc in response.content).strip()
+
+    for k in range(n_to_replace):
+        _index_status["caption_index"] = k + 1
+        chunk_idx, _ = placeholders[k]
+        source = image_chunks[k].metadata.get("source_file", "image")
+        log.info(f"Captioning image {k + 1}/{n_images} from '{source}' …")
+        try:
+            caption = await _call_llm(image_chunks[k])
+            text_chunks[chunk_idx].content = text_chunks[chunk_idx].content.replace(
+                "<!-- image -->",
+                f"<!-- image content -->\n{caption}\n<!-- end image content -->",
+                1,
+            )
+        except Exception as exc:
+            log.error(f"Captioning failed for image {k + 1} from '{source}': {exc}")
+
+    # Images beyond available placeholders become standalone text chunks.
+    for k in range(n_to_replace, n_images):
+        _index_status["caption_index"] = k + 1
+        source = image_chunks[k].metadata.get("source_file", "image")
+        log.info(f"Captioning standalone image {k + 1}/{n_images} from '{source}' …")
+        try:
+            caption = await _call_llm(image_chunks[k])
+            text_chunks.append(
+                Chunk(
+                    title=image_chunks[k].title,
+                    content=f"<!-- image content -->\n{caption}\n<!-- end image content -->",
+                    mime_type="text/markdown",
+                    metadata=image_chunks[k].metadata.copy(),
+                )
+            )
+        except Exception as exc:
+            log.error(f"Captioning failed for standalone image {k + 1} from '{source}': {exc}")
+
+
 class _IndexingCancelled(Exception):
     pass
 
@@ -55,7 +144,9 @@ def cancel_indexing() -> None:
     _cancel_requested = True
 
 
-async def run_ingestion(kb: KBInfo, reset: bool, db_dir: Path) -> tuple[int, int, int, int]:
+async def run_ingestion(
+    kb: KBInfo, reset: bool, db_dir: Path, cfg: RagConfig | None = None
+) -> tuple[int, int, int, int]:
     """Chunk + embed all files in kb.data_dirs.
 
     Returns (chunks_indexed, files_processed, files_skipped_store, files_skipped_batch).
@@ -76,6 +167,8 @@ async def run_ingestion(kb: KBInfo, reset: bool, db_dir: Path) -> tuple[int, int
             "chunks_so_far": 0,
             "embed_batch": 0,
             "embed_total_batches": 0,
+            "caption_index": 0,
+            "caption_total": 0,
             "kb_name": kb.name,
             "finished_at": "",
             "last_result": None,
@@ -211,6 +304,24 @@ async def run_ingestion(kb: KBInfo, reset: bool, db_dir: Path) -> tuple[int, int
         text_chunks = [c for c in chunks if c.mime_type.startswith("text")]
         image_chunks = [c for c in chunks if c.mime_type.startswith("image")]
 
+        if kb.image_captioning_enabled and image_chunks and cfg is not None:
+            _index_status["phase"] = "captioning"
+            caption_llm = build_llm(
+                backend=cfg.llm_backend,
+                model_name=cfg.llm_model or None,
+                temperature=0.1,
+                ollama_host=cfg.ollama_host or None,
+                custom_base_url=cfg.custom_base_url or "",
+                custom_api_key=cfg.custom_api_key or "",
+            )
+            await _caption_image_chunks(text_chunks, image_chunks, caption_llm)
+            image_chunks = []  # consumed by captioning; not stored in image VS
+        elif kb.image_captioning_enabled and image_chunks and cfg is None:
+            log.warning(
+                "Image captioning is enabled on this KB but no session config was provided — "
+                "skipping captioning. Re-index via the UI to caption images."
+            )
+
         emb = build_embedding_model(
             kb.embedding_backend,
             kb.embedding_model,
@@ -344,6 +455,7 @@ async def ingest_uploaded_file(
     vs_proxy: Any,
     kb_router: Any,
     db_dir: Path,
+    cfg: RagConfig | None = None,
 ) -> None:
     """Ingest a single uploaded file into the active KB, then delete the temp file.
 
@@ -395,6 +507,24 @@ async def ingest_uploaded_file(
 
         text_chunks = [c for c in chunks if c.mime_type.startswith("text")]
         image_chunks = [c for c in chunks if c.mime_type.startswith("image")]
+
+        if kb.image_captioning_enabled and image_chunks and cfg is not None:
+            _index_status["phase"] = "captioning"
+            caption_llm = build_llm(
+                backend=cfg.llm_backend,
+                model_name=cfg.llm_model or None,
+                temperature=0.1,
+                ollama_host=cfg.ollama_host or None,
+                custom_base_url=cfg.custom_base_url or "",
+                custom_api_key=cfg.custom_api_key or "",
+            )
+            await _caption_image_chunks(text_chunks, image_chunks, caption_llm)
+            image_chunks = []
+        elif kb.image_captioning_enabled and image_chunks and cfg is None:
+            log.warning(
+                "Image captioning is enabled on this KB but no session config was provided — "
+                "skipping captioning for this upload."
+            )
 
         emb = build_embedding_model(
             kb.embedding_backend,
@@ -522,16 +652,17 @@ async def enqueue_upload(
     vs_proxy: Any,
     kb_router: Any,
     db_dir: Path,
+    cfg: RagConfig | None = None,
 ) -> None:
     """Queue a file for ingestion. Returns immediately; processing is serialised."""
     _index_status["queued"] = _upload_queue.qsize() + 1
-    await _upload_queue.put((file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir))
+    await _upload_queue.put((file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir, cfg))
 
 
 async def upload_worker() -> None:
     """Drain the upload queue one file at a time. Start once at app startup."""
     while True:
-        file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir = await _upload_queue.get()
+        file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir, cfg = await _upload_queue.get()
         _index_status["queued"] = _upload_queue.qsize()
         try:
             await ingest_uploaded_file(
@@ -539,6 +670,7 @@ async def upload_worker() -> None:
                 vs_proxy=vs_proxy,
                 kb_router=kb_router,
                 db_dir=db_dir,
+                cfg=cfg,
             )
         except Exception:
             pass  # already logged inside ingest_uploaded_file

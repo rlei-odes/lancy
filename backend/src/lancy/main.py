@@ -587,9 +587,17 @@ def build_server():
         log.info(f"Agent ready for KB '{kb.name}'")
 
     async def _upload_cb(file_path: Path, kb: KBInfo, extra_metadata: dict) -> None:
+        try:
+            upload_cfg = (
+                RagConfig(**json.loads(session_cfg_path.read_text()))
+                if session_cfg_path.exists()
+                else session_cfg
+            )
+        except Exception:
+            upload_cfg = session_cfg
         await enqueue_upload(
             file_path, kb, extra_metadata,
-            vs_proxy=vs_proxy, kb_router=kb_router, db_dir=_DB_DIR,
+            vs_proxy=vs_proxy, kb_router=kb_router, db_dir=_DB_DIR, cfg=upload_cfg,
         )
 
     kb_router = create_kb_router(
@@ -633,7 +641,7 @@ def build_server():
             kb = active_kb
 
         chunks_n, files_n, skipped_store_n, skipped_batch_n = await run_ingestion(
-            kb, reset, db_dir=_DB_DIR
+            kb, reset, db_dir=_DB_DIR, cfg=cfg
         )
 
         # Rebuild so BM25 re-indexes new content
