@@ -55,6 +55,7 @@ class ClientMessage(Message):
     query_duration_ms: int | None = None
     tokens_per_second: float | None = None
     llm_model: str | None = None
+    retrieval_stats: dict | None = None
 
     def encode(self, charset: str = "utf-8") -> bytes:
         return json.dumps(self.model_dump()).encode(charset)
@@ -250,6 +251,9 @@ class ConversationalToolkitController:
                 None,
             )
             MetadataProvider.add_metadata({"query_duration_ms": query_duration_ms})
+            _retrieval_stats = last_chunk.retrieval_stats.model_dump() if last_chunk.retrieval_stats else None
+            if _retrieval_stats:
+                MetadataProvider.add_metadata({"retrieval_stats": _retrieval_stats})
 
             final_message = await self.message_db.create_message(
                 Message(
@@ -287,6 +291,7 @@ class ConversationalToolkitController:
                 query_duration_ms=query_duration_ms,
                 tokens_per_second=_tps,
                 llm_model=_model,
+                retrieval_stats=_retrieval_stats,
             )
 
     async def get_conversations_data_by_user_id(self, user_id: str) -> list[Conversation]:
@@ -392,6 +397,7 @@ class ConversationalToolkitController:
                     (m.get("tokens_per_second") for m in reversed(_meta) if m.get("tokens_per_second")), None
                 ),
                 llm_model=next((m.get("model") for m in reversed(_meta) if m.get("model")), None),
+                retrieval_stats=next((m.get("retrieval_stats") for m in reversed(_meta) if m.get("retrieval_stats")), None),
             )
 
             api_messages.append(api_message)

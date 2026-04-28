@@ -7,7 +7,7 @@ Retrieval-Augmented Generation (RAG) agent.
 import asyncio
 from typing import Any, AsyncGenerator, Callable
 
-from conversational_toolkit.agents.base import Agent, AgentAnswer, QueryWithContext
+from conversational_toolkit.agents.base import Agent, AgentAnswer, QueryWithContext, RetrievalStats
 from conversational_toolkit.llms.base import LLM, LLMMessage, Roles, MessageContent
 from conversational_toolkit.retriever.base import Retriever
 from conversational_toolkit.retriever.reranking_retriever import RerankingRetriever
@@ -94,6 +94,29 @@ class RAG(Agent):
         all_results = await asyncio.gather(*[_retrieve_one(r) for r in self.retrievers])
         sources: list[ChunkRecord] = [chunk for group in all_results for chunk in group]
 
+        # Build retrieval stats from the first reranker (there is at most one in practice).
+        reranker = next((r for r in self.retrievers if isinstance(r, RerankingRetriever)), None)
+        if reranker and reranker.last_rerank_stats:
+            s = reranker.last_rerank_stats
+            retrieval_stats = RetrievalStats(
+                candidates_retrieved=s["candidates"],
+                chunks_to_llm=len(sources),
+                reranker_active=True,
+                reranker_swaps=s["swaps"],
+                reranker_fallback=s["fallback"],
+            )
+            fallback_note = " [fallback: original order]" if s["fallback"] else ""
+            logger.info(
+                f"Retrieval: {s['candidates']} candidates → reranker → "
+                f"{len(sources)} chunk(s) to LLM, {s['swaps']} swap(s){fallback_note}"
+            )
+        else:
+            retrieval_stats = RetrievalStats(
+                candidates_retrieved=len(sources),
+                chunks_to_llm=len(sources),
+            )
+            logger.info(f"Retrieval: {len(sources)} chunk(s) to LLM")
+
         sources_list = []
 
         for source in sources:
@@ -159,6 +182,7 @@ class RAG(Agent):
                         content=[MessageContent(type="text", text=content)],
                         role=Roles.ASSISTANT,
                         sources=sources,
+                        retrieval_stats=retrieval_stats,
                     )
                 )
                 if answer:

@@ -35,6 +35,8 @@ class RerankingRetriever(Retriever[ChunkMatch]):
         self.retriever = retriever
         self.llm = llm
         self.phase_callback: Any = None
+        self.last_rerank_stats: dict | None = None
+        self._last_rerank_fallback: bool = False
 
     async def retrieve(self, query: str) -> list[ChunkMatch]:
         """Fetch candidates from the base retriever and rerank them with the LLM."""
@@ -45,6 +47,17 @@ class RerankingRetriever(Retriever[ChunkMatch]):
         if self.phase_callback:
             self.phase_callback("reranking")
         ranked_indices = await self._llm_rerank(query, candidates)
+
+        n_candidates = len(candidates)
+        final_top_k = set(ranked_indices[: self.top_k])
+        original_top_k = set(range(min(self.top_k, n_candidates)))
+        self.last_rerank_stats = {
+            "candidates": n_candidates,
+            "top_k": self.top_k,
+            "swaps": len(final_top_k - original_top_k),
+            "fallback": self._last_rerank_fallback,
+        }
+
         n = len(ranked_indices)
         results: list[ChunkMatch] = []
         for position, original_idx in enumerate(ranked_indices[: self.top_k]):
@@ -106,8 +119,10 @@ class RerankingRetriever(Retriever[ChunkMatch]):
             # Append any missing indices at the end (graceful fallback for partial rankings)
             seen = set(ranking)
             ranking += [i for i in range(len(candidates)) if i not in seen]
+            self._last_rerank_fallback = False
             logger.info(f"RerankingRetriever: reranked {len(candidates)} candidates → {ranking[:self.top_k]}")
             return ranking
         except Exception as exc:
+            self._last_rerank_fallback = True
             logger.warning(f"RerankingRetriever LLM call failed, using original order: {exc}")
             return list(range(len(candidates)))

@@ -21,6 +21,7 @@ retrieval settings, and generation stats — no black box. Investigate your docu
 | **Query techniques** | Query expansion, HyDE, LLM reranking — all configurable per session |
 | **Ingestion deduplication** | SHA-256 content hashing prevents duplicate chunks across runs and within a single batch — dedup happens before parsing, so no wasted embedding work |
 | **Image retrieval** | Dual-collection pipeline: images extracted from PDFs and standalone files are embedded separately (Qwen3-VL) and injected into LLM context alongside text chunks |
+| **Image captioning** | Optional KB-level feature: at ingest time the main LLM generates a text caption for each extracted image and stores it inline in the text chunk, making image content searchable via standard BM25/semantic/RRF retrieval without a separate VL model at query time |
 | **Structured outputs** | Evidence-level tagging per claim: VERIFIED / CLAIMED / MISSING / MIXED |
 | **RAG config panel** | Collapsible right-side panel with presets and live parameter tuning |
 | **Retrieval Probe** | Test queries against the retrieval pipeline without the LLM — returns ranked chunks with per-method scores (BM25, semantic, RRF), reranking cut-off visualised, and a lookahead window showing what the RAG discards |

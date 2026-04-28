@@ -274,6 +274,7 @@ class CustomRAG(RAG):
             content=[MessageContent(type="text", text=content)],
             sources=[s for s in unique_sources if s.id in relevant_source_ids],
             follow_up_questions=follow_up_questions,
+            retrieval_stats=answer.retrieval_stats,
         )
 
 

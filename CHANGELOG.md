@@ -20,6 +20,16 @@ At ingest time, the main LLM can now generate a text caption for each extracted 
 - Requires a multimodal main LLM (e.g. `llava`, `qwen2-vl`, `gemma3` via Ollama); fails loudly if the model rejects an image payload
 - Design doc: `docs/DESIGN_DOC_Image_Captioning.md`
 
+### Added — Retrieval stats in chat
+
+Each assistant message now shows retrieval counts in the same monospace footer as model/duration/tok-s. Without reranking: number of chunks passed to the LLM. With reranking: candidate pool size, final count, and how many the reranker swapped into the top-k (`15 → 5 chunks · 2 swaps`). Stats are persisted in message metadata and survive conversation reload.
+
+### Improved — Image captioning efficiency
+
+- Images below 100,000 px² are skipped before any LLM call (threshold calibrated on real document sets: 68k px² logo → exclude, 145k px² diagram → keep)
+- Identical images within a file are captioned once; the result is reused for all occurrences
+- `scripts/inspect_images.py` dev helper for analysing image dimensions across PDF files
+
 ### Fixed — Preset load dropped `llm_max_tokens` from session state
 
 Loading a saved preset silently omitted `llm_max_tokens` from the `setSession` call, causing a TypeScript error and resetting the field to the state default rather than the preset value.

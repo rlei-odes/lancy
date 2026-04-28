@@ -1,9 +1,14 @@
 import asyncio
+import base64
+import hashlib
+import io
 import logging
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from PIL import Image
 
 _PROMPTS_DIR = Path(__file__).parent.parent.parent.parent / "prompts"
 
@@ -63,6 +68,24 @@ def _load_captioning_prompt() -> str:
     raise FileNotFoundError("No image captioning prompt found in prompts/")
 
 
+# Images smaller than this (in total pixels) are skipped without an LLM call.
+# Calibrated on real document sets: 68k px² (repeated logo) → exclude,
+# 145k px² (useful figure) → keep. 100k sits cleanly between both.
+_MIN_CAPTION_IMAGE_AREA = 100_000
+
+
+def _img_info(b64: str) -> tuple[str, int, int]:
+    """Decode base64 image → (sha256_hex, width, height). Dimensions are 0 on error."""
+    raw = base64.b64decode(b64)
+    digest = hashlib.sha256(raw).hexdigest()
+    try:
+        with Image.open(io.BytesIO(raw)) as img:
+            w, h = img.size
+    except Exception:
+        w, h = 0, 0
+    return digest, w, h
+
+
 async def _caption_image_chunks(
     text_chunks: list[Chunk],
     image_chunks: list[Chunk],
@@ -72,6 +95,11 @@ async def _caption_image_chunks(
 
     Mutates text_chunks in-place. Images without a matching placeholder are appended
     as new standalone text chunks.
+
+    Optimisations applied before any LLM call:
+    - Size filter: images below _MIN_CAPTION_IMAGE_AREA pixels are skipped.
+    - Dedup: identical images (by SHA-256 of raw bytes) are captioned once and
+      the result is reused for every subsequent occurrence within the same file.
     """
     # Collect placeholder positions (chunk_idx, nth occurrence) in document order.
     placeholders: list[tuple[int, int]] = []
@@ -114,37 +142,61 @@ async def _caption_image_chunks(
                 break
         return visible.lower() not in ("", "none")
 
-    for k in range(n_to_replace):
+    # Pre-caption pass: one LLM call per unique, non-tiny image.
+    # caption_cache maps SHA-256 hex → caption text, or None if skipped/failed.
+    caption_cache: dict[str, str | None] = {}
+    # Store per-image (digest, w, h) so the apply loops don't re-decode.
+    img_infos: list[tuple[str, int, int]] = []
+
+    for k, img_chunk in enumerate(image_chunks):
         _index_status["caption_index"] = k + 1
-        chunk_idx, _ = placeholders[k]
-        source = image_chunks[k].metadata.get("source_file", "image")
-        log.info(f"Captioning image {k + 1}/{n_images} from '{source}' …")
+        source = img_chunk.metadata.get("source_file", "image")
+        digest, w, h = _img_info(img_chunk.content)
+        img_infos.append((digest, w, h))
+        area = w * h
+        log.info(f"Image {k + 1}/{n_images}: {w}×{h} px from '{source}'")
+
+        if digest in caption_cache:
+            log.info(f"Image {k + 1}/{n_images}: reusing caption (identical content, hash={digest[:8]}…)")
+            continue
+
+        if area > 0 and area < _MIN_CAPTION_IMAGE_AREA:
+            log.info(f"Skipping image {k + 1} — too small ({w}×{h} px, area={area})")
+            caption_cache[digest] = None
+            continue
+
         try:
-            caption = await _call_llm(image_chunks[k])
-            if not _useful(caption):
-                log.info(f"Skipping image {k + 1} — no retrieval value (SKIP_RESULT or no visible text)")
-                text_chunks[chunk_idx].content = text_chunks[chunk_idx].content.replace(
-                    "<!-- image -->", "", 1
-                )
+            caption = await _call_llm(img_chunk)
+            if _useful(caption):
+                caption_cache[digest] = caption
             else:
-                text_chunks[chunk_idx].content = text_chunks[chunk_idx].content.replace(
-                    "<!-- image -->",
-                    f"<!-- image content -->\n{caption}\n<!-- end image content -->",
-                    1,
-                )
+                log.info(f"Skipping image {k + 1} — no retrieval value (SKIP_RESULT or no visible text)")
+                caption_cache[digest] = None
         except Exception as exc:
             log.error(f"Captioning failed for image {k + 1} from '{source}': {exc}")
+            caption_cache[digest] = None
+
+    # Apply captions to placeholder positions in text chunks.
+    for k in range(n_to_replace):
+        chunk_idx, _ = placeholders[k]
+        digest = img_infos[k][0]
+        caption = caption_cache.get(digest)
+        if caption:
+            text_chunks[chunk_idx].content = text_chunks[chunk_idx].content.replace(
+                "<!-- image -->",
+                f"<!-- image content -->\n{caption}\n<!-- end image content -->",
+                1,
+            )
+        else:
+            text_chunks[chunk_idx].content = text_chunks[chunk_idx].content.replace(
+                "<!-- image -->", "", 1
+            )
 
     # Images beyond available placeholders become standalone text chunks.
     for k in range(n_to_replace, n_images):
-        _index_status["caption_index"] = k + 1
-        source = image_chunks[k].metadata.get("source_file", "image")
-        log.info(f"Captioning standalone image {k + 1}/{n_images} from '{source}' …")
-        try:
-            caption = await _call_llm(image_chunks[k])
-            if not _useful(caption):
-                log.info(f"Skipping standalone image {k + 1} — no retrieval value (SKIP_RESULT or no visible text)")
-                continue
+        digest = img_infos[k][0]
+        caption = caption_cache.get(digest)
+        if caption:
             text_chunks.append(
                 Chunk(
                     title=image_chunks[k].title,
@@ -153,8 +205,6 @@ async def _caption_image_chunks(
                     metadata=image_chunks[k].metadata.copy(),
                 )
             )
-        except Exception as exc:
-            log.error(f"Captioning failed for standalone image {k + 1} from '{source}': {exc}")
 
 
 class _IndexingCancelled(Exception):
@@ -335,6 +385,7 @@ async def run_ingestion(
                 ollama_host=cfg.ollama_host or None,
                 custom_base_url=cfg.custom_base_url or "",
                 custom_api_key=cfg.custom_api_key or "",
+                max_tokens=512,
             )
             await _caption_image_chunks(text_chunks, image_chunks, caption_llm)
             image_chunks = []  # consumed by captioning; not stored in image VS
@@ -539,6 +590,7 @@ async def ingest_uploaded_file(
                 ollama_host=cfg.ollama_host or None,
                 custom_base_url=cfg.custom_base_url or "",
                 custom_api_key=cfg.custom_api_key or "",
+                max_tokens=512,
             )
             await _caption_image_chunks(text_chunks, image_chunks, caption_llm)
             image_chunks = []

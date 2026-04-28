@@ -1,5 +1,13 @@
 import { ApiService } from "./api";
 
+export interface RetrievalStats {
+    candidates_retrieved: number;
+    chunks_to_llm: number;
+    reranker_active: boolean;
+    reranker_swaps: number;
+    reranker_fallback: boolean;
+}
+
 export interface Message {
     id: string;
     content: string;
@@ -16,6 +24,7 @@ export interface Message {
     llm_model?: string;
     kb_name?: string;
     emb_model?: string;
+    retrieval_stats?: RetrievalStats;
 }
 
 export interface Source {

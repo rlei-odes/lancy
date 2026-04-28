@@ -20,6 +20,16 @@ class QueryWithContext(BaseModel):
     history: list[LLMMessage]
 
 
+class RetrievalStats(BaseModel):
+    """Retrieval metrics attached to each AgentAnswer for logging and UI display."""
+
+    candidates_retrieved: int  # pre-reranker candidate pool size (equals chunks_to_llm when no reranker)
+    chunks_to_llm: int  # chunks actually passed to the LLM
+    reranker_active: bool = False
+    reranker_swaps: int = 0  # chunks promoted into top-k from outside the original top-k
+    reranker_fallback: bool = False  # True if the reranker LLM call failed and original order was kept
+
+
 class AgentAnswer(LLMMessage):
     """
     Structured response produced by every agent.
@@ -30,6 +40,7 @@ class AgentAnswer(LLMMessage):
     step_by_step_thinking: str = ""
     sources: Sequence[Chunk] = Field(default_factory=lambda: [])
     follow_up_questions: Sequence[str] = Field(default_factory=lambda: [])
+    retrieval_stats: RetrievalStats | None = None
 
 
 class Agent(ABC):

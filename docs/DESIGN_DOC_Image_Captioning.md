@@ -186,6 +186,34 @@ The two approaches are complementary, not competing. The caption pipeline is the
 
 ---
 
+## Ingest-time Optimisations
+
+Two filters are applied before any LLM call to avoid unnecessary captioning.
+
+### Size filter
+
+Images below `_MIN_CAPTION_IMAGE_AREA = 100_000` px² (roughly 316×316) are skipped without calling the LLM. These are typically logos, divider lines, or decorative elements that carry no retrievable text.
+
+Threshold was calibrated empirically on real document sets:
+
+| Size | Example | Decision |
+|---|---|---|
+| 343 × 199 px = 68,157 px² | Repeated slide logo | Exclude |
+| 479 × 537 px = 257,223 px² | Diagram with labels | Keep |
+| 145,000 px² (approx.) | Useful figure | Keep |
+
+The constant is defined at the top of `_caption_image_chunks` in `ingestion.py` and can be tuned per deployment. Use `scripts/inspect_images.py` to inspect image dimensions across a document set before adjusting.
+
+Note: the `_useful()` filter (which requires non-empty `VISIBLE TEXT:`) acts as a second gate for larger images that pass the size check but contain no extractable text (e.g. full-bleed decorative photos).
+
+### Deduplication
+
+Within a single file, images with identical raw content (SHA-256 of decoded bytes) are captioned only once. The caption result is cached and reused for all subsequent occurrences. This is most impactful for presentations where a logo appears on every slide.
+
+Deduplication is scoped to a single ingestion run, not across files or re-index runs.
+
+---
+
 ## Open Questions
 
 1. **Should captioning be async-parallelised?** Multiple images per document could be captioned in parallel (`asyncio.gather`). This would reduce ingest time but increase peak VRAM usage. Probably worth a configurable batch size.
