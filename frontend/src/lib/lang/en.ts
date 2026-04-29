@@ -267,7 +267,7 @@ export const app = {
         queryPhaseRetrieving: "Retrieving documents...",
         queryPhaseReranking: "Reranking results...",
         queryPhaseGenerating: "Generating answer...",
-        btnSave: "Save",
+        btnSave: "Apply",
         btnSaveTitle: "Saves session settings (instant effect) and embedding settings of the active knowledge base (effective after re-index).",
         btnIncrementalIndex: "Incremental indexing",
         btnIndexing: "Indexing…",

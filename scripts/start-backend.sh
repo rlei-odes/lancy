@@ -1,11 +1,12 @@
 #!/bin/bash
 # Lancy — Start backend only (for Spark / remote backend deployment)
 # Does not start the frontend. Skips the Ollama check — vLLM handles LLM inference on this machine.
-set -e
+set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$REPO/logs"
 VENV="$REPO/.venv"
+PORT=8080
 
 mkdir -p "$LOG_DIR"
 
@@ -30,20 +31,26 @@ if ! "$VENV/bin/python" -c "import uvicorn" 2>/dev/null; then
 fi
 
 # --- Already running? ---
-if [ -f "$LOG_DIR/backend.pid" ] && kill -0 "$(cat $LOG_DIR/backend.pid)" 2>/dev/null; then
-    echo "Backend is already running (PID $(cat $LOG_DIR/backend.pid))."
+if [ -f "$LOG_DIR/backend.pid" ] && kill -0 "$(cat "$LOG_DIR/backend.pid")" 2>/dev/null; then
+    echo "Backend is already running (PID $(cat "$LOG_DIR/backend.pid"))."
     echo "  Stop it first with: scripts/stop-backend.sh"
     exit 1
 fi
 
+# --- Port availability check ---
+if ss -tunlp | grep -q ":$PORT "; then
+    echo "ERROR: Port $PORT is already in use by another process."
+    exit 1
+fi
+
 # --- Backend ---
-echo "Starting Lancy backend on port 8080..."
+echo "Starting Lancy backend on port $PORT..."
 PYTHONPATH="$REPO/backend/src" \
   "$VENV/bin/python" -m lancy.main \
   > "$LOG_DIR/backend.log" 2>&1 &
 echo $! > "$LOG_DIR/backend.pid"
-echo "  Backend PID: $(cat $LOG_DIR/backend.pid)"
+echo "  Backend PID: $(cat "$LOG_DIR/backend.pid")"
 echo "  Log:         $LOG_DIR/backend.log"
 echo "  Stop:        scripts/stop-backend.sh"
 echo ""
-echo "Backend API: http://$(hostname -I | awk '{print $1}'):8080"
+echo "Backend API: http://$(hostname -I | awk '{print $1}'):$PORT"

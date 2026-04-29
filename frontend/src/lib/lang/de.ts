@@ -262,7 +262,7 @@ export const app = {
         queryPhaseRetrieving: "Dokumente werden abgerufen...",
         queryPhaseReranking: "Ergebnisse werden neu bewertet...",
         queryPhaseGenerating: "Antwort wird generiert...",
-        btnSave: "Speichern",
+        btnSave: "Anwenden",
         btnSaveTitle: "Speichert Session-Einstellungen (Soforteffekt) und Embedding-Einstellungen der aktiven Wissensdatenbank (wirksam nach Neuindexierung).",
         btnIncrementalIndex: "Inkrementell indexieren",
         btnIndexing: "Indexierung läuft…",

@@ -262,7 +262,7 @@ export const app = {
         queryPhaseRetrieving: "Recupero documenti...",
         queryPhaseReranking: "Classificazione dei risultati...",
         queryPhaseGenerating: "Generazione risposta...",
-        btnSave: "Salva",
+        btnSave: "Applica",
         btnSaveTitle: "Salva le impostazioni di sessione (effetto immediato) e le impostazioni di embedding della base attiva (effettive dopo reindicizzazione).",
         btnIncrementalIndex: "Indicizzazione incrementale",
         btnIndexing: "Indicizzazione…",

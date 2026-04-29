@@ -21,7 +21,7 @@ from typing import Annotated, Any, Callable, Literal
 _SERVER_STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 from fastapi import APIRouter, BackgroundTasks, Body, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 log = logging.getLogger("uvicorn")
 
@@ -58,6 +58,12 @@ class RagConfig(BaseModel):
 
     # Image retrieval (session-level; requires image_retrieval_enabled on active KB)
     image_retriever_top_k: int = Field(1, ge=1, le=4)
+
+    @model_validator(mode="after")
+    def clamp_candidate_pool(self) -> "RagConfig":
+        if self.reranking_enabled and self.reranking_candidate_pool < self.retriever_top_k:
+            self.reranking_candidate_pool = self.retriever_top_k
+        return self
 
     # Prompt
     system_prompt: str = Field("", max_length=20_000)  # empty = use server default

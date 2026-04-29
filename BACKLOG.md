@@ -5,6 +5,29 @@ Items are grouped by theme and roughly prioritised within each section.
 
 ## Known Bugs
 
+### Mix between KB Level setup and Presets
+
+The two symptoms point to the same root cause. Let me trace it precisely.
+
+After refresh, fetchKbRegistry() loads the actual saved KB config from the backend — including image_captioning_enabled: true (which you've saved on your KB). That sets both activeKb and kbConfig to the same values → embDirty = false → dot is green.
+
+When you load any built-in preset, loadPreset sets kbConfig.image_captioning_enabled = false (from DEFAULT_KB_CONFIG). Now kbConfig differs from activeKb → embDirty = true → dot goes amber. The saved KB hasn't changed at all — the preset just stomped over your KB config in local state.
+
+The core problem: presets currently override KB-level structural config (image captioning, PDF OCR, VS type, etc.) even though those settings belong to the KB setup, not to a retrieval style.
+
+There are two distinct categories of settings:
+
+Layer	Fields	Should be in presets?
+Retrieval style	top_k, bm25_enabled, reranking_*, query_expansion, hyde, rrf_k	Yes — this is what presets are for
+LLM style	llm_backend, llm_model, temperature, num_ctx, etc.	Yes
+Embedding model	embedding_backend, embedding_model, nomic_prefix	Debatable — some presets do this intentionally (bge-m3 preset)
+KB structure	image_captioning_enabled, pdf_ocr_enabled, image_indexing_enabled, vs_type, vs_connection_string	No — these are per-KB setup, not retrieval style
+My recommendation: strip KB structural fields out of loadPreset — don't touch them when applying a preset, leave whatever the current KB has. Keep embedding model/backend since the bge-m3 preset relies on that intentionally.
+
+Status: Requires further thinking I'd say. Especially how we surface this distinction to the user.
+Maybe there should be a KB Level setting section right after the Knowledge base section. 
+
+
 ### Answer Disappears After Rendering
 
 Root cause identified and fixed: `mistral-nemo:12b` emits literal newlines inside JSON string values, which is invalid JSON. `partial_json_loads` failed silently, returning `{}`, so the extracted answer was empty and the streamed content disappeared when the DB record replaced the live display.
@@ -26,6 +49,18 @@ After running `./stop.sh`, the backend stops cleanly but parts of the frontend r
 
 Observed that answers sometimes cite only 2 chunks even when retrieval is configured with a higher `k`. Possible causes: the reranker is collapsing similar chunks into fewer sources, the `used_sources_id` field in the LLM JSON response is under-populated (model not citing all chunks it used), or the source deduplication step in `_answer_post_processing` is too aggressive. Needs investigation with logging enabled on retrieved chunk count vs. cited chunk count. It might be good and even intended behaviour - when no fit / similarity is observed above the threshold, no bad fitting chunks should be served.
 
+### Sources Panel Sometimes Empty
+
+The sources panel occasionally shows no sources even when the answer clearly references document content. Root cause is a structural tension in the prompt: the LLM is told to use filenames in the answer text but exact UUIDs in `used_sources_id` — a cognitive split that smaller models (mistral-nemo) handle inconsistently.
+
+**Investigation steps:**
+1. Log the full parsed `json_answer` dict and `relevant_source_ids` in `_answer_post_processing` for queries where sources go missing — to determine whether the LLM returns `[]`, wrong IDs, or filenames in that field.
+2. Check whether failures correlate with response length (partial-JSON chunking) or specific models.
+
+**Likely fix:** derive the sources list from filename matches in the rendered answer content rather than relying solely on `used_sources_id`. The LLM reliably uses filenames in the text (that instruction is followed); building a reverse map from filename → source ID would make citation extraction robust regardless of UUID compliance. `used_sources_id` would become corroboration rather than the sole gatekeeper.
+
+Note: the existing `_UUID_RE` inline fallback is effectively dead code given the current prompt explicitly says "No UUIDs in the text."
+
 ---
 
 ## Authentication & Access Control
@@ -38,8 +73,8 @@ Currently all authenticated users share a single password and have full access t
 
 **Scope:**
 - Add an admin flag to the session (e.g. a separate admin password or a role field in the auth cookie)
-- Hide the RAG Config panel from non-admin sessions
-- Hide or lock: reindex buttons, model selectors, system prompt editor, embedding configuration, vector store settings, preset create/delete
+- Hide parts of the RAG Config panel from non-admin sessions
+- Hide or lock: reindex buttons, model selectors, system prompt editor, embedding configuration, vector store settings, preset create/delete (list to be fully defined)
 - **Stop indexing button** (red, in the sidebar progress bar) — admin-only; end users should see the progress indicator but not be able to cancel a running indexing job
 - End users retain: chat, conversation history, language toggle, theme toggle
 - No per-user accounts required at this stage — two passwords (user / admin) is sufficient for the prototype
@@ -343,19 +378,6 @@ Instead of (or in addition to) feeding neighbours to the LLM, show them in the s
 
 Especially with Neighbour Chunk Expansion, we have many variable that control how many chunks could get sent to the helper llm and the main model. We should have text based preview telling the user that maximum value each. If no helper model is selected, it should show that all reranking etc. calls go to the main model. The stats are: number of calls, max. number of chunks, for each.
 
-
----
-
-### Retrieval Explorer — top_k / candidate pool validation
-
-**Issue:** the RAG Config sidebar allows setting `top_k` higher than `reranking_candidate_pool` (e.g. top_k=4, pool=3). This is logically invalid — you cannot return 4 reranked results from a pool of 3 candidates. Currently this causes no visible error but produces confusing results.
-
-**Options to evaluate:**
-- Frontend: clamp `reranking_candidate_pool` minimum to `top_k` in the sidebar (or vice versa — warn when pool < top_k)
-- Backend: enforce at runtime in `retrieve_callback` / the RAG query path and return a clear validation error
-- Both: frontend prevents the bad state; backend guards anyway
-
-**Why it matters:** affects both normal RAG queries and the Retrieval Explorer probe. A user changing top_k without adjusting the pool would silently get degraded results.
 
 ---
 
