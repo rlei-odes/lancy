@@ -328,6 +328,29 @@ const KBForm: FunctionComponent<KBFormProps> = ({ initial, onSubmit, onCancel, i
     );
 };
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function kbInfoToConfig(kb: KBInfo): KBConfig {
+    return {
+        embedding_backend: ((kb.embedding_backend as string) === "openai" ? "custom" : kb.embedding_backend) as KBConfig["embedding_backend"],
+        embedding_model: kb.embedding_model,
+        embedding_ollama_host: kb.embedding_ollama_host ?? "",
+        embedding_custom_base_url: kb.embedding_custom_base_url ?? "",
+        embedding_custom_api_key: kb.embedding_custom_api_key ?? "",
+        nomic_prefix: kb.nomic_prefix,
+        max_file_size_mb: kb.max_file_size_mb,
+        embedding_batch_size: kb.embedding_batch_size ?? 50,
+        pdf_ocr_enabled: kb.pdf_ocr_enabled ?? true,
+        max_chunk_tokens: kb.max_chunk_tokens ?? 0,
+        vs_type: (kb.vs_type as KBConfig["vs_type"]) ?? "chromadb",
+        vs_connection_string: kb.vs_connection_string ?? "",
+        image_indexing_enabled: kb.image_indexing_enabled ?? false,
+        image_embedding_model: kb.image_embedding_model ?? "Qwen/Qwen3-VL-Embedding-2B",
+        image_retrieval_enabled: kb.image_retrieval_enabled ?? false,
+        image_captioning_enabled: kb.image_captioning_enabled ?? false,
+    };
+}
+
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 
 const API_BASE = process.env.NEXT_PUBLIC_SERVER_URL || "";
@@ -364,11 +387,14 @@ export const RagConfigPanel: FunctionComponent = () => {
     const [session, setSession] = useState<SessionConfig>(DEFAULT_SESSION);
 
     // UI state
-    const [dirty, setDirty] = useState(false);
     const [status, setStatus] = useState<StatusMessage>({ type: "idle", text: "" });
     const [kbForm, setKbForm] = useState<"create" | "edit" | null>(null);
     const [isIndexing, setIsIndexing] = useState(false);
     const prevFinishedAt = useRef<string>("");
+
+    // Last-applied server state — used to compute per-section dirty flags
+    const savedSession = useRef<SessionConfig>(DEFAULT_SESSION);
+    const savedKbConfig = useRef<KBConfig>(DEFAULT_KB_CONFIG);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
 
     // LiteLLM dynamic model list
@@ -407,24 +433,9 @@ export const RagConfigPanel: FunctionComponent = () => {
             const kb = reg.bases[reg.active];
             if (kb) {
                 setActiveKb(kb);
-                setKbConfig({
-                    embedding_backend: ((kb.embedding_backend as string) === "openai" ? "custom" : kb.embedding_backend) as KBConfig["embedding_backend"],
-                    embedding_model: kb.embedding_model,
-                    embedding_ollama_host: kb.embedding_ollama_host ?? "",
-                    embedding_custom_base_url: kb.embedding_custom_base_url ?? "",
-                    embedding_custom_api_key: kb.embedding_custom_api_key ?? "",
-                    nomic_prefix: kb.nomic_prefix,
-                    max_file_size_mb: kb.max_file_size_mb,
-                    embedding_batch_size: kb.embedding_batch_size ?? 50,
-                    pdf_ocr_enabled: kb.pdf_ocr_enabled ?? true,
-                    max_chunk_tokens: kb.max_chunk_tokens ?? 0,
-                    vs_type: (kb.vs_type as KBConfig["vs_type"]) ?? "chromadb",
-                    vs_connection_string: kb.vs_connection_string ?? "",
-                    image_indexing_enabled: kb.image_indexing_enabled ?? false,
-                    image_embedding_model: kb.image_embedding_model ?? "Qwen/Qwen3-VL-Embedding-2B",
-                    image_retrieval_enabled: kb.image_retrieval_enabled ?? false,
-                    image_captioning_enabled: kb.image_captioning_enabled ?? false,
-                });
+                const kbCfg = kbInfoToConfig(kb);
+                setKbConfig(kbCfg);
+                savedKbConfig.current = kbCfg;
                 setUserPresets(await fetchUserPresets(kb.id));
             }
         } catch { /* ignore */ }
@@ -438,14 +449,15 @@ export const RagConfigPanel: FunctionComponent = () => {
                 // Normalize legacy backends to new ones
                 const backend: SessionConfig["llm_backend"] =
                     raw.llm_backend === "openai" || raw.llm_backend === "anthropic" ? "custom" : raw.llm_backend ?? "ollama";
-                setSession({
+                const loaded: SessionConfig = {
                     ...DEFAULT_SESSION,
                     ...raw,
                     llm_backend: backend,
                     custom_base_url: raw.custom_base_url ?? "",
                     custom_api_key: raw.custom_api_key ?? "",
-                });
-                setDirty(false);
+                };
+                setSession(loaded);
+                savedSession.current = loaded;
             }
         } catch { /* ignore */ }
     }, []);
@@ -578,29 +590,13 @@ export const RagConfigPanel: FunctionComponent = () => {
             if (r.ok) {
                 const kb: KBInfo = await r.json();
                 setActiveKb(kb);
-                setKbConfig({
-                    embedding_backend: ((kb.embedding_backend as string) === "openai" ? "custom" : kb.embedding_backend) as KBConfig["embedding_backend"],
-                    embedding_model: kb.embedding_model,
-                    embedding_ollama_host: kb.embedding_ollama_host ?? "",
-                    embedding_custom_base_url: kb.embedding_custom_base_url ?? "",
-                    embedding_custom_api_key: kb.embedding_custom_api_key ?? "",
-                    nomic_prefix: kb.nomic_prefix,
-                    max_file_size_mb: kb.max_file_size_mb,
-                    embedding_batch_size: kb.embedding_batch_size ?? 50,
-                    pdf_ocr_enabled: kb.pdf_ocr_enabled ?? true,
-                    max_chunk_tokens: kb.max_chunk_tokens ?? 0,
-                    vs_type: (kb.vs_type as KBConfig["vs_type"]) ?? "chromadb",
-                    vs_connection_string: kb.vs_connection_string ?? "",
-                    image_indexing_enabled: kb.image_indexing_enabled ?? false,
-                    image_embedding_model: kb.image_embedding_model ?? "Qwen/Qwen3-VL-Embedding-2B",
-                    image_retrieval_enabled: kb.image_retrieval_enabled ?? false,
-                    image_captioning_enabled: kb.image_captioning_enabled ?? false,
-                });
+                const kbCfg = kbInfoToConfig(kb);
+                setKbConfig(kbCfg);
+                savedKbConfig.current = kbCfg;
                 const loaded = await fetchUserPresets(kb.id);
                 setUserPresets(loaded);
                 setSelectedPreset("Standard");
                 setKbRegistry((prev) => prev ? { ...prev, active: id } : prev);
-                setDirty(false);
                 setStatus({ type: "success", text: t("rag.statusKbActive", { name: kb.name }) });
             } else {
                 setStatus({ type: "error", text: t("rag.statusError", { code: r.status }) });
@@ -674,12 +670,10 @@ export const RagConfigPanel: FunctionComponent = () => {
 
     const updateSession = useCallback(<K extends keyof SessionConfig>(key: K, value: SessionConfig[K]) => {
         setSession((s) => ({ ...s, [key]: value }));
-        setDirty(true);
     }, []);
 
     const updateKbConfig = useCallback(<K extends keyof KBConfig>(key: K, value: KBConfig[K]) => {
         setKbConfig((c) => ({ ...c, [key]: value }));
-        setDirty(true);
     }, []);
 
     const updateEmbeddingBackend = useCallback((backend: KBConfig["embedding_backend"]) => {
@@ -690,38 +684,41 @@ export const RagConfigPanel: FunctionComponent = () => {
             embedding_model: firstModel,
             nomic_prefix: backend === "local" && firstModel.includes("nomic"),
         }));
-        setDirty(true);
         // litellm fetch is handled by the useEffect watching embedding_backend
     }, []);
 
     const updateLlmBackend = useCallback((backend: SessionConfig["llm_backend"]) => {
         const firstModel = LLM_MODELS[backend]?.[0] ?? "";
         setSession((s) => ({ ...s, llm_backend: backend, llm_model: firstModel }));
-        setDirty(true);
         // litellm fetch is handled by the useEffect watching llm_backend
     }, []);
+
+    const applySessionConfig = async (): Promise<boolean> => {
+        const r = await fetch(`${API_BASE}/api/v1/rag/config`, {
+            method: "POST", credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(session),
+        });
+        if (r.ok) savedSession.current = { ...session };
+        return r.ok;
+    };
+
+    const applyKbConfig = async (): Promise<boolean> => {
+        if (!activeKb) return true;
+        const r = await fetch(`${API_BASE}/api/v1/kb/${activeKb.id}`, {
+            method: "PUT", credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: activeKb.name, data_dirs: activeKb.data_dirs, ...kbConfig }),
+        });
+        if (r.ok) savedKbConfig.current = { ...kbConfig };
+        return r.ok;
+    };
 
     const saveAll = async () => {
         setStatus({ type: "loading", text: t("rag.statusSaving") });
         try {
-            const [sessionRes, kbRes] = await Promise.all([
-                fetch(`${API_BASE}/api/v1/rag/config`, {
-                    method: "POST", credentials: "include",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(session),
-                }),
-                activeKb ? fetch(`${API_BASE}/api/v1/kb/${activeKb.id}`, {
-                    method: "PUT", credentials: "include",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        name: activeKb.name,
-                        data_dirs: activeKb.data_dirs,
-                        ...kbConfig,
-                    }),
-                }) : Promise.resolve({ ok: true }),
-            ]);
-            if (sessionRes.ok && (kbRes as Response).ok) {
-                setDirty(false);
+            const [sessionOk, kbOk] = await Promise.all([applySessionConfig(), applyKbConfig()]);
+            if (sessionOk && kbOk) {
                 setStatus({ type: "success", text: t("rag.statusSaved") });
                 window.dispatchEvent(new CustomEvent("rag-config-saved"));
             } else {
@@ -799,7 +796,6 @@ export const RagConfigPanel: FunctionComponent = () => {
             custom_api_key: (preset.data as any).custom_api_key ?? "",
         });
         setSelectedPreset(name);
-        setDirty(true);
     }, [allPresets]);
 
     const saveAsPreset = useCallback(() => {
@@ -825,6 +821,53 @@ export const RagConfigPanel: FunctionComponent = () => {
     }, [userPresets, selectedPreset, activeKb]);
 
     const kbList = kbRegistry ? Object.values(kbRegistry.bases) : [];
+
+    // ── Per-section dirty flags (compared against last applied server state) ──
+
+    const promptDirty =
+        session.follow_up_count !== savedSession.current.follow_up_count ||
+        session.system_prompt !== savedSession.current.system_prompt;
+
+    const llmDirty =
+        session.llm_backend !== savedSession.current.llm_backend ||
+        session.llm_model !== savedSession.current.llm_model ||
+        session.llm_temperature !== savedSession.current.llm_temperature ||
+        session.ollama_host !== savedSession.current.ollama_host ||
+        session.utility_llm_model !== savedSession.current.utility_llm_model ||
+        session.num_ctx !== savedSession.current.num_ctx ||
+        session.llm_max_tokens !== savedSession.current.llm_max_tokens ||
+        session.custom_base_url !== savedSession.current.custom_base_url ||
+        session.custom_api_key !== savedSession.current.custom_api_key;
+
+    const retrievalDirty =
+        session.retriever_top_k !== savedSession.current.retriever_top_k ||
+        session.rrf_k !== savedSession.current.rrf_k ||
+        session.bm25_enabled !== savedSession.current.bm25_enabled ||
+        session.query_expansion !== savedSession.current.query_expansion ||
+        session.hyde_enabled !== savedSession.current.hyde_enabled ||
+        session.reranking_enabled !== savedSession.current.reranking_enabled ||
+        session.reranking_candidate_pool !== savedSession.current.reranking_candidate_pool ||
+        session.image_retriever_top_k !== savedSession.current.image_retriever_top_k ||
+        kbConfig.image_retrieval_enabled !== savedKbConfig.current.image_retrieval_enabled;
+
+    const embeddingDirty =
+        kbConfig.embedding_backend !== savedKbConfig.current.embedding_backend ||
+        kbConfig.embedding_model !== savedKbConfig.current.embedding_model ||
+        kbConfig.embedding_ollama_host !== savedKbConfig.current.embedding_ollama_host ||
+        kbConfig.embedding_custom_base_url !== savedKbConfig.current.embedding_custom_base_url ||
+        kbConfig.embedding_custom_api_key !== savedKbConfig.current.embedding_custom_api_key ||
+        kbConfig.nomic_prefix !== savedKbConfig.current.nomic_prefix ||
+        kbConfig.max_file_size_mb !== savedKbConfig.current.max_file_size_mb ||
+        kbConfig.embedding_batch_size !== savedKbConfig.current.embedding_batch_size ||
+        kbConfig.pdf_ocr_enabled !== savedKbConfig.current.pdf_ocr_enabled ||
+        kbConfig.max_chunk_tokens !== savedKbConfig.current.max_chunk_tokens ||
+        kbConfig.vs_type !== savedKbConfig.current.vs_type ||
+        kbConfig.vs_connection_string !== savedKbConfig.current.vs_connection_string ||
+        kbConfig.image_indexing_enabled !== savedKbConfig.current.image_indexing_enabled ||
+        kbConfig.image_embedding_model !== savedKbConfig.current.image_embedding_model ||
+        kbConfig.image_captioning_enabled !== savedKbConfig.current.image_captioning_enabled;
+
+    const dirty = promptDirty || llmDirty || retrievalDirty || embeddingDirty;
 
     // ── Render ────────────────────────────────────────────────────────────────
 
@@ -979,7 +1022,7 @@ export const RagConfigPanel: FunctionComponent = () => {
 
                 {/* ── Prompt ── */}
                 <div>
-                    <SectionHeader title={t("rag.sectionPrompt")} open={sections.prompt} onToggle={() => toggle("prompt")} effect="instant" effectTitle={t("rag.effectInstant")} />
+                    <SectionHeader title={t("rag.sectionPrompt")} open={sections.prompt} onToggle={() => toggle("prompt")} effect={promptDirty ? "reindex" : "instant"} effectTitle={promptDirty ? t("rag.effectReindex") : t("rag.effectInstant")} />
                     {sections.prompt && (
                         <div className="pt-1 space-y-0 divide-y divide-border">
                             <FieldRow label={t("rag.fieldFollowUp")} hint={t("rag.fieldFollowUpHint")}>
@@ -1003,7 +1046,7 @@ export const RagConfigPanel: FunctionComponent = () => {
 
                 {/* ── LLM ── */}
                 <div>
-                    <SectionHeader title={t("rag.sectionLlm")} open={sections.llm} onToggle={() => toggle("llm")} effect="instant" effectTitle={t("rag.effectInstant")} />
+                    <SectionHeader title={t("rag.sectionLlm")} open={sections.llm} onToggle={() => toggle("llm")} effect={llmDirty ? "reindex" : "instant"} effectTitle={llmDirty ? t("rag.effectReindex") : t("rag.effectInstant")} />
                     {sections.llm && (
                         <div className="pt-1 space-y-0 divide-y divide-border">
                             <FieldRow label={t("rag.fieldLlmBackend")}>
@@ -1134,25 +1177,7 @@ export const RagConfigPanel: FunctionComponent = () => {
 
                 {/* ── Embedding ── */}
                 <div>
-                    {(() => {
-                        const embDirty = !activeKb?.last_indexed || (
-                            activeKb.embedding_backend !== kbConfig.embedding_backend ||
-                            activeKb.embedding_model !== kbConfig.embedding_model ||
-                            activeKb.nomic_prefix !== kbConfig.nomic_prefix ||
-                            activeKb.max_file_size_mb !== kbConfig.max_file_size_mb ||
-                            activeKb.embedding_batch_size !== kbConfig.embedding_batch_size ||
-                            activeKb.max_chunk_tokens !== kbConfig.max_chunk_tokens ||
-                            (activeKb.vs_type ?? "chromadb") !== kbConfig.vs_type ||
-                            (activeKb.vs_connection_string ?? "") !== kbConfig.vs_connection_string ||
-                            (activeKb.embedding_ollama_host ?? "") !== kbConfig.embedding_ollama_host ||
-                            (activeKb.embedding_custom_base_url ?? "") !== kbConfig.embedding_custom_base_url ||
-                            (activeKb.pdf_ocr_enabled ?? true) !== kbConfig.pdf_ocr_enabled ||
-                            (activeKb.image_indexing_enabled ?? false) !== kbConfig.image_indexing_enabled ||
-                            (activeKb.image_embedding_model ?? "") !== kbConfig.image_embedding_model ||
-                            (activeKb.image_captioning_enabled ?? false) !== kbConfig.image_captioning_enabled
-                        );
-                        return <SectionHeader title={t("rag.sectionEmbedding")} open={sections.embedding} onToggle={() => toggle("embedding")} effect={embDirty ? "reindex" : "instant"} effectTitle={embDirty ? t("rag.effectReindex") : t("rag.effectInstant")} />;
-                    })()}
+                    <SectionHeader title={t("rag.sectionEmbedding")} open={sections.embedding} onToggle={() => toggle("embedding")} effect={embeddingDirty ? "reindex" : "instant"} effectTitle={embeddingDirty ? t("rag.effectReindex") : t("rag.effectInstant")} />
                     {sections.embedding && (
                         <div className="pt-1 space-y-0 divide-y divide-border">
                             <FieldRow label={t("rag.fieldVsType")} hint={t("rag.fieldVsTypeHint")}>
@@ -1301,7 +1326,7 @@ export const RagConfigPanel: FunctionComponent = () => {
 
                 {/* ── Retrieval ── */}
                 <div>
-                    <SectionHeader title={t("rag.sectionRetrieval")} open={sections.retrieval} onToggle={() => toggle("retrieval")} effect="instant" effectTitle={t("rag.effectInstant")} />
+                    <SectionHeader title={t("rag.sectionRetrieval")} open={sections.retrieval} onToggle={() => toggle("retrieval")} effect={retrievalDirty ? "reindex" : "instant"} effectTitle={retrievalDirty ? t("rag.effectReindex") : t("rag.effectInstant")} />
                     {sections.retrieval && (
                         <div className="pt-1 space-y-0 divide-y divide-border">
                             <FieldRow label={t("rag.fieldTopK")} hint={t("rag.fieldTopKHint")}>
