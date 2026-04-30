@@ -5,6 +5,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.2.35] — 2026-04-30 · rlei-odes
+
+### Improved — RAG Parameters panel: preset split and modified-state indicator
+
+Groundwork for admin/user role separation (see `docs/DESIGN_DOC_Admin_Role_Separation.md`). The previously flat preset system has been split into two independent preset types reflecting the underlying config separation:
+
+- **Retrieval presets** snapshot `SessionConfig` (top-k, BM25, HyDE, reranking, LLM, prompt) — no re-index required
+- **KB presets** snapshot `KBConfig` (embedding backend/model, file limits, OCR, chunking) — re-index required after applying
+
+Each type has its own dropdown in the preset toolbar, styled with a blue `SlidersHorizontal` header and muted subtitle labels. Save, overwrite (by name), and delete work independently per type.
+
+**Modified-state signal:** editing any field now clears the corresponding dropdown to show `— modified · unsaved —`, making divergence from the last loaded preset immediately visible. The placeholder is hidden from the open dropdown list so only named presets appear as selectable options.
+
+**Other panel changes:**
+- Per-section dirty-state dots (green = instant effect, amber = re-index required) computed against last-applied server state via `useRef` snapshots — removed the previous static green dots
+- `saveAll` split into `applySessionConfig` + `applyKbConfig` with independent saved-state refs
+- "Unsaved changes" notice moved above the Apply button (was incorrectly positioned below the preset toolbar)
+- Backend `GET/POST /presets/{kb_id}` changed from flat list to `{ retrieval: [], kb: [] }` dict; old flat-list files are read back transparently
+
+---
+
 ## [Lancy v0.2.34] — 2026-04-27 · rlei-odes
 
 ### Added — Image captioning pipeline

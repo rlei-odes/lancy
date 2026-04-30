@@ -1,6 +1,6 @@
 # Design Doc: Image Captioning via Main LLM
 
-**Status:** Proposal  
+**Status:** Some groundwork done, see changelog for version 0.2.35  
 
 
 ## Related Backlog Entries

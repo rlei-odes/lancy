@@ -269,20 +269,24 @@ def create_rag_router(
             return StoreInfo(chunks=0, files=0, file_list=[])
 
     @router.get("/presets/{kb_id}")
-    async def get_presets(kb_id: str) -> list:
+    async def get_presets(kb_id: str) -> dict:
         path = db_dir / f"rag_presets_{kb_id}.json"
         if path.exists():
             try:
-                return json.loads(path.read_text())
+                data = json.loads(path.read_text())
+                if isinstance(data, list):
+                    # Backward compat: old format was a flat list of combined presets
+                    return {"retrieval": data, "kb": []}
+                return data
             except Exception:
                 pass
-        return []
+        return {"retrieval": [], "kb": []}
 
     @router.post("/presets/{kb_id}")
-    async def save_presets(kb_id: str, presets: Annotated[list, Body()]) -> dict:
+    async def save_presets(kb_id: str, presets: Annotated[dict, Body()]) -> dict:
         path = db_dir / f"rag_presets_{kb_id}.json"
         path.write_text(json.dumps(presets, indent=2))
-        return {"saved": len(presets)}
+        return {"saved": len(presets.get("retrieval", [])) + len(presets.get("kb", []))}
 
     @router.post("/reindex")
     async def reindex(req: ReindexRequest, background_tasks: BackgroundTasks) -> dict:

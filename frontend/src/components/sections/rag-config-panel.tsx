@@ -1,7 +1,7 @@
 "use client";
 
 import React, { FunctionComponent, useEffect, useState, useCallback, useRef } from "react";
-import { RefreshCw, ChevronDown, ChevronRight, AlertCircle, CheckCircle2, Loader2, Save, Trash2, Plus, Pencil, X, Database } from "lucide-react";
+import { RefreshCw, ChevronDown, ChevronRight, AlertCircle, CheckCircle2, Loader2, Save, Trash2, Plus, Pencil, X, Database, SlidersHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -64,12 +64,14 @@ interface KBRegistry {
     bases: Record<string, KBInfo>;
 }
 
-/** Flat snapshot saved in presets (KB + session combined, no data_dirs). */
-interface PresetData extends KBConfig, SessionConfig {}
-
-interface Preset {
+interface RetrievalPreset {
     name: string;
-    data: PresetData;
+    data: SessionConfig;
+}
+
+interface KBPreset {
+    name: string;
+    data: KBConfig;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -207,46 +209,18 @@ const SelectInput: FunctionComponent<{
 
 // ─── Presets (per-KB) ─────────────────────────────────────────────────────────
 
-const BUILTIN_PRESETS: Preset[] = [
-    {
-        // Ausgewogener Einstieg — funktioniert für die meisten Projektdokumente
-        name: "Standard",
-        data: { ...DEFAULT_KB_CONFIG, ...DEFAULT_SESSION, retriever_top_k: 5, llm_temperature: 0.3 },
-    },
-    {
-        // Angebote & Ausschreibungen: breites Retrieval, präzise LLM-Antwort
-        // Gut für: Lieferantenvergleiche, Kostenpositionen, Konditionen
-        name: "Angebots-Analyse",
-        data: { ...DEFAULT_KB_CONFIG, ...DEFAULT_SESSION, retriever_top_k: 8, reranking_candidate_pool: 20, llm_temperature: 0.15 },
-    },
-    {
-        // Technische Dokumente: EPDs, Datenblätter, Normen
-        // Sehr tiefe Temperatur → nur belegte Fakten, keine Interpolation
-        name: "Technische Fakten",
-        data: { ...DEFAULT_KB_CONFIG, ...DEFAULT_SESSION, max_file_size_mb: 30, retriever_top_k: 6, llm_temperature: 0.05, follow_up_count: 2 },
-    },
-    {
-        // Mehrere Dokumente vergleichen: top-k hoch, BM25 + semantisch
-        // Gut für: Bietervergleich, Produktvergleich, Multi-Lieferanten-KB
-        name: "Multi-Dok Vergleich",
-        data: { ...DEFAULT_KB_CONFIG, ...DEFAULT_SESSION, retriever_top_k: 10, query_expansion: 1, reranking_candidate_pool: 25, llm_temperature: 0.2 },
-    },
-    {
-        // Maximale Qualität mit bge-m3 (multilingual, braucht Re-Index)
-        // Gut für: mehrsprachige Projektdokumente, komplexe Fachbegriffe
-        name: "bge-m3 Präzision",
-        data: { ...DEFAULT_KB_CONFIG, ...DEFAULT_SESSION, embedding_model: "BAAI/bge-m3", nomic_prefix: false, embedding_batch_size: 10, retriever_top_k: 7, reranking_candidate_pool: 20, llm_temperature: 0.2 },
-    },
-    {
-        // Qualität mit langsameren Methoden — nur wenn Zeit keine Rolle spielt
-        name: "Qualität (langsam)",
-        data: { ...DEFAULT_KB_CONFIG, ...DEFAULT_SESSION, retriever_top_k: 8, query_expansion: 2, hyde_enabled: true, reranking_candidate_pool: 20, llm_temperature: 0.2 },
-    },
-    {
-        // Schnellste lokale Option für erste Orientierung
-        name: "Schnell (lokal)",
-        data: { ...DEFAULT_KB_CONFIG, ...DEFAULT_SESSION, retriever_top_k: 4, reranking_candidate_pool: 10, llm_model: "llama3.2:3b", llm_temperature: 0.3, follow_up_count: 2 },
-    },
+const BUILTIN_RETRIEVAL_PRESETS: RetrievalPreset[] = [
+    { name: "Standard",         data: { ...DEFAULT_SESSION, retriever_top_k: 5, llm_temperature: 0.3 } },
+    { name: "Angebots-Analyse", data: { ...DEFAULT_SESSION, retriever_top_k: 8, reranking_candidate_pool: 20, llm_temperature: 0.15 } },
+    { name: "Technische Fakten",data: { ...DEFAULT_SESSION, retriever_top_k: 6, llm_temperature: 0.05, follow_up_count: 2 } },
+    { name: "Multi-Dok Vergleich", data: { ...DEFAULT_SESSION, retriever_top_k: 10, query_expansion: 1, reranking_candidate_pool: 25, llm_temperature: 0.2 } },
+    { name: "Qualität (langsam)", data: { ...DEFAULT_SESSION, retriever_top_k: 8, query_expansion: 2, hyde_enabled: true, reranking_candidate_pool: 20, llm_temperature: 0.2 } },
+    { name: "Schnell (lokal)",  data: { ...DEFAULT_SESSION, retriever_top_k: 4, reranking_candidate_pool: 10, llm_model: "llama3.2:3b", llm_temperature: 0.3, follow_up_count: 2 } },
+];
+
+const BUILTIN_KB_PRESETS: KBPreset[] = [
+    // Multilingual embedding — requires re-index after applying
+    { name: "bge-m3 Präzision", data: { ...DEFAULT_KB_CONFIG, embedding_model: "BAAI/bge-m3", nomic_prefix: false, embedding_batch_size: 10 } },
 ];
 
 // ─── KB form ──────────────────────────────────────────────────────────────────
@@ -355,14 +329,22 @@ function kbInfoToConfig(kb: KBInfo): KBConfig {
 
 const API_BASE = process.env.NEXT_PUBLIC_SERVER_URL || "";
 
-async function fetchUserPresets(kbId: string): Promise<Preset[]> {
+interface UserPresets { retrieval: RetrievalPreset[]; kb: KBPreset[]; }
+const EMPTY_USER_PRESETS: UserPresets = { retrieval: [], kb: [] };
+
+async function fetchUserPresets(kbId: string): Promise<UserPresets> {
     try {
         const r = await fetch(`${API_BASE}/api/v1/rag/presets/${encodeURIComponent(kbId)}`, { credentials: "include" });
-        if (r.ok) return await r.json();
+        if (r.ok) {
+            const data = await r.json();
+            if (Array.isArray(data)) return { retrieval: data as RetrievalPreset[], kb: [] };
+            return { retrieval: data.retrieval ?? [], kb: data.kb ?? [] };
+        }
     } catch { /* ignore */ }
-    return [];
+    return EMPTY_USER_PRESETS;
 }
-async function persistUserPresets(kbId: string, presets: Preset[]): Promise<void> {
+
+async function persistUserPresets(kbId: string, presets: UserPresets): Promise<void> {
     try {
         await fetch(`${API_BASE}/api/v1/rag/presets/${encodeURIComponent(kbId)}`, {
             method: "POST",
@@ -410,13 +392,16 @@ export const RagConfigPanel: FunctionComponent = () => {
     const [ollamaLlmLoading, setOllamaLlmLoading] = useState(false);
 
     // Presets (per-KB)
-    const [userPresets, setUserPresets] = useState<Preset[]>([]);
-    const [selectedPreset, setSelectedPreset] = useState("Standard");
-    const [showSaveAs, setShowSaveAs] = useState(false);
+    const [userRetrievalPresets, setUserRetrievalPresets] = useState<RetrievalPreset[]>([]);
+    const [userKbPresets, setUserKbPresets] = useState<KBPreset[]>([]);
+    const [selectedRetrievalPreset, setSelectedRetrievalPreset] = useState("Standard");
+    const [selectedKbPreset, setSelectedKbPreset] = useState("bge-m3 Präzision");
+    const [showSaveAs, setShowSaveAs] = useState<"retrieval" | "kb" | null>(null);
     const [saveAsName, setSaveAsName] = useState("");
     const saveAsRef = useRef<HTMLInputElement>(null);
 
-    const allPresets = [...BUILTIN_PRESETS, ...userPresets];
+    const allRetrievalPresets = [...BUILTIN_RETRIEVAL_PRESETS, ...userRetrievalPresets];
+    const allKbPresets = [...BUILTIN_KB_PRESETS, ...userKbPresets];
 
     // Sections
     const [sections, setSections] = useState({ retrieval: true, embedding: true, llm: true, prompt: false });
@@ -436,7 +421,9 @@ export const RagConfigPanel: FunctionComponent = () => {
                 const kbCfg = kbInfoToConfig(kb);
                 setKbConfig(kbCfg);
                 savedKbConfig.current = kbCfg;
-                setUserPresets(await fetchUserPresets(kb.id));
+                const loaded = await fetchUserPresets(kb.id);
+                setUserRetrievalPresets(loaded.retrieval);
+                setUserKbPresets(loaded.kb);
             }
         } catch { /* ignore */ }
     }, []);
@@ -594,8 +581,10 @@ export const RagConfigPanel: FunctionComponent = () => {
                 setKbConfig(kbCfg);
                 savedKbConfig.current = kbCfg;
                 const loaded = await fetchUserPresets(kb.id);
-                setUserPresets(loaded);
-                setSelectedPreset("Standard");
+                setUserRetrievalPresets(loaded.retrieval);
+                setUserKbPresets(loaded.kb);
+                setSelectedRetrievalPreset("Standard");
+                setSelectedKbPreset("bge-m3 Präzision");
                 setKbRegistry((prev) => prev ? { ...prev, active: id } : prev);
                 setStatus({ type: "success", text: t("rag.statusKbActive", { name: kb.name }) });
             } else {
@@ -670,10 +659,12 @@ export const RagConfigPanel: FunctionComponent = () => {
 
     const updateSession = useCallback(<K extends keyof SessionConfig>(key: K, value: SessionConfig[K]) => {
         setSession((s) => ({ ...s, [key]: value }));
+        setSelectedRetrievalPreset("");
     }, []);
 
     const updateKbConfig = useCallback(<K extends keyof KBConfig>(key: K, value: KBConfig[K]) => {
         setKbConfig((c) => ({ ...c, [key]: value }));
+        setSelectedKbPreset("");
     }, []);
 
     const updateEmbeddingBackend = useCallback((backend: KBConfig["embedding_backend"]) => {
@@ -684,12 +675,14 @@ export const RagConfigPanel: FunctionComponent = () => {
             embedding_model: firstModel,
             nomic_prefix: backend === "local" && firstModel.includes("nomic"),
         }));
+        setSelectedKbPreset("");
         // litellm fetch is handled by the useEffect watching embedding_backend
     }, []);
 
     const updateLlmBackend = useCallback((backend: SessionConfig["llm_backend"]) => {
         const firstModel = LLM_MODELS[backend]?.[0] ?? "";
         setSession((s) => ({ ...s, llm_backend: backend, llm_model: firstModel }));
+        setSelectedRetrievalPreset("");
         // litellm fetch is handled by the useEffect watching llm_backend
     }, []);
 
@@ -753,72 +746,54 @@ export const RagConfigPanel: FunctionComponent = () => {
 
     // ── Presets ───────────────────────────────────────────────────────────────
 
-    const loadPreset = useCallback((name: string) => {
-        const preset = allPresets.find((p) => p.name === name);
+    const loadRetrievalPreset = useCallback((name: string) => {
+        const preset = allRetrievalPresets.find((p) => p.name === name);
         if (!preset) return;
-        setKbConfig({
-            embedding_backend: preset.data.embedding_backend,
-            embedding_model: preset.data.embedding_model,
-            embedding_ollama_host: preset.data.embedding_ollama_host ?? "",
-            embedding_custom_base_url: preset.data.embedding_custom_base_url ?? "",
-            embedding_custom_api_key: preset.data.embedding_custom_api_key ?? "",
-            nomic_prefix: preset.data.nomic_prefix,
-            max_file_size_mb: preset.data.max_file_size_mb,
-            embedding_batch_size: preset.data.embedding_batch_size ?? 50,
-            pdf_ocr_enabled: preset.data.pdf_ocr_enabled ?? true,
-            max_chunk_tokens: preset.data.max_chunk_tokens ?? 0,
-            vs_type: preset.data.vs_type ?? "chromadb",
-            vs_connection_string: preset.data.vs_connection_string ?? "",
-            image_indexing_enabled: preset.data.image_indexing_enabled ?? false,
-            image_embedding_model: preset.data.image_embedding_model ?? "Qwen/Qwen3-VL-Embedding-2B",
-            image_retrieval_enabled: preset.data.image_retrieval_enabled ?? false,
-            image_captioning_enabled: preset.data.image_captioning_enabled ?? false,
-        });
-        setSession({
-            retriever_top_k: preset.data.retriever_top_k,
-            rrf_k: preset.data.rrf_k,
-            bm25_enabled: preset.data.bm25_enabled,
-            query_expansion: preset.data.query_expansion,
-            hyde_enabled: preset.data.hyde_enabled,
-            reranking_enabled: preset.data.reranking_enabled ?? false,
-            reranking_candidate_pool: preset.data.reranking_candidate_pool ?? 15,
-            llm_backend: (preset.data.llm_backend as SessionConfig["llm_backend"]) ?? "ollama",
-            llm_model: preset.data.llm_model,
-            llm_temperature: preset.data.llm_temperature,
-            ollama_host: preset.data.ollama_host ?? "",
-            utility_llm_model: preset.data.utility_llm_model ?? "",
-            num_ctx: preset.data.num_ctx ?? 8192,
-            llm_max_tokens: preset.data.llm_max_tokens ?? 0,
-            system_prompt: preset.data.system_prompt,
-            follow_up_count: preset.data.follow_up_count,
-            image_retriever_top_k: preset.data.image_retriever_top_k ?? 1,
-            custom_base_url: (preset.data as any).custom_base_url ?? "",
-            custom_api_key: (preset.data as any).custom_api_key ?? "",
-        });
-        setSelectedPreset(name);
-    }, [allPresets]);
+        setSession({ ...DEFAULT_SESSION, ...preset.data });
+        setSelectedRetrievalPreset(name);
+    }, [allRetrievalPresets]);
 
-    const saveAsPreset = useCallback(() => {
+    const loadKbPreset = useCallback((name: string) => {
+        const preset = allKbPresets.find((p) => p.name === name);
+        if (!preset) return;
+        setKbConfig({ ...DEFAULT_KB_CONFIG, ...preset.data });
+        setSelectedKbPreset(name);
+    }, [allKbPresets]);
+
+    const saveAsPreset = useCallback((type: "retrieval" | "kb") => {
         const name = saveAsName.trim();
         if (!name || !activeKb) return;
-        const data: PresetData = { ...kbConfig, ...session };
-        const updated = [...userPresets.filter((p) => p.name !== name), { name, data }];
-        setUserPresets(updated);
-        persistUserPresets(activeKb.id, updated);
-        setSelectedPreset(name);
+        if (type === "retrieval") {
+            const updated = [...userRetrievalPresets.filter((p) => p.name !== name), { name, data: { ...session } }];
+            setUserRetrievalPresets(updated);
+            persistUserPresets(activeKb.id, { retrieval: updated, kb: userKbPresets });
+            setSelectedRetrievalPreset(name);
+        } else {
+            const updated = [...userKbPresets.filter((p) => p.name !== name), { name, data: { ...kbConfig } }];
+            setUserKbPresets(updated);
+            persistUserPresets(activeKb.id, { retrieval: userRetrievalPresets, kb: updated });
+            setSelectedKbPreset(name);
+        }
         setSaveAsName("");
-        setShowSaveAs(false);
+        setShowSaveAs(null);
         setStatus({ type: "success", text: t("rag.statusPresetSaved", { name }) });
         setTimeout(() => setStatus({ type: "idle", text: "" }), 2500);
-    }, [saveAsName, kbConfig, session, userPresets, activeKb]);
+    }, [saveAsName, session, kbConfig, userRetrievalPresets, userKbPresets, activeKb, t]);
 
-    const deletePreset = useCallback((name: string) => {
+    const deletePreset = useCallback((type: "retrieval" | "kb", name: string) => {
         if (!activeKb) return;
-        const updated = userPresets.filter((p) => p.name !== name);
-        setUserPresets(updated);
-        persistUserPresets(activeKb.id, updated);
-        if (selectedPreset === name) setSelectedPreset("Standard");
-    }, [userPresets, selectedPreset, activeKb]);
+        if (type === "retrieval") {
+            const updated = userRetrievalPresets.filter((p) => p.name !== name);
+            setUserRetrievalPresets(updated);
+            persistUserPresets(activeKb.id, { retrieval: updated, kb: userKbPresets });
+            if (selectedRetrievalPreset === name) setSelectedRetrievalPreset("Standard");
+        } else {
+            const updated = userKbPresets.filter((p) => p.name !== name);
+            setUserKbPresets(updated);
+            persistUserPresets(activeKb.id, { retrieval: userRetrievalPresets, kb: updated });
+            if (selectedKbPreset === name) setSelectedKbPreset("bge-m3 Präzision");
+        }
+    }, [userRetrievalPresets, userKbPresets, selectedRetrievalPreset, selectedKbPreset, activeKb]);
 
     const kbList = kbRegistry ? Object.values(kbRegistry.bases) : [];
 
@@ -973,48 +948,101 @@ export const RagConfigPanel: FunctionComponent = () => {
             )}
 
             {/* Preset toolbar */}
-            <div className="px-3 py-2 border-b border-border/60 bg-card/60 space-y-1.5">
-                <div className="text-[9px] text-muted-foreground uppercase tracking-widest font-semibold">{t("rag.presetLabel")}</div>
-                <div className="flex items-center gap-1.5">
-                    <select
-                        value={selectedPreset}
-                        onChange={(e) => loadPreset(e.target.value)}
-                        className="flex-1 bg-muted border border-border text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
-                    >
-                        {allPresets.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
-                    </select>
-                    <button
-                        onClick={() => { setShowSaveAs((v) => !v); setSaveAsName(""); }}
-                        title={t("rag.presetSaveTitle")}
-                        className="p-1.5 rounded bg-muted hover:bg-muted/80 text-foreground transition-colors"
-                    >
-                        <Save size={12} />
-                    </button>
-                    {userPresets.some((p) => p.name === selectedPreset) && (
-                        <button
-                            onClick={() => deletePreset(selectedPreset)}
-                            title={t("rag.presetDeleteTitle")}
-                            className="p-1.5 rounded bg-red-900/40 hover:bg-red-800/60 text-red-400 hover:text-red-200 transition-colors"
+            <div className="px-3 py-2 border-b border-border/60 bg-card/60 space-y-2">
+                <div className="flex items-center gap-1">
+                    <SlidersHorizontal size={10} className="text-blue-400 flex-shrink-0" />
+                    <span className="text-[9px] font-semibold uppercase tracking-widest text-blue-400">{t("rag.presetLabel")}</span>
+                </div>
+
+                {/* Retrieval presets */}
+                <div className="space-y-1">
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-widest font-semibold">{t("rag.presetRetrievalLabel")}</div>
+                    <div className="flex items-center gap-1.5">
+                        <select
+                            value={selectedRetrievalPreset}
+                            onChange={(e) => loadRetrievalPreset(e.target.value)}
+                            className="flex-1 bg-muted border border-border text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
                         >
-                            <Trash2 size={12} />
+                            {selectedRetrievalPreset === "" && <option value="" disabled hidden>— modified · unsaved preset —</option>}
+                            {allRetrievalPresets.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                        </select>
+                        <button
+                            onClick={() => { setShowSaveAs(showSaveAs === "retrieval" ? null : "retrieval"); setSaveAsName(""); }}
+                            title={t("rag.presetSaveTitle")}
+                            className="p-1.5 rounded bg-muted hover:bg-muted/80 text-foreground transition-colors"
+                        >
+                            <Save size={12} />
                         </button>
+                        {userRetrievalPresets.some((p) => p.name === selectedRetrievalPreset) && (
+                            <button
+                                onClick={() => deletePreset("retrieval", selectedRetrievalPreset)}
+                                title={t("rag.presetDeleteTitle")}
+                                className="p-1.5 rounded bg-red-900/40 hover:bg-red-800/60 text-red-400 hover:text-red-200 transition-colors"
+                            >
+                                <Trash2 size={12} />
+                            </button>
+                        )}
+                    </div>
+                    {showSaveAs === "retrieval" && (
+                        <div className="flex items-center gap-1.5">
+                            <input
+                                ref={saveAsRef}
+                                value={saveAsName}
+                                onChange={(e) => setSaveAsName(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") saveAsPreset("retrieval"); if (e.key === "Escape") setShowSaveAs(null); }}
+                                placeholder={t("rag.presetNamePlaceholder")}
+                                className="flex-1 bg-muted border border-blue-500 text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none"
+                            />
+                            <button onClick={() => saveAsPreset("retrieval")} disabled={!saveAsName.trim()} className="px-2 py-1 rounded text-xs bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 transition-colors">OK</button>
+                            <button onClick={() => setShowSaveAs(null)} className="px-2 py-1 rounded text-xs bg-muted hover:bg-accent/20 text-foreground transition-colors">✕</button>
+                        </div>
                     )}
                 </div>
-                {showSaveAs && (
+
+                {/* KB config presets */}
+                <div className="space-y-1">
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-widest font-semibold">{t("rag.presetKbLabel")}</div>
                     <div className="flex items-center gap-1.5">
-                        <input
-                            ref={saveAsRef}
-                            value={saveAsName}
-                            onChange={(e) => setSaveAsName(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === "Enter") saveAsPreset(); if (e.key === "Escape") setShowSaveAs(false); }}
-                            placeholder={t("rag.presetNamePlaceholder")}
-                            className="flex-1 bg-muted border border-blue-500 text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none"
-                        />
-                        <button onClick={saveAsPreset} disabled={!saveAsName.trim()} className="px-2 py-1 rounded text-xs bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 transition-colors">OK</button>
-                        <button onClick={() => setShowSaveAs(false)} className="px-2 py-1 rounded text-xs bg-muted hover:bg-accent/20 text-foreground transition-colors">✕</button>
+                        <select
+                            value={selectedKbPreset}
+                            onChange={(e) => loadKbPreset(e.target.value)}
+                            className="flex-1 bg-muted border border-border text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
+                        >
+                            {selectedKbPreset === "" && <option value="" disabled hidden>— modified · unsaved preset —</option>}
+                            {allKbPresets.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                        </select>
+                        <button
+                            onClick={() => { setShowSaveAs(showSaveAs === "kb" ? null : "kb"); setSaveAsName(""); }}
+                            title={t("rag.presetSaveTitle")}
+                            className="p-1.5 rounded bg-muted hover:bg-muted/80 text-foreground transition-colors"
+                        >
+                            <Save size={12} />
+                        </button>
+                        {userKbPresets.some((p) => p.name === selectedKbPreset) && (
+                            <button
+                                onClick={() => deletePreset("kb", selectedKbPreset)}
+                                title={t("rag.presetDeleteTitle")}
+                                className="p-1.5 rounded bg-red-900/40 hover:bg-red-800/60 text-red-400 hover:text-red-200 transition-colors"
+                            >
+                                <Trash2 size={12} />
+                            </button>
+                        )}
                     </div>
-                )}
-                {dirty && <div className="text-[9px] text-amber-400 text-center">{t("rag.presetUnsaved")}</div>}
+                    {showSaveAs === "kb" && (
+                        <div className="flex items-center gap-1.5">
+                            <input
+                                ref={saveAsRef}
+                                value={saveAsName}
+                                onChange={(e) => setSaveAsName(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") saveAsPreset("kb"); if (e.key === "Escape") setShowSaveAs(null); }}
+                                placeholder={t("rag.presetNamePlaceholder")}
+                                className="flex-1 bg-muted border border-blue-500 text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none"
+                            />
+                            <button onClick={() => saveAsPreset("kb")} disabled={!saveAsName.trim()} className="px-2 py-1 rounded text-xs bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 transition-colors">OK</button>
+                            <button onClick={() => setShowSaveAs(null)} className="px-2 py-1 rounded text-xs bg-muted hover:bg-accent/20 text-foreground transition-colors">✕</button>
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Scrollable params */}
@@ -1386,6 +1414,7 @@ export const RagConfigPanel: FunctionComponent = () => {
 
             {/* Action buttons */}
             <div className="px-4 py-3 border-t border-border/60 bg-card/80 space-y-2">
+                {dirty && <div className="text-[9px] text-amber-400 text-center">{t("rag.unsavedChanges")}</div>}
                 <button
                     onClick={saveAll}
                     disabled={!dirty || status.type === "loading"}
