@@ -492,29 +492,7 @@ def build_server():
     emb_proxy = _Proxy(init_emb)
     _probe_bm25: BM25Retriever | None = None
 
-    # ── Stable user-id + one-time migration ──────────────────────────────
-    # Use a fixed user_id for single-user mode so cookie resets never create
-    # orphaned conversations. Multi-user support can be layered on top later.
     _secret_key = os.getenv("SECRET_KEY", "1234567890")
-    _stable_user_id = "admin"
-
-    # Migrate existing conversations BEFORE the DB loads so they're visible immediately.
-    _conv_path = _DB_DIR / "conversations.json"
-    if _conv_path.exists():
-        try:
-            _conv_data = json.loads(_conv_path.read_text())
-            _changed = sum(
-                1 for c in _conv_data.values() if c.get("user_id") != _stable_user_id
-            )
-            if _changed:
-                for c in _conv_data.values():
-                    c["user_id"] = _stable_user_id
-                _conv_path.write_text(json.dumps(_conv_data, indent=4))
-                log.info(
-                    f"Migrated {_changed} conversations to stable user_id '{_stable_user_id[:8]}...'"
-                )
-        except Exception as exc:
-            log.warning(f"Conversation migration skipped: {exc}")
 
     # ── Controller ────────────────────────────────────────────────────────
     controller = ConversationalToolkitController(

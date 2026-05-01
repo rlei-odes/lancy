@@ -34,24 +34,24 @@ class SessionCookieProvider(AuthProvider, ABC):
             request: Request,
             response: Response,
         ) -> None:
-            # Fixed single-user id — deterministic, no key-hash ambiguity.
-            stable_user_id = "admin"
+            # Per-browser identity: prefer x-session-id header (injected by Next.js
+            # middleware from the session_id cookie); fall back to "admin" for direct calls.
+            user_id = request.headers.get("x-session-id") or "admin"
             access_token = request.cookies.get(self.cookie_name)
             needs_new_cookie = False
 
             if not access_token:
                 needs_new_cookie = True
             else:
-                # Re-issue if the existing cookie points to an old/different user_id.
                 try:
                     claims = jwt.decode(access_token, self.secret_key, algorithms=[self.algorithm])
-                    if claims.get("sub") != stable_user_id:
+                    if claims.get("sub") != user_id:
                         needs_new_cookie = True
                 except JWTError:
                     needs_new_cookie = True
 
             if needs_new_cookie:
-                user = await self.controller.register_user(user_id=stable_user_id)
+                user = await self.controller.register_user(user_id=user_id)
                 response.set_cookie(
                     key=self.cookie_name,
                     value=jwt.encode({"sub": user.id}, self.secret_key, algorithm=self.algorithm),
@@ -63,6 +63,12 @@ class SessionCookieProvider(AuthProvider, ABC):
         app.include_router(router)
 
     def get_current_user_id(self, request: Request) -> str:
+        # Prefer the x-session-id header (set by the Next.js middleware proxy) so
+        # each browser UUID gets its own conversation history.
+        session_id = request.headers.get("x-session-id")
+        if session_id:
+            return session_id
+
         token = request.cookies.get(self.cookie_name)
         if not token:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
