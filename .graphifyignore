@@ -1,0 +1,5 @@
+# Exclude large data directory (PDFs, documents not part of source)
+data/
+
+# Exclude screenshot images
+docs/screenshots/

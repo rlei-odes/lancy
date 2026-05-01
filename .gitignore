@@ -54,6 +54,9 @@ prompts/image_captioning_prompt.custom.md
 data */
 epub/
 
+# Graphify outputs (generated, not for version control)
+graphify-out/
+
 # Build artifacts
 tsconfig.tsbuildinfo
 frontend/tsconfig.tsbuildinfo

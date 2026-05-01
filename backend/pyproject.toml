@@ -4,11 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lancy"
-authors = [
-    # { name = "Thibaut Loiseau", email = "thibaut.loiseau@epfl.ch" },
-    # { name = "Ivan-Daniel Sievering", email = "ivan.sievering@epfl.ch" },
-    # { name = "Paulina Körner", email = "paulina.koerner@sdsc.ethz.ch" },
-]
+# Authors and contributors: see ../CONTRIBUTORS.md
 description = ""
 readme = "README.md"
 requires-python = ">=3.11"
