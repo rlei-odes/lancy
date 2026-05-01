@@ -241,7 +241,7 @@ All fields read-only for users (visible but locked). Users can see which model a
 |---|---|---|
 | LLM backend | session | read-only for users |
 | LLM model | session | read-only for users |
-| Ollama host | session | admin-only (hide from users — not meaningful to them) |
+| Ollama host | session | admin-only |
 | Custom base URL / API key | session | admin-only (hide from users — credentials) |
 | Utility LLM model | session | read-only for users |
 | num_ctx / max tokens | session | read-only for users |

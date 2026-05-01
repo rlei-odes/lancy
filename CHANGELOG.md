@@ -48,6 +48,14 @@ Implements the Mode 2 auth foundation described in `docs/DESIGN_DOC_Admin_Role_S
 - HTTP 401 from the middleware is now treated as "reachable" (the proxy is up and responding)
 - All three backend-status strings (`backendDown`, `backendDownSince`, `backendRecovered`) are now i18n-translated across all four languages (en/de/fr/it)
 
+### Added — Role-based read-only UI in RAG config panel
+
+- LLM and Embedding sections are fully read-only for users (pill-styled disabled controls via `fieldset disabled`)
+- API key field shows a masked `••••••••` pill for users instead of the password input
+- KB CRUD buttons (create/edit/delete) and reindex buttons disabled for users
+- KB config preset toolbar disabled for users
+- Only the Retrieval section is expanded by default; Prompt, LLM, and Embedding start collapsed
+
 ### Fixed — UI language on first visit
 
 - Detection order set to `["localStorage", "navigator"]`: explicit user preference takes priority; browser locale is used on first visit if it matches a supported language (en/de/fr/it); otherwise falls back to English

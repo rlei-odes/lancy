@@ -3,6 +3,7 @@
 import React, { FunctionComponent, useEffect, useState, useCallback, useRef } from "react";
 import { RefreshCw, ChevronDown, ChevronRight, AlertCircle, CheckCircle2, Loader2, Save, Trash2, Plus, Pencil, X, Database, SlidersHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useRole } from "@/hooks/useRole";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -180,7 +181,7 @@ const NumberInput: FunctionComponent<{
         <input
             type="range" min={min} max={max} step={step} value={value}
             onChange={(e) => onChange(Number(e.target.value))}
-            className="w-24 accent-blue-400"
+            className="w-24 accent-blue-400 disabled:opacity-50 disabled:cursor-default"
         />
         <span className="text-xs text-blue-400 font-mono w-10 text-right">{value}</span>
     </div>
@@ -189,7 +190,7 @@ const NumberInput: FunctionComponent<{
 const Toggle: FunctionComponent<{ checked: boolean; onChange: (v: boolean) => void }> = ({ checked, onChange }) => (
     <button
         onClick={() => onChange(!checked)}
-        className={`relative w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none ${checked ? "bg-blue-500" : "bg-muted-foreground/40"}`}
+        className={`relative w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-default ${checked ? "bg-blue-500" : "bg-muted-foreground/40"}`}
     >
         <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${checked ? "translate-x-4" : "translate-x-0"}`} />
     </button>
@@ -371,6 +372,9 @@ interface StatusMessage { type: "idle" | "loading" | "success" | "error"; text: 
 
 export const RagConfigPanel: FunctionComponent = () => {
     const { t } = useTranslation("app");
+    const { role } = useRole();
+    const isAdmin = role !== "user";
+    const roFieldset = `border-0 p-0 m-0 min-w-0${!isAdmin ? " [&_select:disabled]:bg-background [&_select:disabled]:text-muted-foreground [&_select:disabled]:cursor-default [&_input:disabled]:bg-background [&_input:disabled]:text-muted-foreground [&_input:disabled]:cursor-default [&_button:disabled]:opacity-50 [&_button:disabled]:cursor-default" : ""}`;
 
     // KB state
     const [kbRegistry, setKbRegistry] = useState<KBRegistry | null>(null);
@@ -416,7 +420,7 @@ export const RagConfigPanel: FunctionComponent = () => {
     const allKbPresets = [...BUILTIN_KB_PRESETS, ...userKbPresets];
 
     // Sections
-    const [sections, setSections] = useState({ retrieval: true, embedding: true, llm: true, prompt: false });
+    const [sections, setSections] = useState({ retrieval: true, embedding: false, llm: false, prompt: false });
     const toggle = (s: keyof typeof sections) => setSections((prev) => ({ ...prev, [s]: !prev[s] }));
 
     // ── Loaders ──────────────────────────────────────────────────────────────
@@ -908,14 +912,16 @@ export const RagConfigPanel: FunctionComponent = () => {
                     <button
                         onClick={() => setKbForm("create")}
                         title={t("rag.kbCreateTitle")}
-                        className="p-1.5 rounded bg-muted hover:bg-muted/80 text-foreground transition-colors"
+                        disabled={!isAdmin}
+                        className="p-1.5 rounded bg-muted hover:bg-muted/80 text-foreground transition-colors disabled:opacity-40 disabled:cursor-default"
                     >
                         <Plus size={12} />
                     </button>
                     <button
                         onClick={() => setKbForm(kbForm === "edit" ? null : "edit")}
                         title={t("rag.kbEditTitle")}
-                        className={`p-1.5 rounded transition-colors ${kbForm === "edit" ? "bg-blue-700 text-white" : "bg-muted hover:bg-muted/80 text-foreground"}`}
+                        disabled={!isAdmin}
+                        className={`p-1.5 rounded transition-colors disabled:opacity-40 disabled:cursor-default ${kbForm === "edit" ? "bg-blue-700 text-white" : "bg-muted hover:bg-muted/80 text-foreground"}`}
                     >
                         <Pencil size={12} />
                     </button>
@@ -923,7 +929,8 @@ export const RagConfigPanel: FunctionComponent = () => {
                         <button
                             onClick={deleteKb}
                             title={t("rag.kbDeleteTitle")}
-                            className="p-1.5 rounded bg-red-900/40 hover:bg-red-800/60 text-red-400 hover:text-red-200 transition-colors"
+                            disabled={!isAdmin}
+                            className="p-1.5 rounded bg-red-900/40 hover:bg-red-800/60 text-red-400 hover:text-red-200 transition-colors disabled:opacity-40 disabled:cursor-default"
                         >
                             <Trash2 size={12} />
                         </button>
@@ -1019,6 +1026,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                 </div>
 
                 {/* KB config presets */}
+                <fieldset disabled={!isAdmin} className={roFieldset}>
                 <div className="space-y-1">
                     <div className="text-[9px] text-muted-foreground uppercase tracking-widest font-semibold">{t("rag.presetKbLabel")}</div>
                     <div className="flex items-center gap-1.5">
@@ -1062,6 +1070,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                         </div>
                     )}
                 </div>
+                </fieldset>
             </div>
 
             {/* Scrollable params */}
@@ -1095,6 +1104,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                 <div>
                     <SectionHeader title={t("rag.sectionLlm")} open={sections.llm} onToggle={() => toggle("llm")} effect={llmDirty ? "reindex" : "instant"} effectTitle={llmDirty ? t("rag.effectReindex") : t("rag.effectInstant")} />
                     {sections.llm && (
+                        <fieldset disabled={!isAdmin} className={roFieldset}>
                         <div className="pt-1 space-y-0 divide-y divide-border">
                             <FieldRow label={t("rag.fieldLlmBackend")}>
                                 <SelectInput
@@ -1184,14 +1194,18 @@ export const RagConfigPanel: FunctionComponent = () => {
                                         />
                                     </FieldRow>
                                     <FieldRow label="API Key">
-                                        <input
-                                            type="password"
-                                            value={session.custom_api_key}
-                                            onChange={(e) => updateSession("custom_api_key", e.target.value)}
-                                            placeholder="sk-ant-..."
-                                            maxLength={500}
-                                            className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full"
-                                        />
+                                        {isAdmin ? (
+                                            <input
+                                                type="password"
+                                                value={session.custom_api_key}
+                                                onChange={(e) => updateSession("custom_api_key", e.target.value)}
+                                                placeholder="sk-ant-..."
+                                                maxLength={500}
+                                                className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full"
+                                            />
+                                        ) : (
+                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-background border border-border text-[10px] text-muted-foreground font-mono">••••••••</span>
+                                        )}
                                     </FieldRow>
                                 </>
                             )}
@@ -1219,6 +1233,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                 </FieldRow>
                             )}
                         </div>
+                        </fieldset>
                     )}
                 </div>
 
@@ -1226,6 +1241,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                 <div>
                     <SectionHeader title={t("rag.sectionEmbedding")} open={sections.embedding} onToggle={() => toggle("embedding")} effect={embeddingDirty ? "reindex" : "instant"} effectTitle={embeddingDirty ? t("rag.effectReindex") : t("rag.effectInstant")} />
                     {sections.embedding && (
+                        <fieldset disabled={!isAdmin} className={roFieldset}>
                         <div className="pt-1 space-y-0 divide-y divide-border">
                             <FieldRow label={t("rag.fieldVsType")} hint={t("rag.fieldVsTypeHint")}>
                                 <SelectInput
@@ -1368,6 +1384,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                 <Toggle checked={kbConfig.image_captioning_enabled} onChange={(v) => updateKbConfig("image_captioning_enabled", v)} />
                             </FieldRow>
                         </div>
+                        </fieldset>
                     )}
                 </div>
 
@@ -1447,7 +1464,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                 <div className="flex gap-2">
                     <button
                         onClick={() => reindex(false)}
-                        disabled={status.type === "loading" || isIndexing}
+                        disabled={status.type === "loading" || isIndexing || !isAdmin}
                         title={isIndexing ? t("rag.btnAlreadyIndexingTitle") : t("rag.btnIncrementalTitle")}
                         className="flex-1 text-xs py-1.5 rounded font-medium bg-muted hover:bg-accent/20 text-foreground transition-colors disabled:opacity-40"
                     >
@@ -1455,7 +1472,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                     </button>
                     <button
                         onClick={() => setShowResetConfirm(true)}
-                        disabled={status.type === "loading" || isIndexing}
+                        disabled={status.type === "loading" || isIndexing || !isAdmin}
                         title={isIndexing ? t("rag.btnAlreadyIndexingTitle") : t("rag.btnReindexTitle")}
                         className="flex-1 text-xs py-1.5 rounded font-medium bg-amber-700/60 hover:bg-amber-600/70 text-amber-200 transition-colors disabled:opacity-40"
                     >
