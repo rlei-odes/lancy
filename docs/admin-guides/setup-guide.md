@@ -60,6 +60,8 @@ npm run dev
 | `LITELLM_BASE_URL` | LiteLLM proxy | `https://your-litellm/v1` |
 | `LITELLM_API_KEY` | LiteLLM proxy | `sk-...` |
 | `ALLOW_ORIGINS` | CORS config | `http://localhost:3000` |
+| `SECRET_KEY` | JWT signing key for session cookies | any long random string |
+| `DATABASE_URL` | Postgres conversation DB (default: SQLite) | `postgresql://user:pass@host/db` |
 
 ### Frontend (`.env`)
 

@@ -72,6 +72,12 @@ System prompt textarea is read-only for users (pill-styled); follow-up count rem
 - `GET /api/v1/rag/config` merges the admin baseline (`rag_config.json`) with the user's retrieval overlay from SQLite
 - `POST /api/v1/rag/config`: admin role writes the full shared baseline; user role persists only the retrieval fields (`top_k`, `rrf_k`, `bm25_enabled`, `query_expansion`, `hyde_enabled`, `reranking_*`, `image_retriever_top_k`) to their own row — LLM and embedding settings remain admin-only
 
+### Added — Per-browser conversation history isolation
+
+- `SessionCookieProvider.get_current_user_id()` now prefers the `x-session-id` header injected by the Next.js middleware, giving each browser its own conversation history
+- `/auth/refresh` encodes the same session UUID into the `access_token` JWT so the cookie stays in sync
+- Removed the forced `user_id="admin"` migration from `main.py` — existing conversations are orphaned (not deleted) on upgrade; new deployments start clean
+
 ### Added — Per-user preset isolation and SQLite preset storage
 
 - Presets migrated from per-KB JSON files into a `presets` table in `user_config.db` (SQLite)
@@ -80,6 +86,14 @@ System prompt textarea is read-only for users (pill-styled); follow-up count rem
 - Existing `rag_presets_*.json` files are migrated automatically as admin presets on first startup
 - `RetrievalPreset.data` trimmed to retrieval fields only — applying a preset no longer resets LLM settings
 - SQLite infrastructure extracted to `database.py` with WAL mode, `synchronous=NORMAL`, incremental auto-vacuum, and daily file backup
+
+### Added — SQLite-backed conversation storage (replaces JSON files)
+
+- New `conversational_toolkit/conversation_database/sqlite/` module — async SQLAlchemy implementations for all five stores (users, conversations, messages, reactions, sources), mirroring the existing Postgres backend with `Text` columns for JSON payloads
+- `conversations.db` (SQLite, WAL mode via aiosqlite) replaces the five `*.json` files in `db/`; all tables are created automatically on first startup
+- Routing in `main.py`: `DATABASE_URL` env var selects Postgres; unset uses SQLite at `db/conversations.db`
+- `sqlalchemy` and `aiosqlite` added as dependencies to the conversational-toolkit
+- Existing `*.json` conversation files are not migrated — they remain on disk but are ignored; fresh deployments start clean
 
 ### Fixed — UI language on first visit
 

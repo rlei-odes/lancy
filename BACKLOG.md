@@ -5,23 +5,6 @@ Items are grouped by theme and roughly prioritised within each section.
 
 ## Known Bugs
 
-### Answer Disappears After Rendering
-
-Root cause identified and fixed: `mistral-nemo:12b` emits literal newlines inside JSON string values, which is invalid JSON. `partial_json_loads` failed silently, returning `{}`, so the extracted answer was empty and the streamed content disappeared when the DB record replaced the live display.
-
-Fixes applied (v0.2.29):
-- `_escape_literal_newlines()` pre-processes the JSON before parsing to handle bare newlines in string values
-- `_answer_post_processing` falls back to the raw accumulated text if the `"answer"` key cannot be extracted, preventing silent data loss
-- `parse_llm_json_stream` now catches all exceptions from `partial_json_loads`, not just `ValueError`
-
-Monitor for recurrence. A better-instruction-following model (e.g. larger Ollama models) will reduce the frequency of format violations.
-
-### ~~Frontend Process Not Fully Stopped by `stop.sh`~~ ✓ fixed
-
-After running `./stop.sh`, the backend stops cleanly but parts of the frontend remain reachable at the original URL. On the next `./start.sh`, the Next.js dev server detects port 3000 as still occupied and opens on a new port (e.g. 3001), causing a mismatch with any bookmarks or configured `SERVER_URL` references.
-
-`stop.sh` kills the PID from the PID file and then runs `fuser -k 3000/tcp`, but Next.js spawns child worker processes that are not covered by either — they linger and hold the port. Fix: extend `stop.sh` to also kill child processes of the frontend PID (e.g. `pkill -P <frontend_pid>`) before the `fuser` call, or replace the PID-file approach with a process group kill (`kill -- -<pgid>`).
-
 ### Low Source Citation Count
 
 Observed that answers sometimes cite only 2 chunks even when retrieval is configured with a higher `k`. Possible causes: the reranker is collapsing similar chunks into fewer sources, the `used_sources_id` field in the LLM JSON response is under-populated (model not citing all chunks it used), or the source deduplication step in `_answer_post_processing` is too aggressive. Needs investigation with logging enabled on retrieved chunk count vs. cited chunk count. It might be good and even intended behaviour - when no fit / similarity is observed above the threshold, no bad fitting chunks should be served.

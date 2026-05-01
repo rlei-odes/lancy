@@ -61,21 +61,16 @@ from conversational_toolkit.api.server import create_app
 from conversational_toolkit.conversation_database.controller import (
     ConversationalToolkitController,
 )
-from conversational_toolkit.conversation_database.in_memory.conversation import (
-    InMemoryConversationDatabase,
-)
-from conversational_toolkit.conversation_database.in_memory.message import (
-    InMemoryMessageDatabase,
-)
-from conversational_toolkit.conversation_database.in_memory.reactions import (
-    InMemoryReactionDatabase,
-)
-from conversational_toolkit.conversation_database.in_memory.source import (
-    InMemorySourceDatabase,
-)
-from conversational_toolkit.conversation_database.in_memory.user import (
-    InMemoryUserDatabase,
-)
+from conversational_toolkit.conversation_database.sqlite.conversation import SQLiteConversationDatabase
+from conversational_toolkit.conversation_database.sqlite.message import SQLiteMessageDatabase
+from conversational_toolkit.conversation_database.sqlite.reactions import SQLiteReactionDatabase
+from conversational_toolkit.conversation_database.sqlite.source import SQLiteSourceDatabase
+from conversational_toolkit.conversation_database.sqlite.user import SQLiteUserDatabase
+from conversational_toolkit.conversation_database.postgres.conversation import PostgreSQLConversationDatabase
+from conversational_toolkit.conversation_database.postgres.message import PostgreSQLMessageDatabase
+from conversational_toolkit.conversation_database.postgres.reactions import PostgreSQLReactionDatabase
+from conversational_toolkit.conversation_database.postgres.source import PostgreSQLSourceDatabase
+from conversational_toolkit.conversation_database.postgres.user import PostgreSQLUserDatabase
 from conversational_toolkit.llms.base import MessageContent
 from conversational_toolkit.retriever.bm25_retriever import BM25Retriever
 from conversational_toolkit.retriever.hybrid_retriever import HybridRetriever
@@ -495,14 +490,38 @@ def build_server():
     _secret_key = os.getenv("SECRET_KEY", "1234567890")
 
     # ── Controller ────────────────────────────────────────────────────────
+    # ── Conversation database — SQLite default, Postgres if DATABASE_URL is set ──
+    _database_url = os.getenv("DATABASE_URL", "")
+    if _database_url:
+        _conn = _database_url
+        if _conn.startswith("postgresql://"):
+            _conn = _conn.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif _conn.startswith("postgres://"):
+            _conn = _conn.replace("postgres://", "postgresql+asyncpg://", 1)
+        from sqlalchemy.ext.asyncio import create_async_engine as _cae
+        _db_engine = _cae(_conn, pool_pre_ping=True)
+        _conv_db = PostgreSQLConversationDatabase(_db_engine)
+        _msg_db = PostgreSQLMessageDatabase(_db_engine)
+        _react_db = PostgreSQLReactionDatabase(_db_engine)
+        _src_db = PostgreSQLSourceDatabase(_db_engine)
+        _user_db = PostgreSQLUserDatabase(_db_engine)
+        log.info(f"Conversation DB: PostgreSQL ({_database_url[:40]}...)")
+    else:
+        from sqlalchemy.ext.asyncio import create_async_engine as _cae
+        _db_engine = _cae(f"sqlite+aiosqlite:///{_DB_DIR}/conversations.db")
+        _conv_db = SQLiteConversationDatabase(_db_engine)
+        _msg_db = SQLiteMessageDatabase(_db_engine)
+        _react_db = SQLiteReactionDatabase(_db_engine)
+        _src_db = SQLiteSourceDatabase(_db_engine)
+        _user_db = SQLiteUserDatabase(_db_engine)
+        log.info(f"Conversation DB: SQLite ({_DB_DIR}/conversations.db)")
+
     controller = ConversationalToolkitController(
-        conversation_db=InMemoryConversationDatabase(
-            str(_DB_DIR / "conversations.json")
-        ),
-        message_db=InMemoryMessageDatabase(str(_DB_DIR / "messages.json")),
-        reaction_db=InMemoryReactionDatabase(str(_DB_DIR / "reactions.json")),
-        source_db=InMemorySourceDatabase(str(_DB_DIR / "sources.json")),
-        user_db=InMemoryUserDatabase(str(_DB_DIR / "users.json")),
+        conversation_db=_conv_db,
+        message_db=_msg_db,
+        reaction_db=_react_db,
+        source_db=_src_db,
+        user_db=_user_db,
         agent=agent_proxy,
     )
 
@@ -591,6 +610,11 @@ def build_server():
     async def _startup() -> None:
         asyncio.create_task(upload_worker())  # noqa: RUF006
         configure_loguru()
+        await _conv_db.create_table()
+        await _msg_db.create_table()
+        await _react_db.create_table()
+        await _src_db.create_table()
+        await _user_db.create_table()
         vs = object.__getattribute__(vs_proxy, "_obj")
         agent = object.__getattribute__(agent_proxy, "_obj")
         count = await vs.count()
