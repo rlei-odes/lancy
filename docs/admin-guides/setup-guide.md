@@ -65,7 +65,7 @@ npm run dev
 
 | Variable | Description |
 |----------|-------------|
-| `API_KEY` | Login password for the web UI |
+| `APP_PASSWORD` | Login password for the web UI |
 | `BACKEND_URL` | Backend URL for server-side proxy. Default: `http://localhost:8080` |
 | `SERVER_URL` | Override for browser-side API calls. **Leave empty** for same-origin proxy. |
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { verifyToken } from "@/lib/auth";
 
-const API_KEY = process.env.API_KEY || "";
+const APP_PASSWORD = process.env.APP_PASSWORD || "";
 
 const CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -23,13 +24,26 @@ function withCors(response: NextResponse): NextResponse {
     return response;
 }
 
-export function middleware(request: NextRequest) {
-    // CORS preflight — respond immediately with CORS headers
+// Returns the role for this request, or null if unauthenticated.
+// Mode 1 (no APP_PASSWORD): open access, everyone is admin.
+// Mode 2: role is embedded in the signed cookie.
+async function getRole(request: NextRequest): Promise<"admin" | "user" | null> {
+    if (!APP_PASSWORD) return "admin";
+
+    // Bearer token for API clients (Open WebUI, curl, etc.) — always admin
+    const authHeader = request.headers.get("authorization") ?? "";
+    if (authHeader === `Bearer ${APP_PASSWORD}`) return "admin";
+
+    const cookie = request.cookies.get("rag_auth");
+    if (!cookie?.value) return null;
+
+    return verifyToken(cookie.value, APP_PASSWORD);
+}
+
+export async function middleware(request: NextRequest) {
     if (request.method === "OPTIONS") {
         return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
     }
-
-    if (!API_KEY) return NextResponse.next();
 
     const { pathname } = request.nextUrl;
 
@@ -37,19 +51,9 @@ export function middleware(request: NextRequest) {
         return NextResponse.next();
     }
 
-    // Bearer token — for API clients (Open WebUI, curl, etc.)
-    const authHeader = request.headers.get("authorization") ?? "";
-    if (authHeader === `Bearer ${API_KEY}`) {
-        return withCors(NextResponse.next());
-    }
+    const role = await getRole(request);
+    if (role) return withCors(NextResponse.next());
 
-    // Session cookie — for browser users after login
-    const cookie = request.cookies.get("rag_auth");
-    if (cookie?.value === API_KEY) {
-        return NextResponse.next();
-    }
-
-    // API / proxy routes → 401 JSON (not browser navigation)
     if (
         pathname.startsWith("/api/") ||
         pathname.startsWith("/v1/") ||
@@ -61,7 +65,6 @@ export function middleware(request: NextRequest) {
         });
     }
 
-    // Browser → redirect to login
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(loginUrl);

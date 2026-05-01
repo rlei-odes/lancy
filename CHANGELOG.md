@@ -5,6 +5,56 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.2.36] — 2026-05-01 · rlei-odes
+
+### Added — Mode 2 authentication: admin/user role separation
+
+Implements the Mode 2 auth foundation described in `docs/DESIGN_DOC_Admin_Role_Separation.md`. The system now supports two distinct roles (admin / user) with separate passwords, using HMAC-SHA256 signed session tokens that work in both the Next.js Edge Runtime (middleware) and Node.js API routes.
+
+**Auth infrastructure:**
+- `frontend/src/lib/auth.ts` — HMAC-SHA256 sign/verify utilities using the Web Crypto API; token format `role.exp_unix.hex_sig`
+- `frontend/src/lib/auth-config.ts` — reads/writes `frontend/auth_config.json` (gitignored); falls back to `ADMIN_PASSWORD` env var; exposes `isMode2Active()`, `getAdminPassword()`, `setAdminPassword()`
+- `frontend/src/pages/api/auth/me.ts` — `GET /api/auth/me` returns `{ role }` for the current session
+- `frontend/src/pages/api/auth/admin-config.ts` — `GET` returns current mode; `POST` sets or clears the admin password (admin-only, validates min 8 chars and must differ from `APP_PASSWORD`)
+
+**Middleware:**
+- Extracted `getRole()` as the architectural seam for future auth providers
+- Mode 1 (no `APP_PASSWORD` set): open dev mode, all requests get role "admin"
+- Mode 1 (APP_PASSWORD set): single password → role "admin"
+- Mode 2 (`APP_PASSWORD` + `ADMIN_PASSWORD` both set): `APP_PASSWORD` → "user", `ADMIN_PASSWORD` → "admin"
+- Bearer token and signed cookie both supported
+
+**Login flow:**
+- Login API now checks both passwords and issues a signed token with the appropriate role
+- `useRole()` hook (`frontend/src/hooks/useRole.ts`) fetches `/api/auth/me` on mount
+
+**Settings UI:**
+- New "Role Separation" section in the sidebar settings panel
+- Mode 1: "Set admin password…" button → dialog to activate Mode 2
+- Mode 2 + role=user: status info + "Admin Login" button (navigates to `/login?redirect=...`)
+- Mode 2 + role=admin: confirms admin session is active
+
+**`API_KEY` → `APP_PASSWORD` rename:**
+- Renamed in `frontend/.env`, `frontend/.env.example`, and all middleware/auth code
+- `API_KEY` is freed for future use as a bearer token for backend API protection
+
+**Docs:**
+- `docs/DESIGN_DOC_Admin_Role_Separation.md`: appended Mode 1→2 transition flow and auth architecture sections
+- `docs/ARCHITECTURE.md`: added full authentication section covering signed token scheme and the three planned modes
+
+### Fixed — BackendStatus on login page showing as "down"
+
+- `BackendStatus` is no longer rendered on the `/login` route (was polling unauthenticated and interpreting 401 as a network failure)
+- HTTP 401 from the middleware is now treated as "reachable" (the proxy is up and responding)
+- All three backend-status strings (`backendDown`, `backendDownSince`, `backendRecovered`) are now i18n-translated across all four languages (en/de/fr/it)
+
+### Fixed — UI language on first visit
+
+- Detection order set to `["localStorage", "navigator"]`: explicit user preference takes priority; browser locale is used on first visit if it matches a supported language (en/de/fr/it); otherwise falls back to English
+- Previously, hardcoded strings in `BackendStatus` caused a jarring language mismatch when the browser locale was German — resolved by fully translating those strings (see above)
+
+---
+
 ## [Lancy v0.2.35] — 2026-04-30 · rlei-odes
 
 ### Improved — RAG Parameters panel: preset split and modified-state indicator

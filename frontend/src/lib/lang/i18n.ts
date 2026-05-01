@@ -37,17 +37,8 @@ export namespace Translation {
             .use(initReactI18next)
             .init({
                 detection: {
+                    order: ["localStorage", "navigator"],
                     caches: ["localStorage"],
-                    cookieMinutes: 365 * 24 * 60 * 60 * 1000,
-                    convertDetectedLanguage: (language) => {
-                        if (language) {
-                            const shortLanguage = language.split("-")[0];
-                            if (Object.values(Languages).includes(shortLanguage as Languages)) {
-                                return shortLanguage;
-                            }
-                        }
-                        return Languages.FR;
-                    },
                 },
                 defaultNS,
                 resources,

@@ -26,6 +26,7 @@ if ! "$VENV/bin/python" -c "import uvicorn" 2>/dev/null; then
     echo "   Fix: recreate the venv:"
     echo "     rm -rf .venv"
     echo "     python3 -m venv .venv"
+    echo "     source .venv/bin/activate"
     echo "     pip install -r requirements.txt"
     exit 1
 fi

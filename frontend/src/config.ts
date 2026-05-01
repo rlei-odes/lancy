@@ -4,7 +4,7 @@ export const config = {
         description: "RAG-based document analysis assistant.",
         favicon: "/favicon.png",
         logo: "/assets/logo.png",
-        version: "0.2.35",
+        version: "0.2.36",
         robots: "noindex",
     },
     agent: {

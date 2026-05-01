@@ -43,6 +43,9 @@ node_modules/
 # Claude Code memory (private)
 .claude/
 
+# Auth config — set via settings UI, contains admin password
+frontend/auth_config.json
+
 # Custom prompts (may contain internal/confidential instructions)
 prompts/system_prompt.custom.md
 prompts/image_captioning_prompt.custom.md

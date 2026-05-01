@@ -31,7 +31,7 @@ export default function App({ Component, pageProps }: AppProps) {
                         <div className={inter.className}>
                             <Component {...pageProps} />
                             <DisclaimerDialog />
-                            <BackendStatus />
+                            {router.pathname !== "/login" && <BackendStatus />}
                         </div>
                     </MessagingProvider>
                 </DisclaimerProvider>

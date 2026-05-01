@@ -1,5 +1,6 @@
 import React, { FunctionComponent, useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, WifiOff } from "lucide-react";
+import { CheckCircle2, WifiOff } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 const API_BASE = typeof window !== "undefined" ? "" : (process.env.SERVER_URL ?? "");
 const POLL_INTERVAL_OK = 8000;
@@ -8,6 +9,7 @@ const POLL_INTERVAL_DOWN = 3000;
 type Status = "ok" | "down" | "init";
 
 export const BackendStatus: FunctionComponent = () => {
+    const { t } = useTranslation("app");
     const [status, setStatus] = useState<Status>("init");
     const [downSince, setDownSince] = useState<Date | null>(null);
     const [recovered, setRecovered] = useState(false);
@@ -24,7 +26,8 @@ export const BackendStatus: FunctionComponent = () => {
                     signal: AbortSignal.timeout(4000),
                 });
                 if (!active) return;
-                if (r.ok) {
+                // 401 means the middleware is up and responding — backend is reachable.
+                if (r.ok || r.status === 401) {
                     setStatus((prev) => {
                         if (prev === "down") {
                             setRecovered(true);
@@ -66,8 +69,8 @@ export const BackendStatus: FunctionComponent = () => {
             <div className="fixed bottom-4 left-4 z-[100] flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-950 border border-red-700 text-red-200 shadow-xl max-w-xs text-xs animate-pulse-slow">
                 <WifiOff className="h-4 w-4 shrink-0 mt-0.5 text-red-400" />
                 <div>
-                    <div className="font-semibold text-red-300">Backend nicht erreichbar</div>
-                    {since && <div className="opacity-70 mt-0.5">seit {since} · wird neu verbunden…</div>}
+                    <div className="font-semibold text-red-300">{t("backendDown")}</div>
+                    {since && <div className="opacity-70 mt-0.5">{t("backendDownSince", { time: since })}</div>}
                 </div>
             </div>
         );
@@ -77,7 +80,7 @@ export const BackendStatus: FunctionComponent = () => {
         return (
             <div className="fixed bottom-4 left-4 z-[100] flex items-center gap-2 px-3 py-2 rounded-lg bg-green-950 border border-green-700 text-green-200 shadow-xl text-xs">
                 <CheckCircle2 className="h-4 w-4 shrink-0 text-green-400" />
-                <span className="font-medium">Backend wieder erreichbar</span>
+                <span className="font-medium">{t("backendRecovered")}</span>
             </div>
         );
     }

@@ -321,10 +321,50 @@ run the same questions with different configs, compare outputs.
 
 ### Auth
 
-Password-based login via session cookie:
-- `POST /api/auth/login` validates password against `API_KEY` env var, sets `rag_auth` cookie
-- `middleware.ts` checks cookie on every request, redirects to `/login` if missing
-- Stateless — no database, no user accounts
+Auth lives entirely in the **Next.js layer** — the FastAPI backend is unprotected at the network level and relies on the frontend proxy as its sole entry point in a normal deployment.
+
+**Key files:**
+
+| File | Role |
+|------|------|
+| `frontend/src/middleware.ts` | Guards every route; verifies the session cookie on each request |
+| `frontend/src/pages/api/auth/login.ts` | Accepts password, determines role, issues signed cookie |
+| `frontend/src/pages/api/auth/me.ts` | Returns `{ role }` for the current session |
+| `frontend/src/pages/api/auth/admin-config.ts` | GET: returns active mode. POST: sets/clears admin password |
+| `frontend/src/lib/auth.ts` | `signToken()` / `verifyToken()` — HMAC-SHA256, works in Edge + Node |
+| `frontend/src/lib/auth-config.ts` | Reads/writes `auth_config.json` (gitignored, Node.js only) |
+| `frontend/src/hooks/useRole.ts` | React hook — calls `/api/auth/me`, returns current role |
+
+**Session cookie:** `rag_auth` holds an HMAC-SHA256 signed token in the format `role.expiry_unix.hex_sig`. The role (`admin` or `user`) is embedded in the token and verified by the middleware using `APP_PASSWORD` as the signing key. No role string is stored in an unsigned cookie.
+
+#### Access modes
+
+Three modes are planned, with increasing complexity:
+
+**Mode 1 — single password (default)**
+All users who log in share one password (`APP_PASSWORD`). Every session is treated as admin. No `auth_config.json` present.
+
+**Mode 2 — role separation (two passwords)**
+Activated by setting an admin password via Settings → Role Separation. The admin password is stored in `frontend/auth_config.json` (gitignored) or the `ADMIN_PASSWORD` env var (for scripted deployments).
+
+- `APP_PASSWORD` → user role: read-only view of RAG config, session retrieval settings only
+- `ADMIN_PASSWORD` → admin role: full config access, reindexing, preset management, system prompt
+
+The active mode is determined at login time. `middleware.ts` only needs `APP_PASSWORD` (to verify the signed token); it does not need to know `ADMIN_PASSWORD`.
+
+**Mode 3 — external directory / SSO (planned)**
+AD/LDAP bind or OAuth/OIDC. Group membership maps to roles. The `getRole()` function in `middleware.ts` is the seam — replacing its implementation is sufficient to add an external provider. The two-password model remains as a fallback admin credential that works without the directory.
+
+#### Two-cookie coexistence
+
+Two cookies exist simultaneously in a logged-in browser session:
+
+| Cookie | Set by | Purpose |
+|--------|--------|---------|
+| `rag_auth` | Next.js login endpoint | Auth gate + role — verified by middleware on every request |
+| `access_token` | Backend `SessionCookieProvider` | Per-browser identity for conversation history scoping |
+
+`access_token` currently resolves every browser to the hardcoded identity `"admin"`. The original code generated a unique per-browser UUID here; a comment marks the spot for re-enabling it when per-user session isolation is introduced in Mode 3.
 
 ---
 

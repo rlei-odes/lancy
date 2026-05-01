@@ -288,4 +288,7 @@ export const app = {
         indexingStopTitle: "Indexierung abbrechen?",
         indexingStopDesc: "Die laufende Indexierung wird gestoppt. Bereits indexierte Chunks bleiben erhalten.",
     },
+    backendDown: "Backend nicht erreichbar",
+    backendDownSince: "seit {{time}} · wird neu verbunden…",
+    backendRecovered: "Backend wieder erreichbar",
 };

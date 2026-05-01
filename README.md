@@ -36,7 +36,7 @@ retrieval settings, and generation stats — no black box. Investigate your docu
 | **Multiple embedding backends** | `local` (SentenceTransformer, fully offline), `ollama`, `litellm`, `custom` |
 | **Multiple vector stores** | ChromaDB (local, zero-config) or pgvector (PostgreSQL) — selectable per KB |
 | **Document formats** | PDF, Markdown, XLSX, EPUB, DOCX |
-| **Auth** | Password-protected login via session cookie (`API_KEY` in `.env`) |
+| **Auth** | Password-protected login via session cookie (`APP_PASSWORD` in `.env`) |
 | **i18n** | DE / EN / FR / IT |
 
 

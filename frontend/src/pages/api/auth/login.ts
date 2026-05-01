@@ -1,20 +1,33 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { signToken } from "@/lib/auth";
+import { getAdminPassword, isMode2Active } from "@/lib/auth-config";
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
-export default function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== "POST") return res.status(405).end();
 
-    const API_KEY = process.env.API_KEY || "";
-    if (!API_KEY) return res.status(500).json({ error: "API_KEY not configured" });
+    const appPassword = process.env.APP_PASSWORD || "";
+    if (!appPassword) return res.status(500).json({ error: "APP_PASSWORD not configured" });
 
     const { password } = req.body ?? {};
-    if (password !== API_KEY) {
+    const adminPassword = getAdminPassword();
+    const mode2 = isMode2Active();
+
+    let role: "admin" | "user";
+    if (mode2 && password === adminPassword) {
+        role = "admin";
+    } else if (password === appPassword) {
+        // Mode 1: single password → admin. Mode 2: APP_PASSWORD → user.
+        role = mode2 ? "user" : "admin";
+    } else {
         return res.status(401).json({ error: "Falsches Passwort" });
     }
 
+    const token = await signToken(role, appPassword);
+
     const cookieValue = [
-        `rag_auth=${API_KEY}`,
+        `rag_auth=${token}`,
         "Path=/",
         `Max-Age=${COOKIE_MAX_AGE}`,
         "HttpOnly",
@@ -23,5 +36,5 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     ].join("; ");
 
     res.setHeader("Set-Cookie", cookieValue);
-    return res.status(200).json({ ok: true });
+    return res.status(200).json({ ok: true, role });
 }

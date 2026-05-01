@@ -165,12 +165,12 @@ Auth in Lancy is entirely in the **Next.js frontend middleware**, not in the bac
 Three components:
 
 **`frontend/src/middleware.ts`** — a Next.js middleware that guards every route on every request. It checks for one of two things:
-- A `rag_auth` cookie whose value equals the raw `API_KEY` env var (browser users after login)
-- An `Authorization: Bearer {API_KEY}` header (API clients like Open WebUI or curl)
+- A `rag_auth` cookie whose value equals the raw `APP_PASSWORD` env var (browser users after login)
+- An `Authorization: Bearer {APP_PASSWORD}` header (API clients like Open WebUI or curl)
 
 If neither is present, browser requests are redirected to `/login` and API requests get a 401.
 
-**`frontend/src/pages/api/auth/login.ts`** — the login endpoint. Accepts a POST with `{ password }`, compares it against `API_KEY` from `.env`, and on success sets a `rag_auth` cookie containing the raw key value, valid for 30 days. This is the only way browser users authenticate.
+**`frontend/src/pages/api/auth/login.ts`** — the login endpoint. Accepts a POST with `{ password }`, compares it against `APP_PASSWORD` from `.env`, and on success sets a `rag_auth` cookie containing the raw key value, valid for 30 days. This is the only way browser users authenticate.
 
 **Backend is unprotected at the network level** — `main.py` does not verify any password. The backend is only protected indirectly because the frontend proxy is the sole entry point in a normal deployment. Anyone who can reach the backend port directly (e.g. on the same host or LAN) can call all API endpoints without any credentials. This is acceptable for the current local/intranet deployment model but must be addressed before any internet-facing deployment.
 
@@ -180,7 +180,7 @@ Two completely separate cookies exist simultaneously in a logged-in browser sess
 
 | Cookie | Set by | Purpose | Current value |
 |---|---|---|---|
-| `rag_auth` | Next.js login endpoint | Auth gate — "are you allowed in?" | Raw `API_KEY` string |
+| `rag_auth` | Next.js login endpoint | Auth gate — "are you allowed in?" | Raw `APP_PASSWORD` string |
 | `access_token` | Backend JWT (`SessionCookieProvider`) | Identity — "who are you?" | Always `"admin"` (hardcoded) |
 
 These serve different purposes and are checked by different layers. `rag_auth` is checked by the Next.js middleware on every request. `access_token` is checked by the backend when it needs to scope data to a user (conversation history).
@@ -320,3 +320,105 @@ The role (user vs admin) is separately available from the `rag_auth` cookie valu
 If the cookie is cleared, a new UUID is issued and the user falls back to the admin baseline and presets — which is acceptable behaviour and matches the user's expectation.
 
 This is a viable path for mode 2 isolation that requires no new auth infrastructure. The main work is: re-enable UUID generation in `SessionCookieProvider`, scope retrieval config reads/writes to the `user_id` from the cookie, and define the fallback chain in the backend. The `passcode` cookie value simultaneously identifies the role (user vs admin passcode), which is sufficient for the two-password model.
+
+---
+
+## Storage Backend for Per-User Data
+
+### Why not JSON
+
+The current JSON file approach works for a single global config, but breaks down once data is keyed by user:
+
+- Concurrent writes require manual locking — the last writer wins silently
+- No atomic updates across multiple records
+- Any cross-user query (e.g. "which users have reranking enabled?") requires loading and parsing all files
+- Per-user preset files would proliferate and need their own garbage collection
+
+### SQLite
+
+SQLite is the right backend for per-user settings storage. It handles row-level writes, atomic transactions, and simple queries without an external server. FastAPI + SQLite is a well-worn path via SQLAlchemy or the stdlib `sqlite3` module.
+
+**Schema sketch (mode 3 target):**
+
+```sql
+users        (id TEXT PK, role TEXT, created_at TIMESTAMP)
+user_config  (user_id TEXT FK, config_json TEXT, updated_at TIMESTAMP)
+presets      (id INTEGER PK, user_id TEXT nullable, kb_id TEXT, type TEXT, name TEXT, data_json TEXT)
+```
+
+- `user_id = NULL` on a preset row → admin/shared preset, visible to all
+- `user_id = <uuid>` → personal preset, scoped to that browser identity
+- `user_config` row per user holds their retrieval settings; falls back to the shared admin baseline if absent
+
+**For mode 2** (no individual accounts), the `users` table is not needed yet. SQLite still provides value as a cleaner store for the shared config and shared presets, replacing the current JSON files. Migration from JSON → SQLite can happen incrementally: swap the storage layer without changing the API surface.
+
+### Unlocked by SQLite
+
+Per-session and per-query statistics become practical once a database is in place:
+
+- **Query stats** — latency, retrieval chunk count, reranking swaps, model used, token counts — stored per query, queryable by time range or KB
+- **Session stats** — number of turns, total tokens, active preset at time of query
+- **Indexing history** — already partially tracked in the analytics panel; could be persisted durably instead of in-memory
+
+These are additive — the schema can grow a `query_log` table without touching the settings tables.
+
+---
+
+## Mode 1 → Mode 2 Transition Flow
+
+### Default state (Mode 1)
+
+Mode 1 is the default and requires no configuration. All users who log in with `APP_PASSWORD` are treated as admins. Nothing changes for existing deployments.
+
+### Activating Mode 2 from settings
+
+The settings page (dark mode, language, etc.) is always accessible to all authenticated users — it is not behind role separation. This is where the Mode 2 activation lives:
+
+1. User navigates to settings → finds a "Role Separation" section
+2. Sets an admin password and confirms a dialog explaining: "From now on, users who log in with the regular password see a read-only view. Log in with the admin password to access configuration."
+3. The admin password is written to `auth_config.json` (gitignored, alongside `rag_config.json`) via a backend endpoint — no restart required.
+
+Once `auth_config.json` contains an `admin_key`, Mode 2 is active. The existing `APP_PASSWORD` becomes the user password; `admin_key` is the admin password.
+
+### Elevating to admin in Mode 2
+
+The settings page shows an "Admin Login" button when Mode 2 is active and the current session is user-level. Clicking it navigates to the existing `/login` page (with a query param to hint the label, e.g. `?mode=admin`). The user enters the admin password, the cookie is updated, and they return with admin access.
+
+---
+
+## Auth Architecture for Mode 2
+
+### The core seam: `getRole()`
+
+The middleware's role check must be extracted into a single `getRole(request) → "admin" | "user" | null` function. This is the only thing that changes between modes:
+
+```
+Mode 1:  cookie == APP_PASSWORD                      → "admin"
+Mode 2:  cookie == admin_key → "admin",
+         cookie == APP_PASSWORD   → "user"
+Mode 3:  verify JWT / SSO token, read role claim → "admin" | "user"
+```
+
+All downstream logic — frontend components, API protection, preset scoping — consumes the role, not the raw cookie value. Replacing the `getRole()` implementation is sufficient to move between modes.
+
+### Cookie scheme
+
+The `rag_auth` cookie continues to hold the raw key value. The middleware derives role by comparing it against the known key values. No role string is stored in the cookie itself (which would be forgeable).
+
+### Admin password storage
+
+`ADMIN_KEY` is stored in `auth_config.json` (gitignored), not as an env var, so it can be written from the UI without a restart. The middleware and login endpoint read from this file (falling back to env var if present, for scripted deployments).
+
+### Frontend role consumption
+
+A `/api/auth/me` endpoint reads the cookie and returns `{ role: "admin" | "user" }`. A `useRole()` React hook wraps this call. All UI components that conditionally render based on role consume `useRole()` — this surface does not change when moving to Mode 3.
+
+### Implementation steps (Mode 2)
+
+1. Extract `getRole()` from `middleware.ts`
+2. Add `/api/auth/me` endpoint → returns `{ role }`
+3. Add `useRole()` React hook
+4. Backend: `GET/POST /api/v1/admin/auth-config` — reads/writes `admin_key` in `auth_config.json`
+5. Settings: "Role Separation" section with admin password field and confirmation dialog
+6. Settings: "Admin Login" button (shown when Mode 2 active and current role is user)
+7. Modify `/api/auth/login` to check both keys and set cookie accordingly

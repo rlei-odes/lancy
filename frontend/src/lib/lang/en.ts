@@ -293,4 +293,7 @@ export const app = {
         indexingStopTitle: "Cancel indexing?",
         indexingStopDesc: "The running indexing job will be stopped. Already indexed chunks are preserved.",
     },
+    backendDown: "Backend not reachable",
+    backendDownSince: "since {{time}} · reconnecting…",
+    backendRecovered: "Backend reconnected",
 };

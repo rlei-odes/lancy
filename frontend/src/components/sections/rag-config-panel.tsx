@@ -223,6 +223,18 @@ const BUILTIN_KB_PRESETS: KBPreset[] = [
     { name: "bge-m3 Präzision", data: { ...DEFAULT_KB_CONFIG, embedding_model: "BAAI/bge-m3", nomic_prefix: false, embedding_batch_size: 10 } },
 ];
 
+function findMatchingRetrievalPreset(session: SessionConfig, presets: RetrievalPreset[]): string {
+    return presets.find((p) =>
+        (Object.keys(p.data) as (keyof SessionConfig)[]).every((k) => p.data[k] === session[k])
+    )?.name ?? "";
+}
+
+function findMatchingKbPreset(cfg: KBConfig, presets: KBPreset[]): string {
+    return presets.find((p) =>
+        (Object.keys(p.data) as (keyof KBConfig)[]).every((k) => p.data[k] === cfg[k])
+    )?.name ?? "";
+}
+
 // ─── KB form ──────────────────────────────────────────────────────────────────
 
 interface KBFormProps {
@@ -394,8 +406,8 @@ export const RagConfigPanel: FunctionComponent = () => {
     // Presets (per-KB)
     const [userRetrievalPresets, setUserRetrievalPresets] = useState<RetrievalPreset[]>([]);
     const [userKbPresets, setUserKbPresets] = useState<KBPreset[]>([]);
-    const [selectedRetrievalPreset, setSelectedRetrievalPreset] = useState("Standard");
-    const [selectedKbPreset, setSelectedKbPreset] = useState("bge-m3 Präzision");
+    const [selectedRetrievalPreset, setSelectedRetrievalPreset] = useState("");
+    const [selectedKbPreset, setSelectedKbPreset] = useState("");
     const [showSaveAs, setShowSaveAs] = useState<"retrieval" | "kb" | null>(null);
     const [saveAsName, setSaveAsName] = useState("");
     const saveAsRef = useRef<HTMLInputElement>(null);
@@ -471,6 +483,15 @@ export const RagConfigPanel: FunctionComponent = () => {
         fetchKbRegistry();
         fetchSessionConfig();
     }, [fetchKbRegistry, fetchSessionConfig]);
+
+    // Keep preset dropdowns in sync with actual form values
+    useEffect(() => {
+        setSelectedRetrievalPreset(findMatchingRetrievalPreset(session, [...BUILTIN_RETRIEVAL_PRESETS, ...userRetrievalPresets]));
+    }, [session, userRetrievalPresets]);
+
+    useEffect(() => {
+        setSelectedKbPreset(findMatchingKbPreset(kbConfig, [...BUILTIN_KB_PRESETS, ...userKbPresets]));
+    }, [kbConfig, userKbPresets]);
 
     // Fetch LiteLLM models when either backend uses litellm
     useEffect(() => {
@@ -786,14 +807,12 @@ export const RagConfigPanel: FunctionComponent = () => {
             const updated = userRetrievalPresets.filter((p) => p.name !== name);
             setUserRetrievalPresets(updated);
             persistUserPresets(activeKb.id, { retrieval: updated, kb: userKbPresets });
-            if (selectedRetrievalPreset === name) setSelectedRetrievalPreset("Standard");
         } else {
             const updated = userKbPresets.filter((p) => p.name !== name);
             setUserKbPresets(updated);
             persistUserPresets(activeKb.id, { retrieval: userRetrievalPresets, kb: updated });
-            if (selectedKbPreset === name) setSelectedKbPreset("bge-m3 Präzision");
         }
-    }, [userRetrievalPresets, userKbPresets, selectedRetrievalPreset, selectedKbPreset, activeKb]);
+    }, [userRetrievalPresets, userKbPresets, activeKb]);
 
     const kbList = kbRegistry ? Object.values(kbRegistry.bases) : [];
 

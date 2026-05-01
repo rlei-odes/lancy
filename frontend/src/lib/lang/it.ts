@@ -288,4 +288,7 @@ export const app = {
         indexingStopTitle: "Annullare l'indicizzazione?",
         indexingStopDesc: "Il processo di indicizzazione verrà fermato. I chunk già indicizzati vengono conservati.",
     },
+    backendDown: "Backend non raggiungibile",
+    backendDownSince: "dal {{time}} · riconnessione…",
+    backendRecovered: "Backend di nuovo raggiungibile",
 };
