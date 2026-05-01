@@ -1093,7 +1093,8 @@ export const RagConfigPanel: FunctionComponent = () => {
                                     placeholder={t("rag.fieldSystemPromptPlaceholder")}
                                     rows={8}
                                     maxLength={20000}
-                                    className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1.5 focus:outline-none focus:border-blue-400 w-full resize-y leading-relaxed"
+                                    disabled={!isAdmin}
+                                    className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1.5 focus:outline-none focus:border-blue-400 w-full resize-y leading-relaxed disabled:bg-background disabled:text-muted-foreground disabled:cursor-default disabled:resize-none"
                                 />
                             </div>
                         </div>

@@ -48,6 +48,14 @@ Implements the Mode 2 auth foundation described in `docs/DESIGN_DOC_Admin_Role_S
 - HTTP 401 from the middleware is now treated as "reachable" (the proxy is up and responding)
 - All three backend-status strings (`backendDown`, `backendDownSince`, `backendRecovered`) are now i18n-translated across all four languages (en/de/fr/it)
 
+### Added — Proxy-level enforcement of admin-only API endpoints
+
+Admin-only routes in the Next.js middleware now return 403 for user-role sessions: `POST /kb` (create), `PUT/DELETE /kb/*`, `POST /kb/{id}/documents` (upload), `POST /rag/reindex`, `POST /rag/reindex/cancel`. UI restrictions are now backed by real enforcement — the backend port (8080) remains unprotected and should be firewalled in production.
+
+System prompt textarea is read-only for users (pill-styled); follow-up count remains editable.
+
+`docs/API_Endpoints.md` updated with a two-layer architecture note, Bearer token auth instructions, and per-endpoint admin markers.
+
 ### Added — Role-based read-only UI in RAG config panel
 
 - LLM and Embedding sections are fully read-only for users (pill-styled disabled controls via `fieldset disabled`)

@@ -19,6 +19,16 @@ const PUBLIC_PREFIXES = [
     "/api/v1/files/",
 ];
 
+function isAdminOnlyRequest(method: string, pathname: string): boolean {
+    if (method === "POST" && pathname === "/api/v1/kb") return true;
+    if (method === "PUT" && pathname.startsWith("/api/v1/kb/")) return true;
+    if (method === "DELETE" && pathname.startsWith("/api/v1/kb/")) return true;
+    if (method === "POST" && pathname.startsWith("/api/v1/kb/") && pathname.endsWith("/documents")) return true;
+    if (method === "POST" && pathname === "/api/v1/rag/reindex") return true;
+    if (method === "POST" && pathname === "/api/v1/rag/reindex/cancel") return true;
+    return false;
+}
+
 function withCors(response: NextResponse): NextResponse {
     Object.entries(CORS_HEADERS).forEach(([k, v]) => response.headers.set(k, v));
     return response;
@@ -52,6 +62,12 @@ export async function middleware(request: NextRequest) {
     }
 
     const role = await getRole(request);
+    if (role === "user" && isAdminOnlyRequest(request.method, pathname)) {
+        return new NextResponse(JSON.stringify({ error: "Forbidden" }), {
+            status: 403,
+            headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+        });
+    }
     if (role) return withCors(NextResponse.next());
 
     if (

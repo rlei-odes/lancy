@@ -5,29 +5,6 @@ Items are grouped by theme and roughly prioritised within each section.
 
 ## Known Bugs
 
-### Mix between KB Level setup and Presets
-
-The two symptoms point to the same root cause. Let me trace it precisely.
-
-After refresh, fetchKbRegistry() loads the actual saved KB config from the backend — including image_captioning_enabled: true (which you've saved on your KB). That sets both activeKb and kbConfig to the same values → embDirty = false → dot is green.
-
-When you load any built-in preset, loadPreset sets kbConfig.image_captioning_enabled = false (from DEFAULT_KB_CONFIG). Now kbConfig differs from activeKb → embDirty = true → dot goes amber. The saved KB hasn't changed at all — the preset just stomped over your KB config in local state.
-
-The core problem: presets currently override KB-level structural config (image captioning, PDF OCR, VS type, etc.) even though those settings belong to the KB setup, not to a retrieval style.
-
-There are two distinct categories of settings:
-
-Layer	Fields	Should be in presets?
-Retrieval style	top_k, bm25_enabled, reranking_*, query_expansion, hyde, rrf_k	Yes — this is what presets are for
-LLM style	llm_backend, llm_model, temperature, num_ctx, etc.	Yes
-Embedding model	embedding_backend, embedding_model, nomic_prefix	Debatable — some presets do this intentionally (bge-m3 preset)
-KB structure	image_captioning_enabled, pdf_ocr_enabled, image_indexing_enabled, vs_type, vs_connection_string	No — these are per-KB setup, not retrieval style
-My recommendation: strip KB structural fields out of loadPreset — don't touch them when applying a preset, leave whatever the current KB has. Keep embedding model/backend since the bge-m3 preset relies on that intentionally.
-
-Status: Requires further thinking I'd say. Especially how we surface this distinction to the user.
-Maybe there should be a KB Level setting section right after the Knowledge base section. 
-
-
 ### Answer Disappears After Rendering
 
 Root cause identified and fixed: `mistral-nemo:12b` emits literal newlines inside JSON string values, which is invalid JSON. `partial_json_loads` failed silently, returning `{}`, so the extracted answer was empty and the streamed content disappeared when the DB record replaced the live display.
@@ -64,23 +41,6 @@ Note: the existing `_UUID_RE` inline fallback is effectively dead code given the
 ---
 
 ## Authentication & Access Control
-
-### Admin / User Role Separation
-
-Currently all authenticated users share a single password and have full access to the technical interface, including RAG configuration, reindexing, model selection, system prompt editing, and preset management.
-
-**Goal:** introduce a two-tier access model so that end users only see the chat interface, while admins retain full configuration access.
-
-**Scope:**
-- Add an admin flag to the session (e.g. a separate admin password or a role field in the auth cookie)
-- Hide parts of the RAG Config panel from non-admin sessions
-- Hide or lock: reindex buttons, model selectors, system prompt editor, embedding configuration, vector store settings, preset create/delete (list to be fully defined)
-- **Stop indexing button** (red, in the sidebar progress bar) — admin-only; end users should see the progress indicator but not be able to cancel a running indexing job
-- End users retain: chat, conversation history, language toggle, theme toggle
-- No per-user accounts required at this stage — two passwords (user / admin) is sufficient for the prototype
-- **Fallback admin account** — a local admin credential (env var or config file) that works independently of SSO/AD, so the system is never locked out if the directory is unreachable; required before SSO integration is attempted
-
-**Why:** prototype rollout to a small trusted team is fine without this, but broader internal use requires that non-technical users cannot accidentally break the configuration or trigger a full reindex.
 
 ### Active Directory / SSO Integration
 
@@ -423,26 +383,6 @@ While a KB switch is in progress (`POST /api/v1/kb/{id}/activate`), the RAG conf
 The preset save/load flow has grown organically and needs a thorough walkthrough. Known issues include `image_retrieval_enabled` being saved to the wrong config layer (fixed), but other fields may have similar misrouting. The UI interaction (save, load, "Standard" reset, switching KBs) is also unintuitive in places.
 
 **To do:** sit down with the full preset flow — create, save, load, switch KB, reload page — and verify every field round-trips correctly. Identify UX rough edges and improve them.
-
----
-
-### Preset Scope — Query Presets vs. Ingestion Presets
-
-**Current behaviour:** a preset saves the full combined state — both session/query parameters (`RagConfig`: top-k, BM25, reranking, LLM model, temperature, etc.) and KB-level embedding/ingestion parameters (embedding backend, model, batch size, chunk tokens, OCR, image toggles). Presets are already per-KB: stored in `rag_presets_{kb_id}.json`, so a preset saved for KB "A" does not appear for KB "B".
-
-**The problem:** bundling query and ingestion settings into one preset is convenient but dangerous. Loading a preset that changes the embedding model silently makes the index stale — the user must re-index before results are meaningful, and there is no warning. This is an admin-level action masquerading as a casual user action.
-
-**Open questions to resolve:**
-
-1. **Should presets influence ingestion/embedding settings at all?** One argument: yes, because the embedding model is part of the "configuration profile" for a KB and admins want to save/restore complete profiles. Counter-argument: embedding settings should only be changed deliberately and never as a side-effect of loading a query preset.
-
-2. **Should presets be split into two types?**
-   - *Query presets* (user-facing): top-k, BM25 on/off, reranking, temperature, follow-up count, image retriever top-k. Safe to swap at any time — no re-index required. Could be exposed to end users, not just admins.
-   - *Ingestion presets* (admin-only): embedding backend, model, batch size, chunk tokens, OCR, image toggles. Loading one should show a warning: "This will require a full re-index to take effect."
-
-3. **Are all parameters truly per-KB?** Session parameters (`RagConfig`) are currently global — one active config shared across all KBs. KB-level parameters are per-KB. If a user switches KBs, the session config (LLM model, top-k, etc.) does not change. This may be surprising: a preset saved for KB "A" that includes LLM model selection will apply that model when loaded, even though the LLM is not KB-specific. Worth making explicit in the UI which parameters belong to the KB and which are global session settings.
-
-**Suggested direction:** split presets into query and ingestion categories; tie ingestion preset changes to a re-index warning; expose query presets to end users once role separation is in place. Decide in conjunction with the Admin / User Role Separation item above.
 
 ---
 
@@ -834,23 +774,6 @@ Standard RAG retrieves isolated chunks. Graph-RAG builds a knowledge graph over 
 ### Add API Landscape and Description in Architecture
 
 **Done:** `docs/API_Endpoints.md` covers all current endpoints. `docs/ARCHITECTURE.md` references them.
-
-Current API landscape:
-- `POST /api/v1/rag/query` — Full RAG Chat (Retrieval + LLM), SSE streaming
-- `GET  /api/v1/rag/reindex-status` — Indexing progress
-- `POST /api/v1/rag/reindex` — Ingestion/Indexing (incremental or reset)
-- `POST /api/v1/rag/reindex/cancel` — Cancel in-progress indexing
-- `GET  /api/v1/kb` — List Knowledge Bases
-- `POST /api/v1/kb` — Create KB
-- `PUT  /api/v1/kb/{id}` — Update KB config
-- `DELETE /api/v1/kb/{id}` — Delete KB
-- `POST /api/v1/kb/{id}/activate` — Hot-swap active KB
-- `GET  /api/v1/kb/{id}/stats` — KB analytics
-- `POST /api/v1/kb/{id}/documents` — Upload and ingest a document (incremental, temp-file, document_id versioning)
-- `GET  /api/v1/files/{path}` — Serve source document
-- `POST /v1/chat/completions` — OpenAI-compatible chat completions
-- `GET  /v1/models` — OpenAI-compatible model list (maps to KBs)
-- `POST /api/v1/rag/retrieve` — Standalone Retrieval for the Explorer; returns per-chunk BM25, semantic, and RRF scores with optional reranking.
 
 ### Interactive API Documentation with Example Payloads
 

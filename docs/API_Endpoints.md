@@ -1,6 +1,30 @@
 # Lancy — API Endpoints Reference
 
-All endpoints are served under `/api/v1` (e.g. `http://localhost:8080/api/v1/kb`).
+---
+
+## API Layers
+
+Lancy has two API entry points that handle requests differently:
+
+| Layer | Address | Auth enforced |
+|---|---|---|
+| **FastAPI backend** | `http://localhost:8080` | None — open, no access control |
+| **Next.js frontend** | `http://localhost:3000` | Yes — middleware checks role before proxying |
+
+All endpoints below are available at both addresses. In production, port 8080 should be firewalled; all external traffic should go through port 3000.
+
+### Authenticating through the frontend (port 3000)
+
+Two methods are accepted:
+
+- **Browser session** — a signed `rag_auth` cookie issued after login, carries the role (`admin` or `user`)
+- **Bearer token** — `Authorization: Bearer <APP_PASSWORD>` in the request header; always grants admin role, intended for API clients and scripts
+
+### Access control
+
+Endpoints marked **admin only** return `403 Forbidden` when called through the frontend proxy with a user-role session. They remain unprotected at the backend port.
+
+Admin-only endpoints: `POST /kb`, `PUT /kb/{id}`, `DELETE /kb/{id}`, `POST /kb/{id}/documents`, `POST /rag/reindex`, `POST /rag/reindex/cancel`.
 
 ---
 
@@ -44,6 +68,8 @@ Returns the full KB registry including the currently active KB id.
 POST /kb
 ```
 
+**Admin only.**
+
 **Body:** `KBCreate` (JSON)
 
 | Field | Type | Default | Description |
@@ -76,6 +102,8 @@ POST /kb
 PUT /kb/{kb_id}
 ```
 
+**Admin only.**
+
 Replaces the KB config fields. Stats (`chunks`, `files`, `last_indexed`) and `vs_path` are preserved.
 
 **Body:** `KBCreate` — same fields as Create.
@@ -89,6 +117,8 @@ Replaces the KB config fields. Stats (`chunks`, `files`, `last_indexed`) and `vs
 ```
 DELETE /kb/{kb_id}
 ```
+
+**Admin only.**
 
 Deletes the KB definition and, for `chromadb`, removes the vector store directory from disk. PGVector tables are not dropped automatically.
 
@@ -130,6 +160,8 @@ Returns `404` if no stats file exists for this KB yet.
 POST /kb/{kb_id}/documents
 ```
 
+**Admin only.**
+
 Uploads a single document into a KB and triggers incremental indexing as a background task.
 The file is written to a temporary path, ingested, then deleted — it is never stored permanently.
 
@@ -159,6 +191,13 @@ The file is written to a temporary path, ingested, then deleted — it is never 
 **Example:**
 
 ```bash
+# Through the frontend proxy (authenticated):
+curl -X POST http://localhost:3000/api/v1/kb/default/documents \
+  -H "Authorization: Bearer <APP_PASSWORD>" \
+  -F "file=@/path/to/document.pdf" \
+  -F 'metadata={"document_id": "doc-42", "title": "Q1 Report", "department": "Finance"}'
+
+# Direct backend (no auth required, firewall in production):
 curl -X POST http://localhost:8080/api/v1/kb/default/documents \
   -F "file=@/path/to/document.pdf" \
   -F 'metadata={"document_id": "doc-42", "title": "Q1 Report", "department": "Finance"}'
@@ -232,6 +271,8 @@ Runs a RAG query against the active KB and streams the response as SSE.
 POST /rag/reindex
 ```
 
+**Admin only.**
+
 Triggers a full or incremental re-index of the active KB.
 
 **Body:** `{"reset": false}`
@@ -248,6 +289,8 @@ Returns `409` if indexing is already running.
 ```
 POST /rag/reindex/cancel
 ```
+
+**Admin only.**
 
 Requests cancellation of an in-progress re-index. The indexer checks the flag between files.
 
