@@ -5,7 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [Lancy v0.2.36] — 2026-05-01 · rlei-odes
+## [Lancy v0.3.0] — 2026-05-01 · rlei-odes
 
 ### Added — Mode 2 authentication: admin/user role separation
 
@@ -71,6 +71,15 @@ System prompt textarea is read-only for users (pill-styled); follow-up count rem
 - Backend initialises a `user_config.db` SQLite database (WAL mode) with a `user_config` table keyed by session UUID
 - `GET /api/v1/rag/config` merges the admin baseline (`rag_config.json`) with the user's retrieval overlay from SQLite
 - `POST /api/v1/rag/config`: admin role writes the full shared baseline; user role persists only the retrieval fields (`top_k`, `rrf_k`, `bm25_enabled`, `query_expansion`, `hyde_enabled`, `reranking_*`, `image_retriever_top_k`) to their own row — LLM and embedding settings remain admin-only
+
+### Added — Per-user preset isolation and SQLite preset storage
+
+- Presets migrated from per-KB JSON files into a `presets` table in `user_config.db` (SQLite)
+- Retrieval presets are scoped per browser session (`user_id = session UUID`); KB presets are admin-only (`user_id = NULL`)
+- Global admin presets (`kb_id = NULL`) are seeded from `backend/src/lancy/seeds/presets.json` on startup via `INSERT OR IGNORE` — edit this file to ship default presets
+- Existing `rag_presets_*.json` files are migrated automatically as admin presets on first startup
+- `RetrievalPreset.data` trimmed to retrieval fields only — applying a preset no longer resets LLM settings
+- SQLite infrastructure extracted to `database.py` with WAL mode, `synchronous=NORMAL`, incremental auto-vacuum, and daily file backup
 
 ### Fixed — UI language on first visit
 

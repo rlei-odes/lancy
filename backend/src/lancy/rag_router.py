@@ -13,8 +13,6 @@ GET  /api/v1/rag/store-info   — chunk count + file list for the active KB
 
 import json
 import logging
-import sqlite3
-import threading
 from datetime import datetime, timezone
 from pathlib import Path
 import re
@@ -25,54 +23,20 @@ _SERVER_STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
+from lancy.database import (
+    USER_RETRIEVAL_FIELDS,
+    get_presets,
+    get_user_retrieval,
+    init_db,
+    migrate_json_presets,
+    save_presets,
+    seed_presets,
+    set_user_retrieval,
+)
+
 log = logging.getLogger("uvicorn")
 
-# Fields a non-admin user may override in their own per-browser config.
-# Everything else (LLM, embedding, prompt) is admin-only and lives in rag_config.json.
-USER_RETRIEVAL_FIELDS: frozenset[str] = frozenset({
-    "retriever_top_k",
-    "rrf_k",
-    "bm25_enabled",
-    "query_expansion",
-    "hyde_enabled",
-    "reranking_enabled",
-    "reranking_candidate_pool",
-    "image_retriever_top_k",
-})
-
-_sqlite_lock = threading.Lock()
-
-
-def _init_user_config_db(db_path: Path) -> None:
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_config (
-                user_id TEXT PRIMARY KEY,
-                config_json TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-        """)
-        conn.commit()
-
-
-def _get_user_retrieval(db_path: Path, user_id: str) -> dict | None:
-    with sqlite3.connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT config_json FROM user_config WHERE user_id = ?", (user_id,)
-        ).fetchone()
-    return json.loads(row[0]) if row else None
-
-
-def _set_user_retrieval(db_path: Path, user_id: str, data: dict) -> None:
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    with _sqlite_lock:
-        with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO user_config (user_id, config_json, updated_at) VALUES (?, ?, ?)",
-                (user_id, json.dumps(data), now),
-            )
-            conn.commit()
+_SEEDS_PATH = Path(__file__).parent / "seeds" / "presets.json"
 
 
 # ─── Session config (no re-index needed) ──────────────────────────────────────
@@ -245,7 +209,9 @@ def create_rag_router(
     router = APIRouter(prefix="/api/v1/rag")
     config_path = db_dir / "rag_config.json"
     sqlite_path = db_dir / "user_config.db"
-    _init_user_config_db(sqlite_path)
+    init_db(sqlite_path)
+    migrate_json_presets(sqlite_path, db_dir)
+    seed_presets(sqlite_path, _SEEDS_PATH)
 
     def _read_custom_prompt() -> str:
         if prompts_dir is None:
@@ -275,7 +241,7 @@ def create_rag_router(
         cfg.system_prompt = _read_custom_prompt()
         # 2. Overlay user-scoped retrieval fields from SQLite
         if user_id:
-            user_data = _get_user_retrieval(sqlite_path, user_id)
+            user_data = get_user_retrieval(sqlite_path, user_id)
             if user_data:
                 overlay = {k: v for k, v in user_data.items() if k in USER_RETRIEVAL_FIELDS}
                 cfg = cfg.model_copy(update=overlay)
@@ -292,7 +258,7 @@ def create_rag_router(
             # Users may only persist retrieval fields to their own SQLite row
             data = cfg.model_dump()
             retrieval = {k: data[k] for k in USER_RETRIEVAL_FIELDS if k in data}
-            _set_user_retrieval(sqlite_path, user_id, retrieval)
+            set_user_retrieval(sqlite_path, user_id, retrieval)
 
     @router.get("/config", response_model=RagConfig)
     async def get_config(request: Request) -> RagConfig:
@@ -334,23 +300,15 @@ def create_rag_router(
             return StoreInfo(chunks=0, files=0, file_list=[])
 
     @router.get("/presets/{kb_id}")
-    async def get_presets(kb_id: str) -> dict:
-        path = db_dir / f"rag_presets_{kb_id}.json"
-        if path.exists():
-            try:
-                data = json.loads(path.read_text())
-                if isinstance(data, list):
-                    # Backward compat: old format was a flat list of combined presets
-                    return {"retrieval": data, "kb": []}
-                return data
-            except Exception:
-                pass
-        return {"retrieval": [], "kb": []}
+    async def get_presets_route(kb_id: str, request: Request) -> dict:
+        user_id = request.headers.get("x-session-id")
+        return get_presets(sqlite_path, kb_id, user_id)
 
     @router.post("/presets/{kb_id}")
-    async def save_presets(kb_id: str, presets: Annotated[dict, Body()]) -> dict:
-        path = db_dir / f"rag_presets_{kb_id}.json"
-        path.write_text(json.dumps(presets, indent=2))
+    async def save_presets_route(kb_id: str, request: Request, presets: Annotated[dict, Body()]) -> dict:
+        user_id = request.headers.get("x-session-id")
+        role = request.headers.get("x-user-role", "user")
+        save_presets(sqlite_path, kb_id, user_id, role, presets)
         return {"saved": len(presets.get("retrieval", [])) + len(presets.get("kb", []))}
 
     @router.post("/reindex")

@@ -1,0 +1,92 @@
+{
+  "retrieval": [
+    {
+      "name": "Standard",
+      "data": {
+        "retriever_top_k": 5,
+        "rrf_k": 60,
+        "bm25_enabled": true,
+        "query_expansion": 0,
+        "hyde_enabled": false,
+        "reranking_enabled": false,
+        "reranking_candidate_pool": 15,
+        "image_retriever_top_k": 1
+      }
+    },
+    {
+      "name": "Angebots-Analyse",
+      "data": {
+        "retriever_top_k": 8,
+        "rrf_k": 60,
+        "bm25_enabled": true,
+        "query_expansion": 0,
+        "hyde_enabled": false,
+        "reranking_enabled": false,
+        "reranking_candidate_pool": 20,
+        "image_retriever_top_k": 1
+      }
+    },
+    {
+      "name": "Technische Fakten",
+      "data": {
+        "retriever_top_k": 6,
+        "rrf_k": 60,
+        "bm25_enabled": true,
+        "query_expansion": 0,
+        "hyde_enabled": false,
+        "reranking_enabled": false,
+        "reranking_candidate_pool": 15,
+        "image_retriever_top_k": 1
+      }
+    },
+    {
+      "name": "Multi-Dok Vergleich",
+      "data": {
+        "retriever_top_k": 10,
+        "rrf_k": 60,
+        "bm25_enabled": true,
+        "query_expansion": 1,
+        "hyde_enabled": false,
+        "reranking_enabled": false,
+        "reranking_candidate_pool": 25,
+        "image_retriever_top_k": 1
+      }
+    },
+    {
+      "name": "Qualität (langsam)",
+      "data": {
+        "retriever_top_k": 8,
+        "rrf_k": 60,
+        "bm25_enabled": true,
+        "query_expansion": 2,
+        "hyde_enabled": true,
+        "reranking_enabled": false,
+        "reranking_candidate_pool": 20,
+        "image_retriever_top_k": 1
+      }
+    },
+    {
+      "name": "Schnell",
+      "data": {
+        "retriever_top_k": 4,
+        "rrf_k": 60,
+        "bm25_enabled": true,
+        "query_expansion": 0,
+        "hyde_enabled": false,
+        "reranking_enabled": false,
+        "reranking_candidate_pool": 10,
+        "image_retriever_top_k": 1
+      }
+    }
+  ],
+  "kb": [
+    {
+      "name": "bge-m3 Präzision",
+      "data": {
+        "embedding_model": "BAAI/bge-m3",
+        "nomic_prefix": false,
+        "embedding_batch_size": 10
+      }
+    }
+  ]
+}

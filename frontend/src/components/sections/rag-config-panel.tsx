@@ -65,9 +65,16 @@ interface KBRegistry {
     bases: Record<string, KBInfo>;
 }
 
+const RETRIEVAL_FIELD_KEYS = [
+    "retriever_top_k", "rrf_k", "bm25_enabled", "query_expansion",
+    "hyde_enabled", "reranking_enabled", "reranking_candidate_pool", "image_retriever_top_k",
+] as const;
+
+type RetrievalFields = Pick<SessionConfig, typeof RETRIEVAL_FIELD_KEYS[number]>;
+
 interface RetrievalPreset {
     name: string;
-    data: SessionConfig;
+    data: RetrievalFields;
 }
 
 interface KBPreset {
@@ -210,19 +217,6 @@ const SelectInput: FunctionComponent<{
 
 // ─── Presets (per-KB) ─────────────────────────────────────────────────────────
 
-const BUILTIN_RETRIEVAL_PRESETS: RetrievalPreset[] = [
-    { name: "Standard",         data: { ...DEFAULT_SESSION, retriever_top_k: 5, llm_temperature: 0.3 } },
-    { name: "Angebots-Analyse", data: { ...DEFAULT_SESSION, retriever_top_k: 8, reranking_candidate_pool: 20, llm_temperature: 0.15 } },
-    { name: "Technische Fakten",data: { ...DEFAULT_SESSION, retriever_top_k: 6, llm_temperature: 0.05, follow_up_count: 2 } },
-    { name: "Multi-Dok Vergleich", data: { ...DEFAULT_SESSION, retriever_top_k: 10, query_expansion: 1, reranking_candidate_pool: 25, llm_temperature: 0.2 } },
-    { name: "Qualität (langsam)", data: { ...DEFAULT_SESSION, retriever_top_k: 8, query_expansion: 2, hyde_enabled: true, reranking_candidate_pool: 20, llm_temperature: 0.2 } },
-    { name: "Schnell (lokal)",  data: { ...DEFAULT_SESSION, retriever_top_k: 4, reranking_candidate_pool: 10, llm_model: "llama3.2:3b", llm_temperature: 0.3, follow_up_count: 2 } },
-];
-
-const BUILTIN_KB_PRESETS: KBPreset[] = [
-    // Multilingual embedding — requires re-index after applying
-    { name: "bge-m3 Präzision", data: { ...DEFAULT_KB_CONFIG, embedding_model: "BAAI/bge-m3", nomic_prefix: false, embedding_batch_size: 10 } },
-];
 
 function findMatchingRetrievalPreset(session: SessionConfig, presets: RetrievalPreset[]): string {
     return presets.find((p) =>
@@ -416,8 +410,8 @@ export const RagConfigPanel: FunctionComponent = () => {
     const [saveAsName, setSaveAsName] = useState("");
     const saveAsRef = useRef<HTMLInputElement>(null);
 
-    const allRetrievalPresets = [...BUILTIN_RETRIEVAL_PRESETS, ...userRetrievalPresets];
-    const allKbPresets = [...BUILTIN_KB_PRESETS, ...userKbPresets];
+    const allRetrievalPresets = userRetrievalPresets;
+    const allKbPresets = userKbPresets;
 
     // Sections
     const [sections, setSections] = useState({ retrieval: true, embedding: false, llm: false, prompt: false });
@@ -490,11 +484,11 @@ export const RagConfigPanel: FunctionComponent = () => {
 
     // Keep preset dropdowns in sync with actual form values
     useEffect(() => {
-        setSelectedRetrievalPreset(findMatchingRetrievalPreset(session, [...BUILTIN_RETRIEVAL_PRESETS, ...userRetrievalPresets]));
+        setSelectedRetrievalPreset(findMatchingRetrievalPreset(session, userRetrievalPresets));
     }, [session, userRetrievalPresets]);
 
     useEffect(() => {
-        setSelectedKbPreset(findMatchingKbPreset(kbConfig, [...BUILTIN_KB_PRESETS, ...userKbPresets]));
+        setSelectedKbPreset(findMatchingKbPreset(kbConfig, userKbPresets));
     }, [kbConfig, userKbPresets]);
 
     // Fetch LiteLLM models when either backend uses litellm
@@ -774,7 +768,7 @@ export const RagConfigPanel: FunctionComponent = () => {
     const loadRetrievalPreset = useCallback((name: string) => {
         const preset = allRetrievalPresets.find((p) => p.name === name);
         if (!preset) return;
-        setSession({ ...DEFAULT_SESSION, ...preset.data });
+        setSession((prev) => ({ ...prev, ...preset.data }));
         setSelectedRetrievalPreset(name);
     }, [allRetrievalPresets]);
 
@@ -789,7 +783,8 @@ export const RagConfigPanel: FunctionComponent = () => {
         const name = saveAsName.trim();
         if (!name || !activeKb) return;
         if (type === "retrieval") {
-            const updated = [...userRetrievalPresets.filter((p) => p.name !== name), { name, data: { ...session } }];
+            const retrievalData = Object.fromEntries(RETRIEVAL_FIELD_KEYS.map((k) => [k, session[k]])) as RetrievalFields;
+            const updated = [...userRetrievalPresets.filter((p) => p.name !== name), { name, data: retrievalData }];
             setUserRetrievalPresets(updated);
             persistUserPresets(activeKb.id, { retrieval: updated, kb: userKbPresets });
             setSelectedRetrievalPreset(name);
