@@ -64,6 +64,14 @@ System prompt textarea is read-only for users (pill-styled); follow-up count rem
 - KB config preset toolbar disabled for users
 - Only the Retrieval section is expanded by default; Prompt, LLM, and Embedding start collapsed
 
+### Added — Per-browser session identity and per-user retrieval config
+
+- Login issues a stable `session_id` UUID cookie (httpOnly, 1-year lifetime) on first login; survives re-logins, resets on cookie clear
+- Next.js middleware injects `x-session-id` and `x-user-role` headers on every proxied request
+- Backend initialises a `user_config.db` SQLite database (WAL mode) with a `user_config` table keyed by session UUID
+- `GET /api/v1/rag/config` merges the admin baseline (`rag_config.json`) with the user's retrieval overlay from SQLite
+- `POST /api/v1/rag/config`: admin role writes the full shared baseline; user role persists only the retrieval fields (`top_k`, `rrf_k`, `bm25_enabled`, `query_expansion`, `hyde_enabled`, `reranking_*`, `image_retriever_top_k`) to their own row — LLM and embedding settings remain admin-only
+
 ### Fixed — UI language on first visit
 
 - Detection order set to `["localStorage", "navigator"]`: explicit user preference takes priority; browser locale is used on first visit if it matches a supported language (en/de/fr/it); otherwise falls back to English

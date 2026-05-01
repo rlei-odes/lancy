@@ -68,7 +68,13 @@ export async function middleware(request: NextRequest) {
             headers: { "Content-Type": "application/json", ...CORS_HEADERS },
         });
     }
-    if (role) return withCors(NextResponse.next());
+    if (role) {
+        const requestHeaders = new Headers(request.headers);
+        requestHeaders.set("x-user-role", role);
+        const sessionId = request.cookies.get("session_id")?.value;
+        if (sessionId) requestHeaders.set("x-session-id", sessionId);
+        return withCors(NextResponse.next({ request: { headers: requestHeaders } }));
+    }
 
     if (
         pathname.startsWith("/api/") ||
