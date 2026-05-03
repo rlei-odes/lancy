@@ -30,14 +30,14 @@ No shared filesystem access required — documents are pushed over HTTP from any
 Run the install script on the Spark:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/rlei-odes/lancy/main/scripts/spark-install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/rlei-odes/lancy/main/scripts/install-backend.sh)
 ```
 
 Or clone the repo first and run it locally:
 
 ```bash
 git clone https://github.com/rlei-odes/lancy.git ~/lancy
-bash ~/lancy/scripts/spark-install.sh
+bash ~/lancy/scripts/install-backend.sh
 ```
 
 The script handles: system packages, Python venv creation, repo clone, pip install.
@@ -115,7 +115,7 @@ The scripts live at `scripts/` in the repo root and are executable.
 
 | Script | Purpose |
 |--------|---------|
-| [`scripts/spark-install.sh`](../../scripts/spark-install.sh) | One-time setup: system packages, venv, pip install |
+| [`scripts/install-backend.sh`](../../scripts/install-backend.sh) | One-time setup: system packages, venv, pip install |
 | [`scripts/start-backend.sh`](../../scripts/start-backend.sh) | Start the backend in the background, log to `logs/backend.log` |
 | [`scripts/stop-backend.sh`](../../scripts/stop-backend.sh) | Stop the backend via PID file, fall back to port kill |
 | [`scripts/start-frontend.sh`](../../scripts/start-frontend.sh) | Start the frontend only (local machine, Spark backend) |

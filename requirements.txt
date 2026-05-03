@@ -21,5 +21,7 @@ ragas==0.4.3
 rank-bm25==0.2.2
 ruff==0.12.3
 sentence-transformers==5.1.1
+aiosqlite==0.22.1
+asyncpg==0.30.0
 SQLAlchemy==2.0.46
 uvicorn==0.35.0

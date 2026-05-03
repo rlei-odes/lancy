@@ -816,3 +816,11 @@ The sources already arrive in the final stream chunk, so the GET call is redunda
 - Move source fetching out of `get_conversation_by_id` into a separate on-demand endpoint
 - Send sources as a lightweight reference (id + filename only) in the stream, fetch full content lazily on click
 
+
+### Implement Backup for Databases
+
+The backup logic in database.py only covers user_config.db. The new conversations.db has none.
+
+_maybe_backup() is called from init_db() in database.py:70, which is only invoked for the config DB. The new SQLite module's create_table() methods just run CREATE TABLE IF NOT EXISTS via SQLAlchemy — no backup step anywhere.
+
+To fix this properly, the backup should run at startup in main.py, right after the SQLite engine is created and before create_table() is called — same pattern as user_config.db. Something like a small helper that does sqlite3.connect(src).backup(dst) on conversations.db if it exists and is older than 24h.

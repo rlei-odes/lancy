@@ -234,7 +234,7 @@ New endpoint for pushing documents into a KB over HTTP without requiring shared 
 
 Scripts for deploying the backend on a DGX Spark (or any Ubuntu/ARM machine):
 
-- `scripts/spark-install.sh` — one-time setup: system packages, venv, pip install
+- `scripts/install-backend.sh` — one-time setup: system packages, venv, pip install
 - `scripts/start-backend.sh` — start backend-only in the background (no frontend, no Ollama check); prints LAN IP on start
 - `scripts/stop-backend.sh` — stop via PID file, fall back to port kill
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Lancy — Backend install script for DGX Spark / Ubuntu ARM
+# Lancy — Backend install script
 # Run once on a fresh machine to set up the backend.
 set -e
 
