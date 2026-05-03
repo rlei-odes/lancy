@@ -102,29 +102,21 @@ class MessageService extends ApiService {
                     const { value, done } = await reader.read();
                     doneReading = done;
                     if (value) {
-                        const chunk = decoder.decode(value, { stream: true });
-                        buffer += chunk;
-
-                        let boundaryIndex;
-                        while ((boundaryIndex = buffer.lastIndexOf("}{")) !== -1) {
-                            const completeMessage = buffer.substring(0, boundaryIndex + 1);
-                            buffer = buffer.substring(boundaryIndex + 1);
-
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split("\n");
+                        buffer = lines.pop() ?? "";
+                        for (const line of lines) {
+                            if (!line.trim()) continue;
                             try {
-                                const parsedMessage: Message = JSON.parse(completeMessage);
-                                onMessage(parsedMessage);
-                            } catch (parseError) {}
-                        }
-
-                        // Try parsing any remaining buffer data if it's a complete JSON object
-                        try {
-                            const parsedMessage: Message = JSON.parse(buffer);
-                            onMessage(parsedMessage);
-                            buffer = ""; // Clear buffer after successful parsing
-                        } catch (parseError) {
-                            // Do nothing here; buffer might still be incomplete
+                                onMessage(JSON.parse(line) as Message);
+                            } catch {}
                         }
                     }
+                }
+                if (buffer.trim()) {
+                    try {
+                        onMessage(JSON.parse(buffer) as Message);
+                    } catch {}
                 }
                 onEnd();
             }

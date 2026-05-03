@@ -21,7 +21,8 @@ echo "Starting frontend on port 3000..."
 echo "  Backend URL: ${BACKEND_URL:-http://localhost:8080 (default)}"
 
 # --- Frontend ---
-cd "$FRONTEND" && npm run dev 2>&1 | awk '{ print strftime("%Y-%m-%d %H:%M:%S"), $0; fflush(); }' > "$LOG_DIR/frontend.log" &
+cd "$FRONTEND"
+node_modules/.bin/next dev > "$LOG_DIR/frontend.log" 2>&1 &
 echo $! > "$LOG_DIR/frontend.pid"
 echo "  Frontend PID: $(cat $LOG_DIR/frontend.pid)"
 echo "  Log:          $LOG_DIR/frontend.log"

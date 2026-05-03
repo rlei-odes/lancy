@@ -233,6 +233,7 @@ class ConversationalToolkitController:
                             parent_id=input_message.id,
                             create_timestamp=get_current_timestamp(),
                         )
+                        yield b"\n"
                     _pending = asyncio.create_task(_next_chunk(_aiter))
             finally:
                 _pending.cancel()
@@ -293,6 +294,7 @@ class ConversationalToolkitController:
                 llm_model=_model,
                 retrieval_stats=_retrieval_stats,
             )
+            yield b"\n"
 
     async def get_conversations_data_by_user_id(self, user_id: str) -> list[Conversation]:
         return await self.conversation_db.get_conversations_by_user_id(user_id)

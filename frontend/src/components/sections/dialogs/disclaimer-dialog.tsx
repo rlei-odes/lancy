@@ -3,17 +3,17 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Trans, useTranslation } from "react-i18next";
 import { useDisclaimer } from "@/hooks/useDisclaimer";
 import { config } from "@/config";
+import { useBranding } from "@/hooks/useBranding";
 import { cn } from "@/lib/lorem";
 import { Theme, useTheme } from "@/hooks/useTheme";
-import { Languages } from "@/lib/lang/i18n";
 
 export const DisclaimerDialog: FunctionComponent = () => {
-    const { t, i18n } = useTranslation("app");
+    const { t } = useTranslation("app");
     const { theme } = useTheme();
     const isDarkMode = theme === Theme.DARK;
-    const currentLanguage = i18n.language as Languages;
 
     const { isOpen, setDisclaimerIsOpen } = useDisclaimer();
+    const { agentName } = useBranding();
 
     return (
         <Dialog open={isOpen} onOpenChange={setDisclaimerIsOpen}>
@@ -24,7 +24,7 @@ export const DisclaimerDialog: FunctionComponent = () => {
                 <DialogDescription>
                     <Trans
                         i18nKey="informationDialog.goal"
-                        values={{ name: config.agent.name }}
+                        values={{ name: agentName }}
                         components={{
                             1: <a className="font-bold" />,
                         }}

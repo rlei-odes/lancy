@@ -3,7 +3,7 @@ import { Message, MessageTypes } from "@/services/message";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { Edit3, User2Icon } from "lucide-react";
 import { ERROR_ID, LOADING_ID, useMessaging } from "@/hooks/useMessaging";
-import { config } from "@/config";
+import { useBranding } from "@/hooks/useBranding";
 import { useTranslation } from "react-i18next";
 import { SourceItem } from "@/components/ui/source-item";
 import { Reactions } from "@/components/ui/reactions";
@@ -20,9 +20,10 @@ interface MessageItemProps extends Message {
 }
 
 export const MessageItem: FunctionComponent<MessageItemProps> = (props: MessageItemProps) => {
-    const { id, content, role, sources, className, reaction, isLastMessage, follow_up_questions, parent_id, query_duration_ms, tokens_per_second, llm_model, kb_name, emb_model, retrieval_stats } = props;
+    const { id, content, role, sources, className, reaction, isLastMessage, follow_up_questions, parent_id, query_duration_ms, tokens_per_second, llm_model, kb_name, retrieval_stats } = props;
     const isUser = role === "user";
     const { t } = useTranslation("app");
+    const { agentName, agentAvatarUrl } = useBranding();
     const [isHover, setIsHover] = useState(false);
     const [followUp, setFollowUp] = useState(follow_up_questions);
     const [isEdit, setIsEdit] = useState(false);
@@ -78,9 +79,9 @@ export const MessageItem: FunctionComponent<MessageItemProps> = (props: MessageI
         <div className="pl-1 pr-4" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
             <div className="flex flex-row align-middle items-center">
                 <Avatar className="h-7 w-7 p-1 bg-white text-black rounded-full border border-primary/10 flex items-center justify-center">
-                    {isUser ? <User2Icon /> : <AvatarImage src={config.app.logo} alt="Logo" loading="lazy" />}
+                    {isUser ? <User2Icon /> : <AvatarImage src={agentAvatarUrl} alt="Logo" loading="lazy" />}
                 </Avatar>
-                <div className="flex pl-2 font-bold text-foreground">{isUser ? t("you") : config.agent.name}</div>
+                <div className="flex pl-2 font-bold text-foreground">{isUser ? t("you") : agentName}</div>
             </div>
             {isLoading ? (
                 <div className="flex flex-row pl-9 text-foreground items-center gap-2">
@@ -124,6 +125,8 @@ export const MessageItem: FunctionComponent<MessageItemProps> = (props: MessageI
             </div>
             {!isUser && !isLoading && !isError && retrieval_stats != null && (
                 <div className="pl-9 flex items-center gap-2 text-[10px] text-foreground/30 font-mono select-none">
+                    {kb_name && <span>{kb_name}</span>}
+                    {kb_name && <span className="opacity-40">·</span>}
                     {retrieval_stats.reranker_active ? (
                         <>
                             <span>{retrieval_stats.candidates_retrieved} → {retrieval_stats.chunks_to_llm} chunks</span>

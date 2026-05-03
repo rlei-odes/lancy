@@ -29,6 +29,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `GET /api/admin/stats/usage`, `GET /api/admin/stats/db`, `POST /api/admin/clear` backend endpoints.
 - `useBranding` React context: fetches branding on load, provides `agentName` and `agentAvatarUrl` with `config.ts` as fallback. Wrapped at `_app.tsx` level.
 
+### Fixed — Branding context wired into chat UI
+
+- Agent name and avatar from the Branding admin tab now appear in the chat UI. `message-item.tsx`, `disclaimer.tsx`, and `disclaimer-dialog.tsx` were reading from the static `config.ts` instead of the `useBranding()` context.
+- Added KB name to the retrieval stats footer (first info row) in assistant messages.
+- Removed unused `emb_model` destructure and orphaned `currentLanguage`/`Languages` references.
+
+### Fixed — Streaming reliability
+
+- Backend (`controller.py`): added `\n` separator after each streamed `ClientMessage` so the stream is valid NDJSON rather than bare concatenated JSON.
+- Frontend (`message.ts`): replaced fragile `lastIndexOf("}{")` boundary detection with a newline-split NDJSON parser. Eliminates silent loss of the final message chunk (which carried `retrieval_stats`, `llm_model`, `tokens_per_second`), fixing the intermittent missing "chunks" display in the message footer.
+
+### Fixed — Frontend logging and PID tracking
+
+- `start.sh` and `start-frontend.sh`: replaced `npm run dev | awk … > log &` pipeline with a direct `node_modules/.bin/next dev > log 2>&1 &`. The pipeline captured the subshell PID instead of the Node process, making stop scripts ineffective and leaving the log file empty.
+
 ---
 
 ## [Lancy v0.3.0] — 2026-05-01 · rlei-odes
