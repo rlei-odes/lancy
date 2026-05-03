@@ -1,7 +1,7 @@
 import React, { FunctionComponent, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
-import { BookOpen, ChevronDown, ChevronRight, FlaskConical, Settings, SquarePen, Tag, Trash2, Webhook } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, FlaskConical, Settings, ShieldCheck, SquarePen, Tag, Trash2, Webhook } from "lucide-react";
 import Link from "next/link";
 import { SidebarButton } from "@/components/ui/sidebar-button";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -10,6 +10,7 @@ import { Footer } from "@/components/sections/sidebar/footer";
 import { IndexingStatus } from "@/components/sections/sidebar/indexing-status";
 import { config } from "@/config";
 import { useMessaging } from "@/hooks/useMessaging";
+import { useRole } from "@/hooks/useRole";
 import { cn } from "@/lib/lorem";
 import { SearchBar } from "@/components/ui/search-bar";
 import { Conversation } from "@/services/conversation";
@@ -28,6 +29,7 @@ export const History: FunctionComponent<Props> = (props: Props) => {
     const [pendingGroupIds, setPendingGroupIds] = useState<string[]>([]);
     const { t, i18n } = useTranslation("app");
     const { isMobile } = useMediaQuery();
+    const { role } = useRole();
     const [filter, setFilter] = useState<string>("");
     const [filteredConversations, setFilteredConversations] = useState<Conversation[]>(conversations);
     const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -223,6 +225,18 @@ export const History: FunctionComponent<Props> = (props: Props) => {
                             </div>
                         </Link>
                     </div>
+                    {role === "admin" && (
+                        <div className="py-1 px-2 mx-2">
+                            <Link
+                                href="/admin"
+                                className="flex w-full py-2 px-3 border border-border rounded-md justify-center ripple"
+                            >
+                                <div className="flex text-sm items-center gap-1.5 text-muted-foreground">
+                                    <ShieldCheck className="h-4 w-4" /> Admin
+                                </div>
+                            </Link>
+                        </div>
+                    )}
                 </div>
                 <Footer />
             </div>

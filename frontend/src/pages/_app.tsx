@@ -7,6 +7,7 @@ import { useRouter } from "next/router";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { MediaQueryProvider } from "@/hooks/useMediaQuery";
 import { Inter } from "next/font/google";
+import { BrandingProvider } from "@/hooks/useBranding";
 import { DisclaimerProvider } from "@/hooks/useDisclaimer";
 import { DisclaimerDialog } from "@/components/sections/dialogs/disclaimer-dialog";
 import { BackendStatus } from "@/components/sections/backend-status";
@@ -24,18 +25,20 @@ export default function App({ Component, pageProps }: AppProps) {
     }, [router.isReady]);
 
     return render ? (
-        <MediaQueryProvider waitMs={200}>
-            <ThemeProvider>
-                <DisclaimerProvider>
-                    <MessagingProvider>
-                        <div className={inter.className}>
-                            <Component {...pageProps} />
-                            <DisclaimerDialog />
-                            {router.pathname !== "/login" && <BackendStatus />}
-                        </div>
-                    </MessagingProvider>
-                </DisclaimerProvider>
-            </ThemeProvider>
-        </MediaQueryProvider>
+        <BrandingProvider>
+            <MediaQueryProvider waitMs={200}>
+                <ThemeProvider>
+                    <DisclaimerProvider>
+                        <MessagingProvider>
+                            <div className={inter.className}>
+                                <Component {...pageProps} />
+                                <DisclaimerDialog />
+                                {router.pathname !== "/login" && <BackendStatus />}
+                            </div>
+                        </MessagingProvider>
+                    </DisclaimerProvider>
+                </ThemeProvider>
+            </MediaQueryProvider>
+        </BrandingProvider>
     ) : null;
 }

@@ -1,4 +1,5 @@
-from sqlalchemy import Column, String, BigInteger, select, ForeignKey
+from sqlalchemy import Column, String, BigInteger, select, ForeignKey, text
+from sqlalchemy.types import JSON
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import relationship
 
@@ -16,6 +17,10 @@ class ConversationTable(Base):
     create_timestamp = Column(BigInteger)
     update_timestamp = Column(BigInteger)
     title = Column(String)
+    kb_id = Column(String, nullable=True)
+    kb_name = Column(String, nullable=True)
+    rag_config_snapshot = Column(JSON, nullable=True)
+    session_label = Column(String, nullable=True)
     user = relationship("UserTable", back_populates="conversations")
     messages = relationship("MessageTable", order_by="MessageTable.id", back_populates="conversation")
 
@@ -26,6 +31,10 @@ class ConversationTable(Base):
             create_timestamp=int(self.create_timestamp),  # type: ignore[arg-type]
             update_timestamp=int(self.update_timestamp),  # type: ignore[arg-type]
             title=str(self.title),
+            kb_id=self.kb_id,
+            kb_name=self.kb_name,
+            rag_config_snapshot=self.rag_config_snapshot,
+            session_label=self.session_label,
         )
 
 
@@ -37,6 +46,19 @@ class SQLiteConversationDatabase(ConversationDatabase):
     async def create_table(self) -> None:
         async with self.engine.begin() as connection:
             await connection.run_sync(ConversationTable.metadata.create_all)
+            # Migrate existing DBs that predate these columns.
+            existing = {
+                row[1]
+                for row in (await connection.execute(text("PRAGMA table_info(conversations)"))).fetchall()
+            }
+            for col, typedef in [
+                ("kb_id", "TEXT"),
+                ("kb_name", "TEXT"),
+                ("rag_config_snapshot", "TEXT"),
+                ("session_label", "TEXT"),
+            ]:
+                if col not in existing:
+                    await connection.execute(text(f"ALTER TABLE conversations ADD COLUMN {col} {typedef}"))
 
     async def create_conversation(self, conversation: Conversation) -> Conversation:
         async with self.make_session() as session:
@@ -48,6 +70,10 @@ class SQLiteConversationDatabase(ConversationDatabase):
                         create_timestamp=conversation.create_timestamp,
                         update_timestamp=conversation.update_timestamp,
                         title=conversation.title,
+                        kb_id=conversation.kb_id,
+                        kb_name=conversation.kb_name,
+                        rag_config_snapshot=conversation.rag_config_snapshot,
+                        session_label=conversation.session_label,
                     )
                     session.add(db_conv)
                     await session.commit()
@@ -89,6 +115,10 @@ class SQLiteConversationDatabase(ConversationDatabase):
                         setattr(db_conv, "create_timestamp", conversation.create_timestamp)
                         setattr(db_conv, "update_timestamp", conversation.update_timestamp)
                         setattr(db_conv, "title", conversation.title)
+                        setattr(db_conv, "kb_id", conversation.kb_id)
+                        setattr(db_conv, "kb_name", conversation.kb_name)
+                        setattr(db_conv, "rag_config_snapshot", conversation.rag_config_snapshot)
+                        setattr(db_conv, "session_label", conversation.session_label)
                         await session.commit()
                         return db_conv.to_model()
                     raise ValueError(f"Conversation with id {conversation.id} not found")

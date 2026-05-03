@@ -15,6 +15,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Fixed: saving a user preset no longer duplicates seeded presets into the user's DB scope. Protected presets are filtered out of save payloads on both frontend and backend.
 - Added "Lancy Default" KB preset (nomic-ai/nomic-embed-text-v1, batch 50) as the first seeded KB preset.
 
+### Fixed — Conversation labels restored after SQLite migration
+
+- `ConversationTable` (SQLite and Postgres) was missing `kb_id`, `kb_name`, `rag_config_snapshot`, and `session_label` columns — these were silently dropped on every write. Added the four columns and auto-migration (`PRAGMA table_info` + `ALTER TABLE ADD COLUMN`) so existing databases are upgraded on first start without data loss.
+
+### Added — Admin page
+
+- New `/admin` full-page route (mirrors Retrieval Explorer layout), visible in the sidebar only to users with the `admin` role.
+- **Usage Analytics tab**: conversations and messages per day chart (Recharts ComposedChart), configurable 30/90/180/365-day window, with system-wide totals.
+- **Database tab**: live stats for the conversation DB (type, file size, conversation/message/reaction/user counts) and vector store (type, path, disk usage, chunk count); clear-records form (deletes conversations + messages + reactions + sources older than N months, cascaded in FK order); backup placeholder.
+- **Branding tab** (first pass — agent name + avatar): agent name text field and avatar upload (PNG/JPEG/WebP/SVG, max 2 MB). Config persisted in `db/branding.json`; uploaded files served from `db/uploads/` via FastAPI `StaticFiles`.
+- `GET /api/v1/branding` (public) and `PUT /api/v1/branding` (admin) backend endpoints.
+- `GET /api/admin/stats/usage`, `GET /api/admin/stats/db`, `POST /api/admin/clear` backend endpoints.
+- `useBranding` React context: fetches branding on load, provides `agentName` and `agentAvatarUrl` with `config.ts` as fallback. Wrapped at `_app.tsx` level.
+
 ---
 
 ## [Lancy v0.3.0] — 2026-05-01 · rlei-odes

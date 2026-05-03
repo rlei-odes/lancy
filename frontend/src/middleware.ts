@@ -17,6 +17,8 @@ const PUBLIC_PREFIXES = [
     "/login",
     "/api/auth/",
     "/api/v1/files/",
+    "/api/v1/branding",
+    "/uploads/",
 ];
 
 function isAdminOnlyRequest(method: string, pathname: string): boolean {
@@ -26,6 +28,9 @@ function isAdminOnlyRequest(method: string, pathname: string): boolean {
     if (method === "POST" && pathname.startsWith("/api/v1/kb/") && pathname.endsWith("/documents")) return true;
     if (method === "POST" && pathname === "/api/v1/rag/reindex") return true;
     if (method === "POST" && pathname === "/api/v1/rag/reindex/cancel") return true;
+    if (pathname.startsWith("/api/admin/")) return true;
+    if (method === "PUT" && pathname === "/api/v1/branding") return true;
+    if (method === "DELETE" && pathname === "/api/v1/branding/avatar") return true;
     return false;
 }
 

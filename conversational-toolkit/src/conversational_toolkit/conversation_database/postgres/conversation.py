@@ -1,4 +1,5 @@
 from sqlalchemy import Column, String, BigInteger, select, ForeignKey
+from sqlalchemy.types import JSON
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import relationship
 
@@ -20,6 +21,10 @@ class ConversationTable(Base):
     create_timestamp = Column(BigInteger)
     update_timestamp = Column(BigInteger)
     title = Column(String)
+    kb_id = Column(String, nullable=True)
+    kb_name = Column(String, nullable=True)
+    rag_config_snapshot = Column(JSON, nullable=True)
+    session_label = Column(String, nullable=True)
     user = relationship("UserTable", back_populates="conversations")
     messages = relationship("MessageTable", order_by="MessageTable.id", back_populates="conversation")
 
@@ -30,6 +35,10 @@ class ConversationTable(Base):
             create_timestamp=int(self.create_timestamp),  # type: ignore[arg-type]
             update_timestamp=int(self.update_timestamp),  # type: ignore[arg-type]
             title=str(self.title),
+            kb_id=self.kb_id,
+            kb_name=self.kb_name,
+            rag_config_snapshot=self.rag_config_snapshot,
+            session_label=self.session_label,
         )
 
 
@@ -56,6 +65,10 @@ class PostgreSQLConversationDatabase(ConversationDatabase):
                         create_timestamp=conversation.create_timestamp,
                         update_timestamp=conversation.update_timestamp,
                         title=conversation.title,
+                        kb_id=conversation.kb_id,
+                        kb_name=conversation.kb_name,
+                        rag_config_snapshot=conversation.rag_config_snapshot,
+                        session_label=conversation.session_label,
                     )
                     session.add(db_conversation)
                     await session.commit()
@@ -101,6 +114,10 @@ class PostgreSQLConversationDatabase(ConversationDatabase):
                         setattr(db_conversation, "create_timestamp", conversation.create_timestamp)
                         setattr(db_conversation, "update_timestamp", conversation.update_timestamp)
                         setattr(db_conversation, "title", conversation.title)
+                        setattr(db_conversation, "kb_id", conversation.kb_id)
+                        setattr(db_conversation, "kb_name", conversation.kb_name)
+                        setattr(db_conversation, "rag_config_snapshot", conversation.rag_config_snapshot)
+                        setattr(db_conversation, "session_label", conversation.session_label)
                         await session.commit()
                         return db_conversation.to_model()
                     raise ValueError(f"Conversation with id {conversation.id} not found")

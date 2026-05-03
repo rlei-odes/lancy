@@ -91,6 +91,8 @@ from lancy.ingestion import (
     run_ingestion,
     upload_worker,
 )
+from lancy.admin_router import create_admin_router
+from lancy.branding_router import create_branding_router
 from lancy.kb_router import KBInfo, create_kb_router
 from lancy.kb_stats import write_kb_stats
 from lancy.openai_compat_router import create_openai_compat_router
@@ -817,6 +819,24 @@ def build_server():
     # ── OpenAI-compatible endpoint ────────────────────────────────────────
     openai_router = create_openai_compat_router(agent_proxy)
     app.include_router(openai_router)
+
+    # ── Admin API ─────────────────────────────────────────────────────────
+    admin_router = create_admin_router(
+        db_dir=_DB_DIR,
+        db_engine=_db_engine,
+        is_sqlite=not bool(os.getenv("DATABASE_URL", "")),
+        get_active_kb=kb_router.get_active_kb,
+    )
+    app.include_router(admin_router)
+
+    # ── Branding API + static file serving for uploaded avatars ───────────
+    branding_router = create_branding_router(db_dir=_DB_DIR)
+    app.include_router(branding_router)
+
+    from fastapi.staticfiles import StaticFiles
+    uploads_dir = _DB_DIR / "uploads"
+    uploads_dir.mkdir(exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
     return app
 

@@ -740,7 +740,7 @@ export const RagConfigPanel: FunctionComponent = () => {
     const saveAll = async () => {
         setStatus({ type: "loading", text: t("rag.statusSaving") });
         try {
-            const [sessionOk, kbOk] = await Promise.all([applySessionConfig(), applyKbConfig()]);
+            const [sessionOk, kbOk] = await Promise.all([applySessionConfig(), isAdmin ? applyKbConfig() : Promise.resolve(true)]);
             if (sessionOk && kbOk) {
                 setStatus({ type: "success", text: t("rag.statusSaved") });
                 window.dispatchEvent(new CustomEvent("rag-config-saved"));
