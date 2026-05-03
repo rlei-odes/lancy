@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.3.1] — 2026-05-03 · rlei-odes
+
+### Changed — Preset protection levels and clean per-user isolation
+
+- Added `protected` column to the `presets` table (DB migration on first start). Seed presets are `protected=1` (users cannot delete); "Standard" is `protected=2` (fully immutable, nobody can delete).
+- New users now receive Standard preset values on first session instead of the raw admin baseline.
+- KB switch now applies the Standard retrieval preset as a clean baseline for the new KB.
+- Fixed: saving a user preset no longer duplicates seeded presets into the user's DB scope. Protected presets are filtered out of save payloads on both frontend and backend.
+- Added "Lancy Default" KB preset (nomic-ai/nomic-embed-text-v1, batch 50) as the first seeded KB preset.
+
+---
+
 ## [Lancy v0.3.0] — 2026-05-01 · rlei-odes
 
 ### Added — Mode 2 authentication: admin/user role separation

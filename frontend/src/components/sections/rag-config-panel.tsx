@@ -75,11 +75,13 @@ type RetrievalFields = Pick<SessionConfig, typeof RETRIEVAL_FIELD_KEYS[number]>;
 interface RetrievalPreset {
     name: string;
     data: RetrievalFields;
+    protected?: number;
 }
 
 interface KBPreset {
     name: string;
     data: KBConfig;
+    protected?: number;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -220,7 +222,7 @@ const SelectInput: FunctionComponent<{
 
 function findMatchingRetrievalPreset(session: SessionConfig, presets: RetrievalPreset[]): string {
     return presets.find((p) =>
-        (Object.keys(p.data) as (keyof SessionConfig)[]).every((k) => p.data[k] === session[k])
+        (Object.keys(p.data) as (keyof RetrievalFields)[]).every((k) => p.data[k] === session[k])
     )?.name ?? "";
 }
 
@@ -352,11 +354,16 @@ async function fetchUserPresets(kbId: string): Promise<UserPresets> {
 }
 
 async function persistUserPresets(kbId: string, presets: UserPresets): Promise<void> {
+    // Strip protected presets — seeds live in the global admin scope, not the user scope
+    const payload: UserPresets = {
+        retrieval: presets.retrieval.filter((p) => !p.protected),
+        kb: presets.kb.filter((p) => !p.protected),
+    };
     try {
         await fetch(`${API_BASE}/api/v1/rag/presets/${encodeURIComponent(kbId)}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(presets),
+            body: JSON.stringify(payload),
             credentials: "include",
         });
     } catch { /* ignore */ }
@@ -602,8 +609,12 @@ export const RagConfigPanel: FunctionComponent = () => {
                 const loaded = await fetchUserPresets(kb.id);
                 setUserRetrievalPresets(loaded.retrieval);
                 setUserKbPresets(loaded.kb);
-                setSelectedRetrievalPreset("Standard");
-                setSelectedKbPreset("bge-m3 Präzision");
+                // Apply the Standard preset as the baseline for the new KB
+                const standard = loaded.retrieval.find((p) => p.name === "Standard");
+                if (standard) {
+                    setSession((prev) => ({ ...prev, ...standard.data }));
+                    setSelectedRetrievalPreset("Standard");
+                }
                 setKbRegistry((prev) => prev ? { ...prev, active: id } : prev);
                 setStatus({ type: "success", text: t("rag.statusKbActive", { name: kb.name }) });
             } else {
@@ -994,7 +1005,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                         >
                             <Save size={12} />
                         </button>
-                        {userRetrievalPresets.some((p) => p.name === selectedRetrievalPreset) && (
+                        {userRetrievalPresets.some((p) => p.name === selectedRetrievalPreset && !p.protected) && (
                             <button
                                 onClick={() => deletePreset("retrieval", selectedRetrievalPreset)}
                                 title={t("rag.presetDeleteTitle")}
@@ -1040,7 +1051,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                         >
                             <Save size={12} />
                         </button>
-                        {userKbPresets.some((p) => p.name === selectedKbPreset) && (
+                        {userKbPresets.some((p) => p.name === selectedKbPreset && !p.protected) && (
                             <button
                                 onClick={() => deletePreset("kb", selectedKbPreset)}
                                 title={t("rag.presetDeleteTitle")}

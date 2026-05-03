@@ -28,7 +28,7 @@ fi
 # --- Requirements ---
 if [ -f "$REPO/requirements.txt" ]; then
     echo "Checking requirements..."
-    if ! "$VENV/bin/pip" install -r "$REPO/requirements.txt" -q 2>&1; then
+    if ! (cd "$REPO" && "$VENV/bin/pip" install -r requirements.txt -q 2>&1); then
         echo "ERROR: Failed to install requirements. Check requirements.txt."
         exit 1
     fi

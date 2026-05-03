@@ -2,6 +2,7 @@
   "retrieval": [
     {
       "name": "Standard",
+      "protected": 2,
       "data": {
         "retriever_top_k": 5,
         "rrf_k": 60,
@@ -15,6 +16,7 @@
     },
     {
       "name": "Angebots-Analyse",
+      "protected": 1,
       "data": {
         "retriever_top_k": 8,
         "rrf_k": 60,
@@ -28,6 +30,7 @@
     },
     {
       "name": "Technische Fakten",
+      "protected": 1,
       "data": {
         "retriever_top_k": 6,
         "rrf_k": 60,
@@ -41,6 +44,7 @@
     },
     {
       "name": "Multi-Dok Vergleich",
+      "protected": 1,
       "data": {
         "retriever_top_k": 10,
         "rrf_k": 60,
@@ -54,6 +58,7 @@
     },
     {
       "name": "Qualität (langsam)",
+      "protected": 1,
       "data": {
         "retriever_top_k": 8,
         "rrf_k": 60,
@@ -67,6 +72,7 @@
     },
     {
       "name": "Schnell",
+      "protected": 1,
       "data": {
         "retriever_top_k": 4,
         "rrf_k": 60,
@@ -81,7 +87,17 @@
   ],
   "kb": [
     {
+      "name": "Lancy Default",
+      "protected": 1,
+      "data": {
+        "embedding_model": "nomic-ai/nomic-embed-text-v1",
+        "nomic_prefix": true,
+        "embedding_batch_size": 50
+      }
+    },
+    {
       "name": "bge-m3 Präzision",
+      "protected": 1,
       "data": {
         "embedding_model": "BAAI/bge-m3",
         "nomic_prefix": false,

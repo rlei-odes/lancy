@@ -92,6 +92,7 @@ def init_db(db_path: Path) -> None:
                 type      TEXT NOT NULL,
                 name      TEXT NOT NULL,
                 data_json TEXT NOT NULL,
+                protected INTEGER NOT NULL DEFAULT 0,
                 UNIQUE (user_id, kb_id, type, name)
             )
         """)
@@ -136,26 +137,28 @@ def get_presets(db_path: Path, kb_id: str, user_id: str | None) -> dict:
     Return merged presets for a KB. Retrieval presets include both admin/global
     and the user's personal presets. KB presets are admin-only.
     Order: global before KB-specific, admin before personal, then by name.
+    The `protected` field is included so the frontend can hide delete buttons and
+    filter seeds out of save payloads.
     """
     with sqlite3.connect(db_path) as conn:
         _configure_conn(conn)
         rows = conn.execute("""
-            SELECT name, data_json FROM presets
+            SELECT name, data_json, protected FROM presets
             WHERE type = 'retrieval'
               AND (kb_id = ? OR kb_id IS NULL)
               AND (user_id IS NULL OR user_id = ?)
             ORDER BY user_id NULLS FIRST, kb_id NULLS FIRST, name
         """, (kb_id, user_id)).fetchall()
-        retrieval = [{"name": r[0], "data": json.loads(r[1])} for r in rows]
+        retrieval = [{"name": r[0], "data": json.loads(r[1]), "protected": r[2]} for r in rows]
 
         rows = conn.execute("""
-            SELECT name, data_json FROM presets
+            SELECT name, data_json, protected FROM presets
             WHERE type = 'kb'
               AND (kb_id = ? OR kb_id IS NULL)
               AND user_id IS NULL
             ORDER BY kb_id NULLS FIRST, name
         """, (kb_id,)).fetchall()
-        kb = [{"name": r[0], "data": json.loads(r[1])} for r in rows]
+        kb = [{"name": r[0], "data": json.loads(r[1]), "protected": r[2]} for r in rows]
 
     return {"retrieval": retrieval, "kb": kb}
 
@@ -171,41 +174,65 @@ def save_presets(
     Full-replace save for a (kb_id, user_id, type) scope.
     Admin writes to the shared scope (user_id=NULL); users write to their own.
     KB presets are silently ignored for non-admin callers.
+
+    Protection rules:
+      protected=0  deletable by owner (user or admin)
+      protected=1  admin-seeded; users cannot delete or overwrite
+      protected=2  fully immutable; nobody can delete or overwrite
     """
     retrieval = presets.get("retrieval", [])
     kb_presets = presets.get("kb", [])
     scope_user_id = None if role == "admin" else user_id
+    # Admins may modify up to protected=1; nobody touches protected=2
+    max_deletable = 1 if role == "admin" else 0
 
     with _sqlite_lock:
         with sqlite3.connect(db_path) as conn:
             _configure_conn(conn)
 
-            # Full-replace retrieval presets for this scope
+            # Delete only unprotected rows in this scope — never touch seeds
             conn.execute(
-                "DELETE FROM presets WHERE type='retrieval' AND kb_id=? AND user_id IS ?",
-                (kb_id, scope_user_id),
+                "DELETE FROM presets WHERE type='retrieval' AND kb_id=? AND user_id IS ? AND protected <= ?",
+                (kb_id, scope_user_id, max_deletable),
             )
             for p in retrieval:
-                if "name" in p and "data" in p:
-                    conn.execute(
-                        "INSERT INTO presets (user_id, kb_id, type, name, data_json) "
-                        "VALUES (?, ?, 'retrieval', ?, ?)",
-                        (scope_user_id, kb_id, p["name"], json.dumps(p["data"])),
-                    )
+                if "name" not in p or "data" not in p:
+                    continue
+                # Safety net: skip if a global seed with higher protection already owns this name
+                seed = conn.execute(
+                    "SELECT protected FROM presets "
+                    "WHERE type='retrieval' AND kb_id IS NULL AND user_id IS NULL AND name=?",
+                    (p["name"],),
+                ).fetchone()
+                if seed and seed[0] > max_deletable:
+                    continue
+                conn.execute(
+                    "INSERT OR REPLACE INTO presets (user_id, kb_id, type, name, data_json, protected) "
+                    "VALUES (?, ?, 'retrieval', ?, ?, 0)",
+                    (scope_user_id, kb_id, p["name"], json.dumps(p["data"])),
+                )
 
             # KB presets: admin only
             if role == "admin":
                 conn.execute(
-                    "DELETE FROM presets WHERE type='kb' AND kb_id=? AND user_id IS NULL",
-                    (kb_id,),
+                    "DELETE FROM presets WHERE type='kb' AND kb_id=? AND user_id IS NULL AND protected <= ?",
+                    (kb_id, max_deletable),
                 )
                 for p in kb_presets:
-                    if "name" in p and "data" in p:
-                        conn.execute(
-                            "INSERT INTO presets (user_id, kb_id, type, name, data_json) "
-                            "VALUES (NULL, ?, 'kb', ?, ?)",
-                            (kb_id, p["name"], json.dumps(p["data"])),
-                        )
+                    if "name" not in p or "data" not in p:
+                        continue
+                    seed = conn.execute(
+                        "SELECT protected FROM presets "
+                        "WHERE type='kb' AND kb_id IS NULL AND user_id IS NULL AND name=?",
+                        (p["name"],),
+                    ).fetchone()
+                    if seed and seed[0] > max_deletable:
+                        continue
+                    conn.execute(
+                        "INSERT OR REPLACE INTO presets (user_id, kb_id, type, name, data_json, protected) "
+                        "VALUES (NULL, ?, 'kb', ?, ?, 0)",
+                        (kb_id, p["name"], json.dumps(p["data"])),
+                    )
 
             conn.commit()
 
@@ -216,7 +243,8 @@ def save_presets(
 def seed_presets(db_path: Path, seeds_path: Path) -> None:
     """
     Insert missing presets from a JSON seed file as global admin presets.
-    Uses INSERT OR IGNORE so existing presets (including admin-modified ones) are untouched.
+    Uses INSERT OR IGNORE so existing preset data (including admin edits) is preserved.
+    The protected level is always kept up-to-date regardless of INSERT OR IGNORE.
     New names added to the seed file are picked up on next startup.
     """
     if not seeds_path.exists():
@@ -232,23 +260,47 @@ def seed_presets(db_path: Path, seeds_path: Path) -> None:
         with sqlite3.connect(db_path) as conn:
             _configure_conn(conn)
             for p in data.get("retrieval", []):
+                protected = p.get("protected", 1)
                 cur = conn.execute(
-                    "INSERT OR IGNORE INTO presets (user_id, kb_id, type, name, data_json) "
-                    "VALUES (NULL, NULL, 'retrieval', ?, ?)",
-                    (p["name"], json.dumps(p["data"])),
+                    "INSERT OR IGNORE INTO presets (user_id, kb_id, type, name, data_json, protected) "
+                    "VALUES (NULL, NULL, 'retrieval', ?, ?, ?)",
+                    (p["name"], json.dumps(p["data"]), protected),
                 )
                 inserted += cur.rowcount
+                # Always enforce the correct protection level even on existing rows
+                conn.execute(
+                    "UPDATE presets SET protected=? "
+                    "WHERE user_id IS NULL AND kb_id IS NULL AND type='retrieval' AND name=?",
+                    (protected, p["name"]),
+                )
             for p in data.get("kb", []):
+                protected = p.get("protected", 1)
                 cur = conn.execute(
-                    "INSERT OR IGNORE INTO presets (user_id, kb_id, type, name, data_json) "
-                    "VALUES (NULL, NULL, 'kb', ?, ?)",
-                    (p["name"], json.dumps(p["data"])),
+                    "INSERT OR IGNORE INTO presets (user_id, kb_id, type, name, data_json, protected) "
+                    "VALUES (NULL, NULL, 'kb', ?, ?, ?)",
+                    (p["name"], json.dumps(p["data"]), protected),
                 )
                 inserted += cur.rowcount
+                conn.execute(
+                    "UPDATE presets SET protected=? "
+                    "WHERE user_id IS NULL AND kb_id IS NULL AND type='kb' AND name=?",
+                    (protected, p["name"]),
+                )
             conn.commit()
 
     if inserted:
         log.info(f"Seeded {inserted} preset(s) from {seeds_path.name}")
+
+
+def get_standard_preset(db_path: Path) -> dict | None:
+    """Return the data dict of the immutable Standard retrieval preset, or None."""
+    with sqlite3.connect(db_path) as conn:
+        _configure_conn(conn)
+        row = conn.execute(
+            "SELECT data_json FROM presets "
+            "WHERE type='retrieval' AND name='Standard' AND protected=2 AND user_id IS NULL",
+        ).fetchone()
+    return json.loads(row[0]) if row else None
 
 
 # ─── JSON migration ───────────────────────────────────────────────────────────
