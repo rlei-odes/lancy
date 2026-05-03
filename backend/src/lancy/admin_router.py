@@ -6,6 +6,7 @@ Enforcement is handled at the Next.js middleware layer (x-user-role header).
 """
 from __future__ import annotations
 
+import json as _json_mod
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -51,6 +52,21 @@ class DbStats(BaseModel):
     vs_db: VsDbStats
 
 
+class ModelPerfStats(BaseModel):
+    model: str
+    count: int
+    tps_min: float | None
+    tps_avg: float | None
+    tps_max: float | None
+    dur_min: float | None   # seconds
+    dur_avg: float | None
+    dur_max: float | None
+
+
+class PerformanceStats(BaseModel):
+    models: list[ModelPerfStats]
+
+
 class ClearRequest(BaseModel):
     older_than_months: int
 
@@ -62,6 +78,12 @@ class ClearResult(BaseModel):
     deleted_sources: int
 
 
+class AdminConfig(BaseModel):
+    auto_cleanup_enabled: bool = True
+    auto_cleanup_months: int = 12
+    auto_cleanup_last_run: str | None = None
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -70,6 +92,42 @@ def _dir_size(path: str) -> int | None:
         return sum(f.stat().st_size for f in Path(path).rglob("*") if f.is_file())
     except Exception:
         return None
+
+
+def _load_admin_cfg(db_dir: Path) -> AdminConfig:
+    p = db_dir / "admin_config.json"
+    if p.exists():
+        try:
+            return AdminConfig(**_json_mod.loads(p.read_text()))
+        except Exception:
+            pass
+    return AdminConfig()
+
+
+def _save_admin_cfg(db_dir: Path, cfg: AdminConfig) -> None:
+    (db_dir / "admin_config.json").write_text(cfg.model_dump_json())
+
+
+async def run_auto_cleanup(db_dir: Path, db_engine: AsyncEngine) -> int:
+    """Delete conversations older than configured threshold. Returns deleted count (0 if disabled)."""
+    cfg = _load_admin_cfg(db_dir)
+    if not cfg.auto_cleanup_enabled:
+        return 0
+    cutoff_ms = int(
+        (datetime.now(timezone.utc) - timedelta(days=cfg.auto_cleanup_months * 30)).timestamp() * 1000
+    )
+    old_convs = "SELECT id FROM conversations WHERE create_timestamp < :cutoff"
+    old_msgs = f"SELECT id FROM messages WHERE conversation_id IN ({old_convs})"
+    async with db_engine.begin() as conn:
+        await conn.execute(text(f"DELETE FROM reactions WHERE message_id IN ({old_msgs})"), {"cutoff": cutoff_ms})
+        await conn.execute(text(f"DELETE FROM sources WHERE message_id IN ({old_msgs})"), {"cutoff": cutoff_ms})
+        await conn.execute(text(f"DELETE FROM messages WHERE conversation_id IN ({old_convs})"), {"cutoff": cutoff_ms})
+        c = (await conn.execute(text("DELETE FROM conversations WHERE create_timestamp < :cutoff"), {"cutoff": cutoff_ms})).rowcount
+    cfg.auto_cleanup_last_run = datetime.now(timezone.utc).isoformat()
+    _save_admin_cfg(db_dir, cfg)
+    if c:
+        log.info(f"Auto-cleanup: {c} conversation(s) removed (>{cfg.auto_cleanup_months}mo old)")
+    return c
 
 
 # ─── Router factory ───────────────────────────────────────────────────────────
@@ -112,7 +170,7 @@ def create_admin_router(
                 await conn.execute(
                     text(
                         f"SELECT {date_expr} as day, COUNT(*) as cnt"
-                        " FROM messages WHERE create_timestamp >= :cutoff"
+                        " FROM messages WHERE role = 'user' AND create_timestamp >= :cutoff"
                         " GROUP BY day ORDER BY day"
                     ),
                     {"cutoff": cutoff_ms},
@@ -173,6 +231,54 @@ def create_admin_router(
             ),
         )
 
+    @router.get("/stats/performance", response_model=PerformanceStats)
+    async def get_performance_stats(days: int = 180) -> PerformanceStats:
+        import json as _json
+        cutoff_ms = int(
+            (datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000
+        )
+        async with db_engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    text("SELECT metadata FROM messages WHERE role = 'assistant' AND create_timestamp >= :cutoff"),
+                    {"cutoff": cutoff_ms},
+                )
+            ).fetchall()
+
+        by_model: dict[str, dict[str, list[float]]] = {}
+        for (raw,) in rows:
+            meta_list: list[dict] = _json.loads(raw) if raw else []
+            tps = next((m.get("tokens_per_second") for m in reversed(meta_list) if m.get("tokens_per_second")), None)
+            dur_ms = next((m.get("query_duration_ms") for m in reversed(meta_list) if m.get("query_duration_ms")), None)
+            model = next((m.get("model") for m in reversed(meta_list) if m.get("model")), None) or "unknown"
+            if model not in by_model:
+                by_model[model] = {"tps": [], "dur": []}
+            if tps is not None:
+                by_model[model]["tps"].append(float(tps))
+            if dur_ms is not None:
+                by_model[model]["dur"].append(float(dur_ms) / 1000)
+
+        def _stats(vals: list[float]) -> tuple[float | None, float | None, float | None]:
+            if not vals:
+                return None, None, None
+            return round(min(vals), 2), round(sum(vals) / len(vals), 2), round(max(vals), 2)
+
+        return PerformanceStats(
+            models=[
+                ModelPerfStats(
+                    model=model,
+                    count=max(len(v["tps"]), len(v["dur"])),
+                    tps_min=_stats(v["tps"])[0],
+                    tps_avg=_stats(v["tps"])[1],
+                    tps_max=_stats(v["tps"])[2],
+                    dur_min=_stats(v["dur"])[0],
+                    dur_avg=_stats(v["dur"])[1],
+                    dur_max=_stats(v["dur"])[2],
+                )
+                for model, v in sorted(by_model.items())
+            ]
+        )
+
     @router.post("/clear", response_model=ClearResult)
     async def clear_old_records(req: ClearRequest) -> ClearResult:
         months = max(1, req.older_than_months)
@@ -216,5 +322,17 @@ def create_admin_router(
             deleted_reactions=r,
             deleted_sources=s,
         )
+
+    @router.get("/config", response_model=AdminConfig)
+    async def get_admin_config() -> AdminConfig:
+        return _load_admin_cfg(db_dir)
+
+    @router.put("/config", response_model=AdminConfig)
+    async def put_admin_config(cfg: AdminConfig) -> AdminConfig:
+        existing = _load_admin_cfg(db_dir)
+        cfg.auto_cleanup_months = max(1, min(99, cfg.auto_cleanup_months))
+        cfg.auto_cleanup_last_run = existing.auto_cleanup_last_run
+        _save_admin_cfg(db_dir, cfg)
+        return cfg
 
     return router

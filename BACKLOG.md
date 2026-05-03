@@ -21,6 +21,10 @@ The sources panel occasionally shows no sources even when the answer clearly ref
 
 Note: the existing `_UUID_RE` inline fallback is effectively dead code given the current prompt explicitly says "No UUIDs in the text."
 
+### LLM error: The size of tensor a (19) must match the size of tensor b (17) at non-singleton dimension 1
+
+Unknow origin. Possibly connected to Query Expansion. Could be related to the LLM expanding the query in other languages. Observed: Korean, Thai. Possibly an LLM internal bug.
+
 ---
 
 ## Authentication & Access Control
@@ -716,20 +720,6 @@ Wiring: instantiate with the active KB's retriever, register with `ToolAgent` at
 3. **Multi-agent / subagent pattern** — wrap the RAG pipeline as a tool for a coordinator agent. Enables routing across multiple KBs (e.g. one subagent per domain). Lower priority; useful only once multi-KB usage becomes a real need.
 
 **Recommended first step:** implement the Agentic Mode toggle (level 1) — it is the highest-value change with the smallest footprint, and the existing `ToolAgent` class makes it straightforward.
-
----
-
-### RAG Quality Evaluation with Ragas
-
-`ragas` is already present in `conversational-toolkit/pyproject.toml` and was used in the notebook prototypes to compute Faithfulness and Answer Relevancy metrics. It was deliberately left in the codebase rather than removed, but there is currently no production integration and it is uncertain whether one will ever be built.
-
-**Why not in real-time:** Ragas requires additional LLM calls per answer, making it unsuitable for the request-response cycle.
-
-**Potential future use:** a background batch job that periodically samples recent answers and scores them (Faithfulness, Context Recall, Answer Relevancy), writing results to a log or dashboard. Would provide an ongoing quality signal without impacting latency.
-
-A ground-truth query set (`EVALUATION_QUERIES`) covering the PrimePack AG demo corpus is already defined in `backend/src/lancy/feature1_evaluation.py` — it can serve as the basis for any Ragas evaluation run.
-
-**Status:** dependency retained, no implementation planned. Revisit if systematic quality monitoring becomes a priority.
 
 ---
 

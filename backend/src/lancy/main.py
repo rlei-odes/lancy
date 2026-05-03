@@ -91,7 +91,7 @@ from lancy.ingestion import (
     run_ingestion,
     upload_worker,
 )
-from lancy.admin_router import create_admin_router
+from lancy.admin_router import create_admin_router, run_auto_cleanup
 from lancy.branding_router import create_branding_router
 from lancy.kb_router import KBInfo, create_kb_router
 from lancy.kb_stats import write_kb_stats
@@ -609,8 +609,17 @@ def build_server():
     app.include_router(kb_router)
 
     # ── Startup: load stats if VS is already populated ────────────────────
+    async def _auto_cleanup_loop() -> None:
+        while True:
+            try:
+                await run_auto_cleanup(_DB_DIR, _db_engine)
+            except Exception as exc:
+                log.warning(f"Auto-cleanup error: {exc}")
+            await asyncio.sleep(86_400)
+
     async def _startup() -> None:
         asyncio.create_task(upload_worker())  # noqa: RUF006
+        asyncio.create_task(_auto_cleanup_loop())  # noqa: RUF006
         configure_loguru()
         await _conv_db.create_table()
         await _msg_db.create_table()

@@ -46,19 +46,6 @@ class SQLiteConversationDatabase(ConversationDatabase):
     async def create_table(self) -> None:
         async with self.engine.begin() as connection:
             await connection.run_sync(ConversationTable.metadata.create_all)
-            # Migrate existing DBs that predate these columns.
-            existing = {
-                row[1]
-                for row in (await connection.execute(text("PRAGMA table_info(conversations)"))).fetchall()
-            }
-            for col, typedef in [
-                ("kb_id", "TEXT"),
-                ("kb_name", "TEXT"),
-                ("rag_config_snapshot", "TEXT"),
-                ("session_label", "TEXT"),
-            ]:
-                if col not in existing:
-                    await connection.execute(text(f"ALTER TABLE conversations ADD COLUMN {col} {typedef}"))
 
     async def create_conversation(self, conversation: Conversation) -> Conversation:
         async with self.make_session() as session:
