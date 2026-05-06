@@ -250,7 +250,9 @@ def create_admin_router(
             meta_list: list[dict] = _json.loads(raw) if raw else []
             tps = next((m.get("tokens_per_second") for m in reversed(meta_list) if m.get("tokens_per_second")), None)
             dur_ms = next((m.get("query_duration_ms") for m in reversed(meta_list) if m.get("query_duration_ms")), None)
-            model = next((m.get("model") for m in reversed(meta_list) if m.get("model")), None) or "unknown"
+            model = next((m.get("model") for m in reversed(meta_list) if m.get("model")), None)
+            if model is None:
+                continue  # no model info → LLM error response, exclude from stats
             if model not in by_model:
                 by_model[model] = {"tps": [], "dur": []}
             if tps is not None:

@@ -67,6 +67,32 @@ def _maybe_backup(db_path: Path) -> None:
 # ─── Init ─────────────────────────────────────────────────────────────────────
 
 
+def _migrate_presets_unique_index(conn: sqlite3.Connection) -> None:
+    """
+    One-time migration: replace the broken inline UNIQUE(user_id, kb_id, type, name) with
+    a COALESCE-based expression index. SQLite treats each NULL as distinct in plain UNIQUE
+    constraints, so INSERT OR IGNORE never fires for NULL-keyed rows and seeds accumulate
+    a new copy on every startup. The expression index maps NULL → '' so uniqueness is
+    properly enforced regardless of NULL keys.
+    """
+    if conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_presets_unique'"
+    ).fetchone():
+        return
+    # Deduplicate before creating the index — keep the row with the lowest id per logical key.
+    conn.execute("""
+        DELETE FROM presets WHERE id NOT IN (
+            SELECT MIN(id) FROM presets
+            GROUP BY COALESCE(user_id, ''), COALESCE(kb_id, ''), type, name
+        )
+    """)
+    conn.execute("""
+        CREATE UNIQUE INDEX idx_presets_unique
+        ON presets(COALESCE(user_id, ''), COALESCE(kb_id, ''), type, name)
+    """)
+    log.info("Migrated presets table: added NULL-safe expression unique index and deduplicated rows")
+
+
 def init_db(db_path: Path) -> None:
     """Initialise the database, run migrations, and back up if due."""
     _maybe_backup(db_path)
@@ -92,8 +118,7 @@ def init_db(db_path: Path) -> None:
                 type      TEXT NOT NULL,
                 name      TEXT NOT NULL,
                 data_json TEXT NOT NULL,
-                protected INTEGER NOT NULL DEFAULT 0,
-                UNIQUE (user_id, kb_id, type, name)
+                protected INTEGER NOT NULL DEFAULT 0
             )
         """)
         # Compound index covers every query pattern: WHERE kb_id=? AND user_id=? AND type=?
@@ -101,6 +126,7 @@ def init_db(db_path: Path) -> None:
             CREATE INDEX IF NOT EXISTS idx_presets_lookup
             ON presets(kb_id, user_id, type)
         """)
+        _migrate_presets_unique_index(conn)
         conn.commit()
 
 

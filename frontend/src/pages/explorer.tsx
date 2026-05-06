@@ -46,7 +46,7 @@ export default function ExplorerPage() {
                         </Link>
                         <div className="h-4 w-px bg-border" />
                         <h1 className="text-sm font-semibold tracking-tight">{t("explorer.pageTitle")}</h1>
-                        <span className="text-xs text-muted-foreground/60 font-mono">
+                        <span className="text-xs text-muted-foreground/60 font-mono leading-none">
                             {t("explorer.subtitle")}
                         </span>
                     </div>

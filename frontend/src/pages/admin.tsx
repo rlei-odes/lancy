@@ -51,7 +51,7 @@ export default function AdminPage() {
                         </Link>
                         <div className="h-4 w-px bg-border" />
                         <h1 className="text-sm font-semibold tracking-tight">Admin</h1>
-                        <span className="text-xs text-muted-foreground/60 font-mono">system management</span>
+                        <span className="text-xs text-muted-foreground/60 font-mono leading-none">system management</span>
                     </div>
 
                     {/* Tab strip */}
