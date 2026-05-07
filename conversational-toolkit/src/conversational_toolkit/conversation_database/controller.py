@@ -134,9 +134,13 @@ class ConversationalToolkitController:
         current_message = parent_message
         thread: list[Message] = [current_message]
         while current_message.parent_id:
-            current_message = next(
-                message for message in conversation_history if message.id == current_message.parent_id
+            found = next(
+                (message for message in conversation_history if message.id == current_message.parent_id),
+                None,
             )
+            if found is None:
+                break
+            current_message = found
             thread.append(current_message)
         return conversation, thread
 

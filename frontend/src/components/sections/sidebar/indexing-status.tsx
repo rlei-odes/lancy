@@ -20,6 +20,7 @@ interface IndexStatus {
     finished_at: string;
     last_result?: { reset: boolean } | null;
     queued: number;
+    captioning_enabled: boolean;
 }
 
 export const IndexingStatus: FunctionComponent = () => {
@@ -84,13 +85,16 @@ export const IndexingStatus: FunctionComponent = () => {
                 ? (status.caption_total > 0 ? Math.round((status.caption_index / status.caption_total) * 100) : 0)
                 : (status.total_files > 0 ? Math.round((status.file_index / status.total_files) * 100) : 0);
 
+        const totalPhases = status.captioning_enabled ? 3 : 2;
+        const currentPhase = isEmbedding ? totalPhases : isCaptioning ? 2 : 1;
+        const phasePrefix = `${currentPhase}/${totalPhases}  `;
         const phaseLabel = cancelling
             ? t("rag.indexingCancelling")
             : isEmbedding
-                ? t("rag.indexingPhaseEmbedding")
+                ? phasePrefix + t("rag.indexingPhaseEmbedding")
                 : isCaptioning
-                    ? t("rag.indexingPhaseCaptioning")
-                    : t("rag.indexingPhaseLoading");
+                    ? phasePrefix + t("rag.indexingPhaseCaptioning")
+                    : phasePrefix + t("rag.indexingPhaseLoading");
 
         return (
             <>

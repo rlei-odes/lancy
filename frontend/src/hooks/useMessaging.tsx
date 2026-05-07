@@ -192,7 +192,7 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
             content,
             type,
             ...(activeConversationId ? { conversation_id: activeConversationId } : {}),
-            ...(parentId ? { parent_id: parentId } : {}),
+            ...(activeConversationId && parentId ? { parent_id: parentId } : {}),
             ...(!activeConversationId && sessionLabel ? { session_label: sessionLabel } : {}),
         };
 
@@ -242,7 +242,7 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
             content,
             type,
             ...(activeConversationId ? { conversation_id: activeConversationId } : {}),
-            ...(parentId ? { parent_id: parentId } : {}),
+            ...(activeConversationId && parentId ? { parent_id: parentId } : {}),
             ...(!activeConversationId && sessionLabel ? { session_label: sessionLabel } : {}),
         };
 

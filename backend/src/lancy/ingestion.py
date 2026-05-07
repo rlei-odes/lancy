@@ -325,6 +325,7 @@ async def run_ingestion(
             "embed_total_batches": 0,
             "caption_index": 0,
             "caption_total": 0,
+            "captioning_enabled": kb.image_captioning_enabled,
             "kb_name": kb.name,
             "finished_at": "",
             "last_result": None,
@@ -629,6 +630,7 @@ async def ingest_uploaded_file(
         "chunks_so_far": 0,
         "embed_batch": 0,
         "embed_total_batches": 0,
+        "captioning_enabled": kb.image_captioning_enabled,
         "kb_name": kb.name,
         "finished_at": "",
         "last_result": None,
@@ -663,7 +665,14 @@ async def ingest_uploaded_file(
             kb.image_indexing_enabled or kb.image_captioning_enabled,
         )
         try:
-            chunks = await loop.run_in_executor(None, future.result)
+            chunks = await loop.run_in_executor(None, lambda: future.result(timeout=600))
+        except concurrent.futures.TimeoutError:
+            log.error(
+                f"Chunking subprocess timed out after 600s for '{source_name}' — "
+                "killing worker pool. Backend is safe; upload skipped."
+            )
+            _reset_chunking_pool()
+            raise RuntimeError(f"Chunking timed out for '{source_name}'")
         except concurrent.futures.BrokenExecutor:
             _reset_chunking_pool()
             raise RuntimeError(
