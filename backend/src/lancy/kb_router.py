@@ -280,6 +280,7 @@ def create_kb_router(
         reg = _load()
         if kb_id not in reg.bases:
             raise HTTPException(404, f"KB '{kb_id}' not found")
+        kb = reg.bases[kb_id]
 
         try:
             meta: dict = json.loads(metadata)
@@ -298,9 +299,16 @@ def create_kb_router(
         tmp_path = Path(tempfile.mktemp(suffix=suffix))
         tmp_path.write_bytes(await file.read())
 
+        size_mb = tmp_path.stat().st_size / 1_048_576
+        if size_mb > kb.max_file_size_mb:
+            tmp_path.unlink(missing_ok=True)
+            raise HTTPException(
+                413,
+                f"File too large: {size_mb:.1f} MB exceeds this KB's limit of {kb.max_file_size_mb} MB",
+            )
+
         meta.setdefault("source_file", original_filename)
 
-        kb = reg.bases[kb_id]
         background_tasks.add_task(upload_callback, tmp_path, kb, meta)
         return {"started": True, "document_id": meta["document_id"], "filename": file.filename}
 

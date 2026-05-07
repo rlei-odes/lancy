@@ -31,6 +31,29 @@ from lancy.rag_router import RagConfig, ReindexResult
 
 log = logging.getLogger("uvicorn")
 
+
+def _available_ram_gb() -> float | None:
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) / 1_048_576  # kB → GB
+    except Exception:
+        pass
+    return None
+
+
+def _clear_cuda_cache() -> None:
+    """Free GPU memory held by docling's pipeline models between pipeline stages."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            free, total = torch.cuda.mem_get_info()
+            log.debug(f"CUDA cache cleared: {free / 1e9:.1f} GB free / {total / 1e9:.1f} GB total")
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Global index status (polled by frontend via GET /api/v1/rag/reindex-status)
 # ---------------------------------------------------------------------------
@@ -559,7 +582,17 @@ async def ingest_uploaded_file(
 
         h = await loop.run_in_executor(None, lambda: file_hash(file_path))
 
-        log.info(f"Chunking '{extra_metadata.get('source_file', file_path.name)}' (document_id='{document_id}')")
+        size_mb = file_path.stat().st_size / 1_048_576
+        ram_gb = _available_ram_gb()
+        ram_info = f", {ram_gb:.1f} GB RAM free" if ram_gb is not None else ""
+        source_name = extra_metadata.get("source_file", file_path.name)
+        if size_mb > 50:
+            log.warning(
+                f"Large file upload: '{source_name}' is {size_mb:.1f} MB{ram_info} "
+                f"(document_id='{document_id}') — high OOM risk during chunking"
+            )
+        else:
+            log.info(f"Chunking '{source_name}': {size_mb:.1f} MB{ram_info} (document_id='{document_id}')")
         chunks = await loop.run_in_executor(
             None,
             lambda: load_chunks(
@@ -570,6 +603,7 @@ async def ingest_uploaded_file(
                 write_images=kb.image_indexing_enabled or kb.image_captioning_enabled,
             ),
         )
+        _clear_cuda_cache()  # free docling pipeline memory before embedding
 
         if not chunks:
             log.warning(f"No chunks produced from uploaded file '{file_path.name}'")
