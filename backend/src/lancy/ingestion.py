@@ -1,8 +1,10 @@
 import asyncio
 import base64
+import concurrent.futures
 import hashlib
 import io
 import logging
+import multiprocessing
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,6 +54,65 @@ def _clear_cuda_cache() -> None:
             log.debug(f"CUDA cache cleared: {free / 1e9:.1f} GB free / {total / 1e9:.1f} GB total")
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Subprocess pool for docling PDF chunking
+#
+# docling's native OCR/layout libs can corrupt glibc's heap on certain PDFs,
+# triggering abort() (SIGABRT) and killing the entire uvicorn process. Running
+# load_chunks in a subprocess means only that subprocess dies on a crash;
+# the main backend stays alive and the next upload continues.
+#
+# "spawn" context is used because CUDA is not fork-safe: a forked child inherits
+# the parent's CUDA context in an undefined state. "spawn" starts a fresh Python
+# interpreter so docling initialises its own CUDA pipeline cleanly.
+# ---------------------------------------------------------------------------
+
+
+def _chunking_pool_fn(
+    file_path_str: str,
+    h: str,
+    pdf_ocr_enabled: bool,
+    max_chunk_tokens: int,
+    write_images: bool,
+):
+    """Top-level function executed in the chunking subprocess."""
+    import logging as _log
+    _log.basicConfig(level=_log.INFO, format="%(asctime)s [chunk-worker] %(levelname)s %(message)s")
+    from pathlib import Path as _Path
+    from lancy.feature0_baseline_rag import load_chunks as _load_chunks
+    fp = _Path(file_path_str)
+    return _load_chunks(
+        include_files=[fp],
+        file_hashes={fp: h},
+        pdf_ocr_enabled=pdf_ocr_enabled,
+        max_chunk_tokens=max_chunk_tokens,
+        write_images=write_images,
+    )
+
+
+_chunking_pool: concurrent.futures.ProcessPoolExecutor | None = None
+
+
+def _get_chunking_pool() -> concurrent.futures.ProcessPoolExecutor:
+    global _chunking_pool
+    if _chunking_pool is None:
+        _chunking_pool = concurrent.futures.ProcessPoolExecutor(
+            max_workers=1,
+            mp_context=multiprocessing.get_context("spawn"),
+        )
+    return _chunking_pool
+
+
+def _reset_chunking_pool() -> None:
+    global _chunking_pool
+    if _chunking_pool is not None:
+        try:
+            _chunking_pool.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+        _chunking_pool = None
 
 
 # ---------------------------------------------------------------------------
@@ -593,17 +654,24 @@ async def ingest_uploaded_file(
             )
         else:
             log.info(f"Chunking '{source_name}': {size_mb:.1f} MB{ram_info} (document_id='{document_id}')")
-        chunks = await loop.run_in_executor(
-            None,
-            lambda: load_chunks(
-                include_files=[file_path],
-                file_hashes={file_path: h},
-                pdf_ocr_enabled=kb.pdf_ocr_enabled,
-                max_chunk_tokens=getattr(kb, "max_chunk_tokens", 0),
-                write_images=kb.image_indexing_enabled or kb.image_captioning_enabled,
-            ),
+        pool = _get_chunking_pool()
+        future = pool.submit(
+            _chunking_pool_fn,
+            str(file_path), h,
+            kb.pdf_ocr_enabled,
+            getattr(kb, "max_chunk_tokens", 0),
+            kb.image_indexing_enabled or kb.image_captioning_enabled,
         )
-        _clear_cuda_cache()  # free docling pipeline memory before embedding
+        try:
+            chunks = await loop.run_in_executor(None, future.result)
+        except concurrent.futures.BrokenExecutor:
+            _reset_chunking_pool()
+            raise RuntimeError(
+                f"Chunking subprocess crashed for '{source_name}' — "
+                "glibc heap corruption in docling native code. "
+                "Backend is safe; upload skipped."
+            )
+        _clear_cuda_cache()  # free CUDA memory in main process before embedding
 
         if not chunks:
             log.warning(f"No chunks produced from uploaded file '{file_path.name}'")
