@@ -318,7 +318,7 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
     top_k = cfg.retriever_top_k
     # When reranking, fetch a larger candidate pool first
     retriever_k = cfg.reranking_candidate_pool if cfg.reranking_enabled else top_k
-    semantic = _make_retriever(emb, vs, retriever_k)
+    semantic = _make_retriever(emb, vs, retriever_k, kb.nomic_prefix)
     retrievers = (
         [semantic, BM25Retriever(vs, top_k=retriever_k)]
         if cfg.bm25_enabled
@@ -408,7 +408,7 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
             table_name=f"rag_{kb.id.replace('-', '_')}_images",
         )
         image_retriever = _make_retriever(
-            image_emb, image_vs, cfg.image_retriever_top_k
+            image_emb, image_vs, cfg.image_retriever_top_k, False
         )
         all_retrievers.append(image_retriever)
         log.info(

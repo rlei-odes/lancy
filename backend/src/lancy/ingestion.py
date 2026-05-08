@@ -561,6 +561,7 @@ async def run_ingestion(
                         batch_size=kb.embedding_batch_size,
                         vector_store=vs_instance,
                         existing_hashes=existing_hashes,
+                        use_task_prefix=kb.nomic_prefix,
                     )
                 )
             finally:
@@ -605,6 +606,7 @@ async def run_ingestion(
                             vector_store=image_vs,
                             reset=reset,
                             existing_hashes=existing_image_hashes,
+                            use_task_prefix=False,
                         )
                     )
                 finally:
@@ -832,6 +834,7 @@ async def ingest_uploaded_file(
                         batch_size=kb.embedding_batch_size,
                         vector_store=vs_instance,
                         existing_hashes=set(),  # replacement already handled above
+                        use_task_prefix=kb.nomic_prefix,
                     )
                 )
             finally:
@@ -873,6 +876,7 @@ async def ingest_uploaded_file(
                             vector_store=image_vs,
                             reset=False,
                             existing_hashes=set(),
+                            use_task_prefix=False,
                         )
                     )
                 finally:
