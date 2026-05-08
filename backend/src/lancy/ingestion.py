@@ -5,6 +5,8 @@ import hashlib
 import io
 import logging
 import multiprocessing
+import os
+import signal
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -108,11 +110,47 @@ def _get_chunking_pool() -> concurrent.futures.ProcessPoolExecutor:
 def _reset_chunking_pool() -> None:
     global _chunking_pool
     if _chunking_pool is not None:
+        # Kill running subprocesses immediately so they don't linger holding GPU memory.
+        # shutdown(wait=False, cancel_futures=True) only cancels *pending* futures, not
+        # already-running ones — the subprocess keeps going unless we SIGKILL it.
+        try:
+            for pid in list(_chunking_pool._processes.keys()):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        except Exception:
+            pass
         try:
             _chunking_pool.shutdown(wait=False, cancel_futures=True)
         except Exception:
             pass
         _chunking_pool = None
+
+
+# ---------------------------------------------------------------------------
+# Embedding model cache — keep one loaded instance per (backend, model_name)
+# so it isn't reloaded from GPU on every document. Cleared on KB switch.
+# ---------------------------------------------------------------------------
+_emb_cache: dict[tuple, Any] = {}
+_emb_cache_key: tuple = ()
+
+
+def _get_cached_embedding_model(kb) -> Any:
+    global _emb_cache, _emb_cache_key
+    key = (kb.embedding_backend, kb.embedding_model, kb.embedding_ollama_host,
+           kb.embedding_custom_base_url)
+    if key != _emb_cache_key or not _emb_cache:
+        _emb_cache.clear()
+        _emb_cache[key] = build_embedding_model(
+            kb.embedding_backend,
+            kb.embedding_model,
+            ollama_host=kb.embedding_ollama_host or "",
+            custom_base_url=kb.embedding_custom_base_url or "",
+            custom_api_key=kb.embedding_custom_api_key or "",
+        )
+        _emb_cache_key = key
+    return _emb_cache[key]
 
 
 # ---------------------------------------------------------------------------
@@ -664,11 +702,14 @@ async def ingest_uploaded_file(
             getattr(kb, "max_chunk_tokens", 0),
             kb.image_indexing_enabled or kb.image_captioning_enabled,
         )
+        # Scale timeout with file size: large documents need proportionally more time.
+        # Floor of 600s; ~60s per MB above that (19 MB → ~1140s, 50 MB → 3000s).
+        chunk_timeout = max(600, int(size_mb * 60))
         try:
-            chunks = await loop.run_in_executor(None, lambda: future.result(timeout=600))
+            chunks = await loop.run_in_executor(None, lambda: future.result(timeout=chunk_timeout))
         except concurrent.futures.TimeoutError:
             log.error(
-                f"Chunking subprocess timed out after 600s for '{source_name}' — "
+                f"Chunking subprocess timed out after {chunk_timeout}s for '{source_name}' — "
                 "killing worker pool. Backend is safe; upload skipped."
             )
             _reset_chunking_pool()
@@ -711,13 +752,7 @@ async def ingest_uploaded_file(
                 "skipping captioning for this upload."
             )
 
-        emb = build_embedding_model(
-            kb.embedding_backend,
-            kb.embedding_model,
-            ollama_host=kb.embedding_ollama_host or "",
-            custom_base_url=kb.embedding_custom_base_url or "",
-            custom_api_key=kb.embedding_custom_api_key or "",
-        )
+        emb = _get_cached_embedding_model(kb)
         _index_status["phase"] = "embedding"
 
         def _on_embed_progress(batch_idx: int, total_batches: int) -> None:
@@ -743,6 +778,7 @@ async def ingest_uploaded_file(
                 new_loop.close()
 
         await loop.run_in_executor(None, _sync_embed_insert)
+        _clear_cuda_cache()  # release GPU memory held by embedding between documents
 
         if kb.image_indexing_enabled and image_chunks:
             vs_type = getattr(kb, "vs_type", "chromadb") or "chromadb"

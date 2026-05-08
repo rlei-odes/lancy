@@ -218,6 +218,58 @@ Three configurable strategies, selectable per session or preset:
 
 ---
 
+### Ingestion Event Log — Persistent Per-File Audit Trail
+
+**Goal:** persist the outcome of every upload-API ingestion attempt (success, crash, timeout, skip, no-chunks) so admins can audit bulk runs after the fact rather than parsing `backend.log`.
+
+**Why:** the upload API responds immediately with `{"started": true}` — the caller has no way to know the final outcome. After a bulk run of hundreds of files some may have silently crashed or timed out. Currently the only record is in `logs/backend.log`, which is not queryable.
+
+**Schema** — one table, one row per attempt:
+
+```sql
+CREATE TABLE IF NOT EXISTS ingest_events (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts            TEXT NOT NULL,           -- ISO timestamp (UTC)
+    kb_id         TEXT NOT NULL,
+    document_id   TEXT NOT NULL,
+    filename      TEXT NOT NULL,
+    status        TEXT NOT NULL,           -- success | crashed | timeout | skipped_dedup | no_chunks
+    chunks        INTEGER,                 -- null on failure
+    file_size_mb  REAL,
+    duration_ms   INTEGER,
+    error         TEXT                     -- null on success
+)
+```
+
+**Write points in `ingestion.py`:**
+- End of `ingest_uploaded_file` success path
+- `TimeoutError` handler (subprocess hung > 600s)
+- `BrokenExecutor` handler (glibc crash)
+- `no_chunks` early return
+- Outer exception handler in the upload worker (any other failure)
+
+**Admin API** — one new endpoint in `admin_router.py`:
+`GET /api/admin/ingest-events?kb_id=&status=&days=&limit=200&offset=0`
+
+**Admin UI** — new "Ingestion Log" tab in the admin page. Table view: KB · filename · status (colour-coded) · chunks · file size · duration · timestamp. Filterable by KB dropdown and status. Paginated for large runs.
+
+**What the upload caller gets:** the existing upload API contract (`{"started": true}`) stays unchanged. Admins review outcomes in the log after the batch finishes. Optionally `GET /api/admin/ingest-events?document_id=<id>` can be used to poll a specific file's result programmatically.
+
+**DB file — separate `ingest_events.db` vs `conversations.db`:**
+
+Using `conversations.db` is tempting because the admin router already connects to it for usage and performance stats. However, a dedicated `ingest_events.db` is the better call:
+
+- `ingestion.py` currently has no dependency on the conversations DB — adding one couples two independent subsystems. A dedicated DB avoids that import.
+- The ingestion pipeline runs in a different context (including from subprocess workers) — keeping its persistence isolated is cleaner.
+- Backup, archival, and eventual size growth of ingest events are independent of conversation history. A bulk run of thousands of documents can generate thousands of rows; this should not affect conversation query performance.
+- If the user wants to clear/archive old conversations, ingest history is unaffected and vice versa.
+
+The admin router simply opens both files, same pattern as any other SQLite read.
+
+**Scope boundary:** full-reindex runs (the blue reindex button) are not covered in the first pass — `ReindexResult` already surfaces aggregate counts for those. This feature targets the upload API path where per-file outcomes are currently invisible.
+
+---
+
 ### Ingestion Pipeline — File-by-File Processing for Crash Recovery
 
 **Current architecture:** `run_ingestion` processes all files in two sequential sweeps — Docling parses every file first (phase 1), then all resulting chunks are embedded and written to the vector store (phase 2). A crash mid-embedding loses all Docling work for the remaining files; they must be re-parsed on the next run.
