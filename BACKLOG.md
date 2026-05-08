@@ -3,6 +3,28 @@
 Planned improvements and feature work for the Lancy fork.
 Items are grouped by theme and roughly prioritised within each section.
 
+## Multi-KB Concurrent Retrieval
+
+### Per-User KB Selection (same-embedding constraint)
+
+**Goal:** allow multiple users to query different KBs simultaneously, rather than sharing a single globally active KB.
+
+**Constraint:** KBs available for concurrent use must share the same embedding model (backend + model name). This avoids loading multiple large embedding models into GPU memory at once. KBs with different embedding configurations continue to work but cannot be selected alongside incompatible ones.
+
+**Scope:**
+
+- Replace the single global `(vs, agent, emb)` in `main.py` with a pool: `dict[kb_id → (vs, agent)]` sharing one `emb` instance
+- KB "activation" becomes "load into pool" — a KB is loaded on first selection and stays resident
+- Query endpoint (`/api/v1/rag/chat` or equivalent) accepts a `kb_id` parameter; requests are routed to the corresponding agent
+- Group KBs in the UI by embedding compatibility; only KBs sharing the active embedding configuration are selectable for concurrent use — others remain available but require a full reload (breaking the shared-emb assumption)
+- "Active KB" becomes a per-session concept in the frontend rather than a global server-side setting
+
+**Open questions:**
+- Eviction policy for the pool (unload least-recently-used KB when memory pressure is high?)
+- How to surface embedding-incompatible KBs in the UI without confusing users — greyed out with a tooltip, or a separate "switch context" flow that warns about the reload cost?
+
+---
+
 ## Known Bugs
 
 ### Low Source Citation Count

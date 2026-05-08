@@ -339,7 +339,7 @@ def cancel_indexing() -> None:
 
 
 async def run_ingestion(
-    kb: KBInfo, reset: bool, db_dir: Path, cfg: RagConfig | None = None
+    kb: KBInfo, reset: bool, db_dir: Path, cfg: RagConfig | None = None, db_engine: Any = None
 ) -> tuple[int, int, int, int]:
     """Chunk + embed all files in kb.data_dirs.
 
@@ -429,7 +429,7 @@ async def run_ingestion(
 
         # Pre-pass: collect candidates, hash them, apply dedup filters.
         # File hashing reads entire file bytes — blocking I/O, run in executor.
-        def _prepass() -> tuple[list[Path], dict[Path, str], int, int]:
+        def _prepass() -> tuple[list[Path], dict[Path, str], int, int, list[Path], list[Path]]:
             candidates = _collect_candidate_files(
                 data_dirs,
                 max_file_size_mb=kb.max_file_size_mb,
@@ -440,6 +440,8 @@ async def run_ingestion(
                 hashes[f] = file_hash(f)
 
             filtered: list[Path] = []
+            skipped_store: list[Path] = []
+            skipped_batch: list[Path] = []
             seen_hashes: set[str] = set()
             n_skipped_store = 0
             n_skipped_batch = 0
@@ -449,11 +451,13 @@ async def run_ingestion(
                 if h in existing_hashes:
                     log.info(f"Skipping {f.name!r} — already in store (hash={h[:8]}…)")
                     n_skipped_store += 1
+                    skipped_store.append(f)
                 elif h in seen_hashes:
                     log.warning(
                         f"Skipping {f.name!r} — duplicate content in batch (hash={h[:8]}…)"
                     )
                     n_skipped_batch += 1
+                    skipped_batch.append(f)
                 else:
                     seen_hashes.add(h)
                     filtered.append(f)
@@ -463,13 +467,15 @@ async def run_ingestion(
                 f"{n_skipped_store} already in store, "
                 f"{n_skipped_batch} duplicate in batch"
             )
-            return filtered, hashes, n_skipped_store, n_skipped_batch
+            return filtered, hashes, n_skipped_store, n_skipped_batch, skipped_store, skipped_batch
 
         (
             filtered_files,
             file_hashes_map,
             n_skipped_store,
             n_skipped_batch,
+            skipped_store_files,
+            skipped_batch_files,
         ) = await loop.run_in_executor(None, _prepass)
 
         if not filtered_files:
@@ -623,6 +629,29 @@ async def run_ingestion(
             f"{n_skipped_store} skipped (already in store), "
             f"{n_skipped_batch} skipped (duplicate in batch)"
         )
+
+        if db_engine is not None:
+            chunks_per_file: dict[str, int] = {}
+            for c in chunks:
+                src = c.metadata.get("source_file", "")
+                chunks_per_file[src] = chunks_per_file.get(src, 0) + 1
+            for f in filtered_files:
+                status = "ok" if f.name in chunks_per_file else "no_chunks"
+                size_mb = round(f.stat().st_size / (1024 * 1024), 3)
+                await _write_ingest_event(
+                    db_engine, kb.id, f.name, f.name, status,
+                    chunks=chunks_per_file.get(f.name, 0), file_size_mb=size_mb,
+                )
+            for f in skipped_store_files:
+                size_mb = round(f.stat().st_size / (1024 * 1024), 3)
+                await _write_ingest_event(
+                    db_engine, kb.id, f.name, f.name, "skipped", file_size_mb=size_mb,
+                )
+            for f in skipped_batch_files:
+                size_mb = round(f.stat().st_size / (1024 * 1024), 3)
+                await _write_ingest_event(
+                    db_engine, kb.id, f.name, f.name, "skipped_duplicate", file_size_mb=size_mb,
+                )
         if text_chunks:
             try:
                 write_kb_stats(

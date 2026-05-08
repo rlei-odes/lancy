@@ -672,7 +672,7 @@ def build_server():
             kb = active_kb
 
         chunks_n, files_n, skipped_store_n, skipped_batch_n = await run_ingestion(
-            kb, reset, db_dir=_DB_DIR, cfg=cfg
+            kb, reset, db_dir=_DB_DIR, cfg=cfg, db_engine=_db_engine
         )
 
         # Rebuild so BM25 re-indexes new content

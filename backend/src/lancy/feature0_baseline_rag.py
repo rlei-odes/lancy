@@ -461,7 +461,7 @@ def _collect_candidate_files(
         if not d.exists():
             logger.warning(f"Data directory not found, skipping: {d}")
             continue
-        all_files.extend(sorted(f for f in d.iterdir() if f.is_file()))
+        all_files.extend(sorted(f for f in d.rglob("*") if f.is_file()))
 
     if max_files is not None:
         all_files = all_files[:max_files]
