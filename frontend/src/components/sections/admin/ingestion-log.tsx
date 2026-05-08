@@ -2,7 +2,7 @@ import React, { FunctionComponent, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 
 const STATUSES = ["success", "crashed", "timeout", "no_chunks"];
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 25;
 
 interface KBMeta {
     id: string;
@@ -106,7 +106,7 @@ export const IngestionLog: FunctionComponent = () => {
                     <select
                         value={filterKb}
                         onChange={(e) => setFilterKb(e.target.value)}
-                        className="text-xs border border-border rounded px-2 py-1 bg-background text-foreground"
+                        className="text-xs [font-family:inherit] bg-muted border border-border text-foreground rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
                     >
                         <option value="">All KBs</option>
                         {kbs.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
@@ -114,7 +114,7 @@ export const IngestionLog: FunctionComponent = () => {
                     <select
                         value={filterStatus}
                         onChange={(e) => setFilterStatus(e.target.value)}
-                        className="text-xs border border-border rounded px-2 py-1 bg-background text-foreground"
+                        className="text-xs [font-family:inherit] bg-muted border border-border text-foreground rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
                     >
                         <option value="">All statuses</option>
                         {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -122,7 +122,7 @@ export const IngestionLog: FunctionComponent = () => {
                     <select
                         value={filterDays}
                         onChange={(e) => setFilterDays(e.target.value)}
-                        className="text-xs border border-border rounded px-2 py-1 bg-background text-foreground"
+                        className="text-xs [font-family:inherit] bg-muted border border-border text-foreground rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
                     >
                         <option value="">All time</option>
                         <option value="1">Last 24h</option>

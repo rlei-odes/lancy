@@ -385,6 +385,7 @@ async def run_ingestion(
         )
 
     loop = asyncio.get_event_loop()
+    _run_start = datetime.now(timezone.utc)
     try:
         data_dirs = [
             Path(d) if Path(d).is_absolute() else _ROOT / d for d in kb.data_dirs
@@ -631,6 +632,7 @@ async def run_ingestion(
         )
 
         if db_engine is not None:
+            _total_ms = int((datetime.now(timezone.utc) - _run_start).total_seconds() * 1000)
             chunks_per_file: dict[str, int] = {}
             for c in chunks:
                 src = c.metadata.get("source_file", "")
@@ -641,6 +643,7 @@ async def run_ingestion(
                 await _write_ingest_event(
                     db_engine, kb.id, f.name, f.name, status,
                     chunks=chunks_per_file.get(f.name, 0), file_size_mb=size_mb,
+                    duration_ms=_total_ms,
                 )
             for f in skipped_store_files:
                 size_mb = round(f.stat().st_size / (1024 * 1024), 3)

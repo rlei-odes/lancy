@@ -3,6 +3,7 @@ import shutil
 import io
 import base64
 import re
+import unicodedata
 from enum import StrEnum
 
 from docling.document_converter import DocumentConverter
@@ -79,9 +80,9 @@ class PDFChunker(Chunker):
     ) -> list[Chunk]:
         if write_images and image_path and not os.path.exists(image_path):
             os.makedirs(image_path)
-        markdown = self._pdf2markdown(
+        markdown = unicodedata.normalize("NFC", self._pdf2markdown(
             file_path, engine, write_images=write_images, image_path=image_path, do_ocr=do_ocr
-        )
+        ))
         header_pattern = re.compile(r"^(#{1,6}\s.*)$", re.MULTILINE)
         matches = list(header_pattern.finditer(markdown))
 

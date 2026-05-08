@@ -118,7 +118,7 @@ export const UsageAnalytics: FunctionComponent = () => {
                 <select
                     value={days}
                     onChange={(e) => setDays(Number(e.target.value))}
-                    className="text-xs border border-border rounded px-2 py-1 bg-background text-foreground"
+                    className="text-xs [font-family:inherit] bg-muted border border-border text-foreground rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
                 >
                     <option value={30}>Last 30 days</option>
                     <option value={90}>Last 90 days</option>

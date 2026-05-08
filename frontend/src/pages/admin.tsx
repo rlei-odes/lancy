@@ -77,7 +77,7 @@ export default function AdminPage() {
 
                     {/* Content */}
                     <div className="flex-1 overflow-y-auto">
-                        <div className="max-w-3xl mx-auto px-5 py-6">
+                        <div className={cn(activeTab === "ingest-log" ? "max-w-6xl" : "max-w-3xl", "mx-auto px-5 py-6")}>
                             {activeTab === "usage"      && <UsageAnalytics />}
                             {activeTab === "database"   && <DatabaseStats />}
                             {activeTab === "branding"   && <BrandingSettings />}

@@ -31,6 +31,7 @@ export const IndexingStatus: FunctionComponent = () => {
     const [cancelling, setCancelling] = useState(false);
     const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const prevFinishedAt = useRef<string>("");
+    const isFirstPoll = useRef(true);
 
     const handleStop = async () => {
         await fetch(`${API_BASE}/api/v1/rag/reindex-cancel`, { method: "POST", credentials: "include" });
@@ -53,13 +54,17 @@ export const IndexingStatus: FunctionComponent = () => {
                     setStatus(data);
                     if (!data.indexing) setCancelling(false);
 
-                    // When indexing just finished (finished_at changed), show done banner
+                    // When indexing just finished (finished_at changed), show done banner.
+                    // Skip on first poll — finished_at may be stale from a previous run.
                     if (!data.indexing && data.finished_at && data.finished_at !== prevFinishedAt.current) {
+                        if (!isFirstPoll.current) {
+                            setShowDone(true);
+                            if (doneTimer.current) clearTimeout(doneTimer.current);
+                            doneTimer.current = setTimeout(() => setShowDone(false), DONE_VISIBLE_MS);
+                        }
                         prevFinishedAt.current = data.finished_at;
-                        setShowDone(true);
-                        if (doneTimer.current) clearTimeout(doneTimer.current);
-                        doneTimer.current = setTimeout(() => setShowDone(false), DONE_VISIBLE_MS);
                     }
+                    isFirstPoll.current = false;
                 }
             } catch { /* ignore */ }
             if (active) {
