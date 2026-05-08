@@ -597,7 +597,7 @@ def build_server():
             upload_cfg = session_cfg
         await enqueue_upload(
             file_path, kb, extra_metadata,
-            vs_proxy=vs_proxy, kb_router=kb_router, db_dir=_DB_DIR, cfg=upload_cfg,
+            vs_proxy=vs_proxy, kb_router=kb_router, db_dir=_DB_DIR, db_engine=_db_engine, cfg=upload_cfg,
         )
 
     kb_router = create_kb_router(
@@ -626,6 +626,23 @@ def build_server():
         await _react_db.create_table()
         await _src_db.create_table()
         await _user_db.create_table()
+        from sqlalchemy import text as _sa_text
+        _pk = "id BIGSERIAL PRIMARY KEY" if _database_url else "id INTEGER PRIMARY KEY"
+        async with _db_engine.begin() as _conn:
+            await _conn.execute(_sa_text(f"""
+                CREATE TABLE IF NOT EXISTS ingest_events (
+                    {_pk},
+                    ts           TEXT    NOT NULL,
+                    kb_id        TEXT    NOT NULL,
+                    document_id  TEXT    NOT NULL,
+                    filename     TEXT    NOT NULL,
+                    status       TEXT    NOT NULL,
+                    chunks       INTEGER,
+                    file_size_mb REAL,
+                    duration_ms  INTEGER,
+                    error        TEXT
+                )
+            """))
         vs = object.__getattribute__(vs_proxy, "_obj")
         agent = object.__getattribute__(agent_proxy, "_obj")
         count = await vs.count()

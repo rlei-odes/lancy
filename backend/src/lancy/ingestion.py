@@ -643,6 +643,39 @@ async def run_ingestion(
         _index_status["indexing"] = False
 
 
+async def _write_ingest_event(
+    db_engine: Any,
+    kb_id: str,
+    document_id: str,
+    filename: str,
+    status: str,
+    *,
+    chunks: int | None = None,
+    file_size_mb: float | None = None,
+    duration_ms: int | None = None,
+    error: str | None = None,
+) -> None:
+    try:
+        from sqlalchemy import text as _sa_text
+        ts = datetime.now(timezone.utc).isoformat()
+        async with db_engine.begin() as conn:
+            await conn.execute(
+                _sa_text(
+                    "INSERT INTO ingest_events "
+                    "(ts, kb_id, document_id, filename, status, chunks, file_size_mb, duration_ms, error) "
+                    "VALUES (:ts, :kb_id, :document_id, :filename, :status, :chunks, :file_size_mb, :duration_ms, :error)"
+                ),
+                {
+                    "ts": ts, "kb_id": kb_id, "document_id": document_id,
+                    "filename": filename, "status": status,
+                    "chunks": chunks, "file_size_mb": file_size_mb,
+                    "duration_ms": duration_ms, "error": error,
+                },
+            )
+    except Exception as exc:
+        log.warning(f"Failed to write ingest event: {exc}")
+
+
 async def ingest_uploaded_file(
     file_path: Path,
     kb: KBInfo,
@@ -651,6 +684,7 @@ async def ingest_uploaded_file(
     vs_proxy: Any,
     kb_router: Any,
     db_dir: Path,
+    db_engine: Any = None,
     cfg: RagConfig | None = None,
 ) -> None:
     """Ingest a single uploaded file into the active KB, then delete the temp file.
@@ -659,10 +693,14 @@ async def ingest_uploaded_file(
     Called by the upload worker — never call directly from request handlers.
     """
     document_id: str = extra_metadata["document_id"]
+    source_name = extra_metadata.get("source_file", file_path.name)
+    _ingest_start = datetime.now(timezone.utc)
+    _size_mb: float | None = None
+    _event_written = False
     _index_status.update({
         "indexing": True,
         "phase": "loading",
-        "current_file": extra_metadata.get("source_file", file_path.name),
+        "current_file": source_name,
         "file_index": 0,
         "total_files": 1,
         "chunks_so_far": 0,
@@ -684,9 +722,9 @@ async def ingest_uploaded_file(
         h = await loop.run_in_executor(None, lambda: file_hash(file_path))
 
         size_mb = file_path.stat().st_size / 1_048_576
+        _size_mb = size_mb
         ram_gb = _available_ram_gb()
         ram_info = f", {ram_gb:.1f} GB RAM free" if ram_gb is not None else ""
-        source_name = extra_metadata.get("source_file", file_path.name)
         if size_mb > 50:
             log.warning(
                 f"Large file upload: '{source_name}' is {size_mb:.1f} MB{ram_info} "
@@ -713,9 +751,25 @@ async def ingest_uploaded_file(
                 "killing worker pool. Backend is safe; upload skipped."
             )
             _reset_chunking_pool()
+            if db_engine is not None:
+                _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
+                await _write_ingest_event(
+                    db_engine, kb.id, document_id, source_name, "timeout",
+                    file_size_mb=_size_mb, duration_ms=_ms,
+                    error=f"Chunking timed out after {chunk_timeout}s",
+                )
+                _event_written = True
             raise RuntimeError(f"Chunking timed out for '{source_name}'")
         except concurrent.futures.BrokenExecutor:
             _reset_chunking_pool()
+            if db_engine is not None:
+                _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
+                await _write_ingest_event(
+                    db_engine, kb.id, document_id, source_name, "crashed",
+                    file_size_mb=_size_mb, duration_ms=_ms,
+                    error="Chunking subprocess crashed (glibc heap corruption)",
+                )
+                _event_written = True
             raise RuntimeError(
                 f"Chunking subprocess crashed for '{source_name}' — "
                 "glibc heap corruption in docling native code. "
@@ -725,6 +779,12 @@ async def ingest_uploaded_file(
 
         if not chunks:
             log.warning(f"No chunks produced from uploaded file '{file_path.name}'")
+            if db_engine is not None:
+                _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
+                await _write_ingest_event(
+                    db_engine, kb.id, document_id, source_name, "no_chunks",
+                    chunks=0, file_size_mb=_size_mb, duration_ms=_ms,
+                )
             return
 
         for chunk in chunks:
@@ -857,8 +917,22 @@ async def ingest_uploaded_file(
             f"Upload ingest complete: {len(chunks)} chunks from '{file_path.name}' "
             f"(document_id='{document_id}')"
         )
+        if db_engine is not None:
+            _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
+            await _write_ingest_event(
+                db_engine, kb.id, document_id, source_name, "success",
+                chunks=len(chunks), file_size_mb=_size_mb, duration_ms=_ms,
+            )
+            _event_written = True
     except Exception as exc:
         log.error(f"Upload ingestion failed for '{file_path.name}': {exc!r}")
+        if db_engine is not None and not _event_written:
+            _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
+            await _write_ingest_event(
+                db_engine, kb.id, document_id, source_name, "crashed",
+                file_size_mb=_size_mb, duration_ms=_ms,
+                error=str(exc)[:500],
+            )
         raise
     finally:
         _index_status["indexing"] = False
@@ -873,17 +947,18 @@ async def enqueue_upload(
     vs_proxy: Any,
     kb_router: Any,
     db_dir: Path,
+    db_engine: Any = None,
     cfg: RagConfig | None = None,
 ) -> None:
     """Queue a file for ingestion. Returns immediately; processing is serialised."""
     _index_status["queued"] = _upload_queue.qsize() + 1
-    await _upload_queue.put((file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir, cfg))
+    await _upload_queue.put((file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir, db_engine, cfg))
 
 
 async def upload_worker() -> None:
     """Drain the upload queue one file at a time. Start once at app startup."""
     while True:
-        file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir, cfg = await _upload_queue.get()
+        file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir, db_engine, cfg = await _upload_queue.get()
         _index_status["queued"] = _upload_queue.qsize()
         try:
             await ingest_uploaded_file(
@@ -891,6 +966,7 @@ async def upload_worker() -> None:
                 vs_proxy=vs_proxy,
                 kb_router=kb_router,
                 db_dir=db_dir,
+                db_engine=db_engine,
                 cfg=cfg,
             )
         except Exception:

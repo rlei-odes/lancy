@@ -78,6 +78,26 @@ class ClearResult(BaseModel):
     deleted_sources: int
 
 
+class IngestEvent(BaseModel):
+    id: int
+    ts: str
+    kb_id: str
+    document_id: str
+    filename: str
+    status: str
+    chunks: int | None
+    file_size_mb: float | None
+    duration_ms: int | None
+    error: str | None
+
+
+class IngestEventPage(BaseModel):
+    events: list[IngestEvent]
+    total: int
+    limit: int
+    offset: int
+
+
 class AdminConfig(BaseModel):
     auto_cleanup_enabled: bool = True
     auto_cleanup_months: int = 12
@@ -336,5 +356,56 @@ def create_admin_router(
         cfg.auto_cleanup_last_run = existing.auto_cleanup_last_run
         _save_admin_cfg(db_dir, cfg)
         return cfg
+
+    @router.get("/ingest-events", response_model=IngestEventPage)
+    async def get_ingest_events(
+        kb_id: str | None = None,
+        status: str | None = None,
+        days: int | None = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> IngestEventPage:
+        conditions: list[str] = []
+        params: dict = {"limit": limit, "offset": offset}
+
+        if kb_id:
+            conditions.append("kb_id = :kb_id")
+            params["kb_id"] = kb_id
+        if status:
+            conditions.append("status = :status")
+            params["status"] = status
+        if days is not None:
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            conditions.append("ts >= :cutoff")
+            params["cutoff"] = cutoff
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        async with db_engine.connect() as conn:
+            total = (await conn.execute(
+                text(f"SELECT COUNT(*) FROM ingest_events {where}"),
+                params,
+            )).scalar() or 0
+            rows = (await conn.execute(
+                text(
+                    f"SELECT id, ts, kb_id, document_id, filename, status, chunks, "
+                    f"file_size_mb, duration_ms, error "
+                    f"FROM ingest_events {where} ORDER BY ts DESC LIMIT :limit OFFSET :offset"
+                ),
+                params,
+            )).fetchall()
+
+        return IngestEventPage(
+            events=[
+                IngestEvent(
+                    id=r[0], ts=r[1], kb_id=r[2], document_id=r[3], filename=r[4],
+                    status=r[5], chunks=r[6], file_size_mb=r[7], duration_ms=r[8], error=r[9],
+                )
+                for r in rows
+            ],
+            total=int(total),
+            limit=limit,
+            offset=offset,
+        )
 
     return router
