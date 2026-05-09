@@ -131,13 +131,64 @@ Returns `400` if it is the last KB. If the deleted KB was active, the next avail
 ### Activate KB
 
 ```
-POST /kb/{kb_id}/activate
+POST /kb/{kb_id}/activate[?reset=false]
 ```
 
-Switches the active KB in memory. The change takes effect immediately — no restart required.
-Triggers the `activate_callback` in `main.py`, which rebuilds the RAG agent for the new KB.
+Adds the KB to the in-memory pool and sets it as the active KB for new conversations.
+Non-destructive — previously loaded KBs remain in the pool and continue serving in-flight streams.
 
-**Response:** `KBInfo` (the newly active KB)
+All KBs in the pool must share the same `(embedding_backend, embedding_model)`. If the
+target KB uses a different embedding config, the call returns `409 EmbeddingConflict`.
+Pass `?reset=true` to clear the entire pool first; this is required when switching embedding configs.
+
+| Query param | Default | Description |
+|-------------|---------|-------------|
+| `reset` | `false` | Clear all loaded KBs before activating. Required when embedding config differs from the pool's. |
+
+**Response:** `KBInfo` (the activated KB)
+
+**Errors:** `404` KB not found · `409` embedding conflict (add `?reset=true` to resolve)
+
+---
+
+### Deactivate KB
+
+```
+POST /kb/{kb_id}/deactivate
+```
+
+Unloads a KB from the in-memory pool. In-flight streams hold a reference to the `LoadedKB`
+and complete safely. Has no effect if the KB is not currently loaded.
+
+**Response:** `{"deactivated": "<kb_id>"}`
+
+---
+
+### Pool Status
+
+```
+GET /kb/pool
+```
+
+Returns the current state of the KB pool.
+
+**Response:**
+
+```json
+{
+  "loaded": ["default", "project-x"],
+  "loading": [],
+  "active": "default",
+  "emb_key": {"backend": "local", "model": "nomic-ai/nomic-embed-text-v1"}
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `loaded` | KB ids currently in the pool |
+| `loading` | KB ids being loaded right now (model init in progress) |
+| `active` | The active KB id (used for new conversations without an explicit KB) |
+| `emb_key` | Shared embedding config the pool is locked to; `null` if pool is empty |
 
 ---
 
