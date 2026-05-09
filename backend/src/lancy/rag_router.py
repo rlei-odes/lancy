@@ -195,6 +195,7 @@ def create_rag_router(
     | None = None,  # () -> None, requests indexing cancellation
     retrieve_callback: Callable
     | None = None,  # async (RetrieveRequest) -> RetrieveResponse
+    vs_by_kb_factory: Callable | None = None,  # (kb_id: str) -> VectorStore | None
 ) -> APIRouter:
     """
     Args:
@@ -286,9 +287,9 @@ def create_rag_router(
         return cfg
 
     @router.get("/store-info", response_model=StoreInfo)
-    async def store_info() -> StoreInfo:
+    async def store_info(kb_id: str | None = None) -> StoreInfo:
         try:
-            vs = vector_store_factory()
+            vs = (vs_by_kb_factory(kb_id) if kb_id and vs_by_kb_factory else None) or vector_store_factory()
             count = await vs.count()
             try:
                 records = await vs.get_chunks_by_filter({})

@@ -188,12 +188,15 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
             parent_id: parentId,
         };
 
+        const kbId = !activeConversationId ? (sessionStorage.getItem("lancy_selected_kb_id") ?? undefined) : undefined;
+        const kbName = !activeConversationId ? (sessionStorage.getItem("lancy_selected_kb_name") ?? undefined) : undefined;
         const userInput = {
             content,
             type,
             ...(activeConversationId ? { conversation_id: activeConversationId } : {}),
             ...(activeConversationId && parentId ? { parent_id: parentId } : {}),
             ...(!activeConversationId && sessionLabel ? { session_label: sessionLabel } : {}),
+            ...(kbId ? { kb_id: kbId, ...(kbName ? { kb_name: kbName } : {}) } : {}),
         };
 
         if (type === MessageTypes.REDO) {
@@ -238,12 +241,15 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
             conversation_id: activeConversationId ? activeConversationId : "",
             parent_id: parentId,
         };
+        const kbId = !activeConversationId ? (sessionStorage.getItem("lancy_selected_kb_id") ?? undefined) : undefined;
+        const kbName = !activeConversationId ? (sessionStorage.getItem("lancy_selected_kb_name") ?? undefined) : undefined;
         const userInput = {
             content,
             type,
             ...(activeConversationId ? { conversation_id: activeConversationId } : {}),
             ...(activeConversationId && parentId ? { parent_id: parentId } : {}),
             ...(!activeConversationId && sessionLabel ? { session_label: sessionLabel } : {}),
+            ...(kbId ? { kb_id: kbId, ...(kbName ? { kb_name: kbName } : {}) } : {}),
         };
 
         if (type === MessageTypes.REDO) {

@@ -44,9 +44,9 @@ export const app = {
         twoWeeksAgo: "Il y a deux semaines",
     },
     suggestions: [
-        { text: "Résumer :", subtext: "tous les documents de la base de connaissances" },
-        { text: "Comparer", subtext: "les documents entre eux" },
-        { text: "Quelles questions ouvertes", subtext: "restent dans les documents ?" },
+        { text: "Que dit la base de connaissances sur", subtext: "les fleurs et le jardinage ?" },
+        { text: "Quelles conclusions peut-on tirer sur", subtext: "les énergies renouvelables ?" },
+        { text: "Comment le développement logiciel", subtext: "est-il décrit dans les documents ?" },
         { text: "Quels sont les principaux", subtext: "risques de ce projet ?" },
     ],
     suggestionTemplates: [

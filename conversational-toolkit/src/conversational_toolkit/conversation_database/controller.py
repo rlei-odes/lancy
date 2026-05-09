@@ -37,6 +37,8 @@ class MessageInput(BaseModel):
     conversation_id: str | None = None
     type: str | None = None
     session_label: str | None = Field(None, max_length=200)
+    kb_id: str | None = None
+    kb_name: str | None = None
 
 
 class ConversationInput(BaseModel):
@@ -117,8 +119,8 @@ class ConversationalToolkitController:
                     create_timestamp=create_time,
                     update_timestamp=create_time,
                     title=DEFAULT_CONVERSATION_TITLE,
-                    kb_id=meta.get("kb_id"),
-                    kb_name=meta.get("kb_name"),
+                    kb_id=user_input.kb_id or meta.get("kb_id"),
+                    kb_name=user_input.kb_name or meta.get("kb_name"),
                     rag_config_snapshot=meta.get("rag_config_snapshot"),
                     session_label=user_input.session_label or meta.get("session_label"),
                 )
@@ -197,6 +199,7 @@ class ConversationalToolkitController:
                         LLMMessage(role=message.role, content=[MessageContent(type="text", text=message.content)])
                         for message in sorted(thread, key=lambda m: m.create_timestamp)
                     ],
+                    conversation_id=conversation.id,
                 )
             )
 

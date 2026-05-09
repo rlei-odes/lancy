@@ -8,7 +8,7 @@
 flowchart TD
     FE["**Next.js Frontend**\nChat UI · RAG Config Panel · Session Labels · i18n\nAuth (session cookie) · Sidebar badges · Source citations"]
     BE["**FastAPI Backend**\n/rag · /kb · /v1/chat/completions (OpenAI-compat)"]
-    KB["**KB Registry** (hot-swap)\nKB-A: ChromaDB · local embed · BM25+semantic\nKB-B: pgvector · LiteLLM embed · semantic only\nKB-N: ..."]
+    KB["**KB Pool** (concurrent)\nKB-A: ChromaDB · local embed · BM25+semantic\nKB-B: pgvector · LiteLLM embed · semantic only\nKB-N: ..."]
     RP["**Retrieval Pipeline**\nQuery → BM25 | Semantic | HyDE\n→ RRF fusion → Reranker → Top-K"]
     VS["**Vector Store**\nChromaDB / pgvector\n(per-KB, HNSW ANN)"]
     LLM["**LLM Backend**\nOllama · OpenAI\nAnthropic · LiteLLM"]
@@ -53,22 +53,46 @@ FastAPI application with three routers:
 The conversational toolkit (`conversational-toolkit/`) is a separate installable package
 providing the core primitives: agents, embeddings, LLMs, vector stores, chunkers, retriever.
 
-### KB Registry
+### KB Pool
 
-`backend/src/lancy/kb_router.py`
+`backend/src/lancy/kb_pool.py` · `backend/src/lancy/kb_router.py`
 
 ```
-knowledge_bases.json
-  └── list of KB definitions:
-        id, name, data_dirs, vector_store, embedding_backend, embedding_model,
-        retrieval_k, use_bm25, use_hyde, use_query_expansion, use_reranking, ...
+knowledge_bases.json              persisted registry (kb_router.py)
+  └── KB definitions: id, name, data_dirs, embedding_backend, embedding_model, ...
 
-KB_REGISTRY: dict[str, RAGSystem]   ← loaded at startup
-active_kb: str                       ← hot-swappable, no restart
+KBPool                            in-memory pool (kb_pool.py)
+  ├── _pool: dict[kb_id, LoadedKB]   ← all currently loaded KBs
+  ├── _emb: shared embedding model   ← one instance, shared across KBs
+  ├── _emb_key: (backend, model)     ← pool is locked to this embedding config
+  └── _active_id: str                ← the "current" KB for new conversations
+
+LoadedKB
+  ├── kb: KBInfo       ← config snapshot
+  ├── vs: VectorStore  ← per-KB vector store
+  ├── agent: CustomRAG ← per-KB RAG agent
+  └── probe_bm25: BM25Retriever | None  ← lazy BM25 cache for Retrieval Probe
+
+DispatchingAgent
+  └── answer_stream(query) → resolves KB from conversation.kb_id → delegates to entry.agent
 ```
 
-**Hot-swap:** `POST /kb/active` changes `active_kb` in memory. The next query uses the
-new KB immediately. No re-init, no restart.
+**Concurrent activation:** `POST /kb/{id}/activate` **adds** the KB to the pool — the
+previous KB stays loaded and available for in-flight conversations. The pool's `active_id`
+is updated so new conversations default to the activated KB.
+
+**Embedding compatibility:** All KBs in the pool must share the same `(embedding_backend,
+embedding_model)` pair, because the embedding model is instantiated once and shared. Adding
+a KB with a different embedding config raises `EmbeddingConflict` (HTTP 409). Pass
+`?reset=true` to clear the pool first and reload with the new config.
+
+**Per-conversation routing:** `DispatchingAgent` reads `conversation.kb_id` from the DB
+on each query and dispatches to the matching pool entry. Falls back to the active KB when
+no match is found (e.g. conversation predates multi-KB support).
+
+**Unloading:** `POST /kb/{id}/deactivate` removes a KB from the pool. In-flight streams
+hold a local reference to the `LoadedKB` and complete safely — Python's reference counting
+prevents premature GC.
 
 **Indexing:** `POST /kb/{id}/reindex` runs in a background thread via `run_in_executor`.
 A `_cancel_requested` global flag enables mid-indexing cancellation. The endpoint returns
@@ -246,7 +270,7 @@ pipeline and agent are backend-agnostic.
 
 ```
 POST /v1/chat/completions
-  → maps to active KB RAG query
+  → routed by DispatchingAgent (resolves KB from conversation_id, falls back to active KB)
   → returns OpenAI-format response (streaming supported)
 
 GET /v1/models
@@ -302,7 +326,7 @@ If set to a hostname, API calls loop out externally and break on NAT/local netwo
 `frontend/src/components/sections/rag-config-panel.tsx`
 
 Right-side collapsible panel exposing all RAG parameters:
-- Knowledge base selector (with hot-swap)
+- Knowledge base selector — compatible KBs selectable normally; incompatible KBs greyed out (user) or red+⚠ (admin, triggers pool reset); controls lock with a spinner while a KB is loading
 - LLM model and temperature
 - Embedding backend and model
 - Retrieval: k, BM25 on/off, HyDE on/off, Query Expansion on/off, Reranking on/off

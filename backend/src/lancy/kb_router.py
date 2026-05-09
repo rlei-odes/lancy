@@ -26,9 +26,11 @@ from pathlib import Path
 from typing import Awaitable, Callable, Literal
 from urllib.parse import unquote
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+
+from lancy.kb_pool import EmbeddingConflict
 
 log = logging.getLogger("uvicorn")
 
@@ -75,7 +77,8 @@ class KBRegistry(BaseModel):
 
 # ─── Callback types ───────────────────────────────────────────────────────────
 
-ActivateCallback = Callable[[KBInfo], Awaitable[None]]
+ActivateCallback = Callable[[KBInfo, bool], Awaitable[None]]
+DeactivateCallback = Callable[[str], None]
 UploadCallback = Callable[[Path, KBInfo, dict], Awaitable[None]]
 
 
@@ -99,6 +102,8 @@ def create_kb_router(
     activate_callback: ActivateCallback,
     project_root: Path | None = None,
     upload_callback: UploadCallback | None = None,
+    pool_status_factory: Callable[[], dict] | None = None,
+    deactivate_callback: DeactivateCallback | None = None,
 ) -> APIRouter:
     """
     Args:
@@ -206,16 +211,38 @@ def create_kb_router(
         return {"deleted": kb_id}
 
     @router.post("/kb/{kb_id}/activate", response_model=KBInfo)
-    async def activate_kb(kb_id: str) -> KBInfo:
+    async def activate_kb(kb_id: str, reset: bool = Query(False)) -> KBInfo:
         reg = _load()
         if kb_id not in reg.bases:
             raise HTTPException(404, f"KB '{kb_id}' not found")
         reg.active = kb_id
         _save(reg)
         kb = reg.bases[kb_id]
-        await activate_callback(kb)
-        log.info(f"Activated KB '{kb.name}' (id={kb_id})")
+        try:
+            await activate_callback(kb, reset)
+        except EmbeddingConflict as exc:
+            raise HTTPException(
+                409,
+                f"{exc} Use ?reset=true to clear the pool first.",
+            )
+        log.info(f"Activated KB '{kb.name}' (id={kb_id}, reset={reset})")
         return kb
+
+    @router.post("/kb/{kb_id}/deactivate")
+    async def deactivate_kb(kb_id: str) -> dict:
+        reg = _load()
+        if kb_id not in reg.bases:
+            raise HTTPException(404, f"KB '{kb_id}' not found")
+        if deactivate_callback is not None:
+            deactivate_callback(kb_id)
+        log.info(f"Deactivated KB '{kb_id}' (unloaded from pool)")
+        return {"deactivated": kb_id}
+
+    @router.get("/kb/pool")
+    async def pool_status() -> dict:
+        if pool_status_factory is None:
+            return {"loaded": [], "loading": [], "active": None, "emb_key": None}
+        return pool_status_factory()
 
     @router.get("/kb/{kb_id}/stats")
     async def get_kb_stats(kb_id: str):

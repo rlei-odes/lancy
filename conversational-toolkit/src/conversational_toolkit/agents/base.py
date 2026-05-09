@@ -18,6 +18,7 @@ class QueryWithContext(BaseModel):
 
     query: str
     history: list[LLMMessage]
+    conversation_id: str | None = None
 
 
 class RetrievalStats(BaseModel):

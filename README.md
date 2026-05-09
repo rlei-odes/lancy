@@ -16,7 +16,7 @@ retrieval settings, and generation stats — no black box. Investigate your docu
 
 | Area | Description |
 |------|-------------|
-| **Multi-KB architecture** | Multiple independent knowledge bases with hot-swap — no restart required |
+| **Multi-KB concurrent pool** | Multiple knowledge bases loaded simultaneously — different conversations can query different KBs at the same time, no restart required. All concurrently active KBs must share the same embedding backend and model; switching to a KB with a different embedding config requires a pool reset (`?reset=true`) |
 | **Hybrid retrieval** | BM25 + semantic search fused via Reciprocal Rank Fusion (RRF) |
 | **Query techniques** | Query expansion, HyDE, LLM reranking — all configurable per session |
 | **Ingestion deduplication** | SHA-256 content hashing prevents duplicate chunks across runs and within a single batch — dedup happens before parsing, so no wasted embedding work |

@@ -52,6 +52,8 @@ export interface UserInput {
     conversation_id?: string;
     parent_id?: string;
     type: MessageTypes;
+    kb_id?: string;
+    kb_name?: string;
 }
 
 export interface Reaction {

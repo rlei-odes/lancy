@@ -5,6 +5,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.3.3] — 2026-05-09 · rlei-odes
+
+### Added — Multi-KB Concurrent Retrieval (backend)
+
+- **KBPool** (`backend/src/lancy/kb_pool.py`): new module managing a pool of concurrently loaded Knowledge Bases. All KBs in the pool share one embedding model instance; only KBs with a matching `(embedding_backend, embedding_model)` pair can coexist. A full pool reset is required to switch embedding configs.
+- **DispatchingAgent**: routes each `answer_stream()` call to the correct per-conversation agent by reading `conversation.kb_id` directly from the DB. Falls back to the pool's active KB when no match is found.
+- `EmbeddingConflict` exception: raised (and returned as HTTP 409) when activating a KB whose embedding config differs from the pool's without `?reset=true`.
+- `GET /api/v1/kb/pool`: returns pool state — loaded KB ids, currently loading ids, active id, and shared embedding key.
+- `POST /api/v1/kb/{id}/deactivate`: unloads a KB from the pool. In-flight streams hold a local reference and complete safely.
+- `POST /api/v1/kb/{id}/activate?reset=true`: clears the entire pool before loading a KB with a different embedding config.
+
+### Added — Multi-KB Concurrent Retrieval (frontend)
+
+- KB dropdown in the RAG Parameters panel now reflects pool compatibility: incompatible KBs are greyed out (user role) or shown in red with a ⚠ indicator (admin role).
+- Selecting an incompatible KB as admin automatically passes `?reset=true` to the activate call — no confirmation dialog.
+- KB dropdown and reindex controls are disabled while the pool is loading a KB (polled every 2s via `GET /api/v1/kb/pool`); a spinner appears next to the selector.
+- Version bumped to `0.3.3` in `frontend/src/config.ts`.
+
+### Changed
+
+- KB activation (`POST /api/v1/kb/{id}/activate`) is now **non-destructive**: adds the KB to the pool rather than globally swapping out the previous one. The previous KB stays loaded and available to in-flight conversations.
+- `_build_components()` now runs in `asyncio.run_in_executor` — the event loop is no longer blocked during embedding model load, eliminating the "Backend not responding" errors that occurred on every KB switch.
+- RAG session config changes (`on_agent_rebuild`) now rebuild the agent for **all loaded KBs** in the pool, not just the active one.
+- Removed the `_Proxy` hot-swap pattern from `main.py`; replaced by `KBPool` + `DispatchingAgent`.
+- `ingest_uploaded_file` / `enqueue_upload` in `ingestion.py`: `vs_proxy` parameter renamed to `vs` (plain VectorStore); removed internal `object.__getattribute__` proxy unpacking.
+
+---
+
 ## [Lancy v0.3.2] — 2026-05-08 · rlei-odes
 
 ### Added — Ingestion Event Log

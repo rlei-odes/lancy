@@ -1,39 +1,11 @@
 # BACKLOG
 
-Planned improvements and feature work for the Lancy fork.
+Planned improvements and feature work for the Lancy project.
 Items are grouped by theme and roughly prioritised within each section.
-
-## Multi-KB Concurrent Retrieval
-
-### Per-User KB Selection (same-embedding constraint)
-
-**Goal:** allow multiple users to query different KBs simultaneously, rather than sharing a single globally active KB.
-
-**Constraint:** KBs available for concurrent use must share the same embedding model (backend + model name). This avoids loading multiple large embedding models into GPU memory at once. KBs with different embedding configurations continue to work but cannot be selected alongside incompatible ones.
-
-**Scope:**
-
-- Replace the single global `(vs, agent, emb)` in `main.py` with a pool: `dict[kb_id → (vs, agent)]` sharing one `emb` instance
-- KB "activation" becomes "load into pool" — a KB is loaded on first selection and stays resident
-- Query endpoint (`/api/v1/rag/chat` or equivalent) accepts a `kb_id` parameter; requests are routed to the corresponding agent
-- Group KBs in the UI by embedding compatibility; only KBs sharing the active embedding configuration are selectable for concurrent use — others remain available but require a full reload (breaking the shared-emb assumption)
-- "Active KB" becomes a per-session concept in the frontend rather than a global server-side setting
-
-**Open questions:**
-- Eviction policy for the pool (unload least-recently-used KB when memory pressure is high?)
-- How to surface embedding-incompatible KBs in the UI without confusing users — greyed out with a tooltip, or a separate "switch context" flow that warns about the reload cost?
-
-**Needed Improvements:**
-- During KB change, the RAG Panel sidebar allows changes to be made. This needs to be prevented
-- During KB change, we frequently get "Backend not responding" message
 
 ---
 
 ## Known Bugs
-
-### Low Source Citation Count
-
-Observed that answers sometimes cite only 2 chunks even when retrieval is configured with a higher `k`. Possible causes: the reranker is collapsing similar chunks into fewer sources, the `used_sources_id` field in the LLM JSON response is under-populated (model not citing all chunks it used), or the source deduplication step in `_answer_post_processing` is too aggressive. Needs investigation with logging enabled on retrieved chunk count vs. cited chunk count. It might be good and even intended behaviour - when no fit / similarity is observed above the threshold, no bad fitting chunks should be served.
 
 ### Sources Panel Sometimes Empty
 
@@ -47,9 +19,13 @@ The sources panel occasionally shows no sources even when the answer clearly ref
 
 Note: the existing `_UUID_RE` inline fallback is effectively dead code given the current prompt explicitly says "No UUIDs in the text."
 
+### Low Source Citation Count
+
+Observed that answers sometimes cite only 2 chunks even when retrieval is configured with a higher `k`. Possible causes: the reranker is collapsing similar chunks into fewer sources, the `used_sources_id` field in the LLM JSON response is under-populated (model not citing all chunks it used), or the source deduplication step in `_answer_post_processing` is too aggressive. Needs investigation with logging enabled on retrieved chunk count vs. cited chunk count. It might be good and even intended behaviour — when no fit / similarity is observed above the threshold, no bad fitting chunks should be served.
+
 ### LLM error: The size of tensor a (19) must match the size of tensor b (17) at non-singleton dimension 1
 
-Unknow origin. Possibly connected to Query Expansion. Could be related to the LLM expanding the query in other languages. Observed: Korean, Thai. Possibly an LLM internal bug.
+Unknown origin. Possibly connected to Query Expansion. Could be related to the LLM expanding the query in other languages. Observed: Korean, Thai. Possibly an LLM internal bug.
 
 ---
 
@@ -63,25 +39,13 @@ Unknow origin. Possibly connected to Query Expansion. Could be related to the LL
 - LDAP / Active Directory bind for authentication
 - Map AD groups to roles (e.g. domain users → user role, IT group → admin role)
 - Feature should be opt-in and deactivatable — shared-password mode remains the default for simpler deployments
-- Builds naturally on top of the admin/user role separation above
+- Builds naturally on top of the existing admin/user role separation
 
 **Why:** relevant for enterprise rollout where user management via AD is already in place and individual password distribution is impractical.
 
 ---
 
 ## Ingestion
-
-### ~~Image Retrieval — Multimodal Pipeline~~ ✓ done
-
-~~Investigation complete (see `UPSTREAM_SYNC_PLAN.md`). Decision taken.~~
-
-Implemented. See `IMAGE_RETRIEVAL_DESIGN.md` for the full design and implementation record.
-
-**What was built:** dual-collection pipeline — text in `vs_text`, images in `vs_image` (Qwen3VL-Embedding-2B). Two independent KB-level toggles: `image_indexing_enabled` and `image_retrieval_enabled`. Session-level `image_retriever_top_k` (1–4). Retrieved images injected as base64 into LLM context. Parallel retrieval via `asyncio.gather`. ChromaDB only (pgvector follow-up below).
-
-**Pending manual tests** (blocked by hardware — requires GPU and multimodal LLM):
-- PDF with embedded images, both toggles on, multimodal LLM configured
-- Indexing on, retrieval off — images indexed, not retrieved
 
 ### Image Retrieval — pgvector Support for `vs_image`
 
@@ -96,7 +60,9 @@ Implemented. See `IMAGE_RETRIEVAL_DESIGN.md` for the full design and implementat
 - Manual test: pgvector KB with image toggles on — index a PDF, query, confirm images surface
 
 ### Image Retrieval — Source Citations with Image Preview
+
 Test Learning: this seems to be partially working already.
+
 **Goal:** display retrieved images as source citations in the chat, alongside existing text chunk citations.
 
 **Why:** currently images are injected into LLM context but the source panel only shows text chunks. Users have no way to see which images the answer drew on or verify them.
@@ -119,213 +85,60 @@ They are complementary, not alternatives — it is reasonable to have both on. A
 
 When `image_retrieval_enabled` is on, the system silently injects images into the LLM context but does not validate that the configured answering LLM is actually multimodal. A non-multimodal LLM will either ignore the image data or produce an error. A startup/save-time check against the Ollama model manifest (or a known allowlist) could surface a clear warning in the UI before the user runs a query.
 
-
-
-### Ingestion Methods — Post-Ingest Behaviour & Storage API Source
-
-Three ingestion paths exist or are planned. Each has distinct post-ingest behaviour options worth making toggleable:
-
-**1. API upload (`POST /api/v1/kb/{id}/documents`):** the caller owns the file lifecycle — Lancy receives a copy and does nothing to the source. No additional option needed.
-
-**2. Filesystem path ingestion** (existing behaviour: scan a configured directory): after a file is successfully indexed, offer a per-KB toggle with three options — *keep* (current default, file untouched), *move to processed/* (moves the file into a `processed/` subdirectory so the next scan skips it without losing the file), *delete* (removes the source file). Useful for automated drop-folder pipelines where processed files should not be re-scanned. The toggle lives in KB settings alongside the data path.
-
-**3. Object storage ingestion (S3-compatible):** ingest directly from a bucket prefix (AWS S3, MinIO, Garage, Scaleway Object Storage, etc.) via the S3 API. KB config gains: endpoint URL, bucket, prefix, credentials (env-var references, not stored plaintext). Lancy lists objects under the prefix, downloads each, chunks and indexes it. Same post-ingest toggle as filesystem: keep (re-download skipped via content-hash), move (copy to `processed/` prefix, delete original), delete. Requires `boto3` or `aiobotocore` as a new optional dependency — gate it behind an install extra so deployments without object storage don't pull it in.
-
-**All three paths share the same deduplication mechanism** (content-hash per chunk) once incremental indexing is in place — the ingestion source is irrelevant at the vector-store layer.
-
-### File Upload API + Incremental Indexing
-
-**Goal:** allow external tools (n8n, Make, custom scripts, DMS webhooks) to push a document directly into a KB via API, without requiring filesystem access or a full reindex.
-
-**Scope:**
-- `POST /api/v1/kb/{id}/documents` — accepts a file upload plus optional metadata (document_id, version, source system); writes it to the KB's data directory and queues it for indexing
-- Requires incremental indexing to be solved first: currently `build_vector_store()` either resets fully or skips entirely — per-document content-hash deduplication must be in place for single-file ingest to be meaningful
-- File upload endpoint should return a job ID that can be polled via the existing reindex-status endpoint
-- Natural webhook target for DMS release/approval events — see Metadata & Versioning below
-
-**Why:** closes the loop for automation use cases — the `/v1/chat/completions` endpoint already allows querying the RAG from external tools; this adds the ability to feed documents in from the same tools. Combined with metadata and versioning support, enables a fully automated DMS → RAG pipeline.
-
 ### External Metadata Ingestion & Document Versioning
 
-**Context:** enterprise DMS solutions (SharePoint, Alfresco, OpenText, etc.) attach structured metadata to files — author, department, document type, validity date, status, project ID. This metadata is useful for retrieval attribution and filtering, but is not captured by the current file-based ingestion pipeline. A related problem is document replacement: when a new version or approved revision of a document is available, the old chunks in the vector store should be removed.
-
-**Scope boundary — what Lancy does and does not own:**
-
-DMS metadata models are complex and vary significantly between systems. A single DMS may distinguish between versions (any change) and revisions (approved changes), use different field names for status, and apply custom approval workflows. Building a UI for field mapping, version/revision logic interpretation, and status filtering inside Lancy would turn it into a DMS integration platform — that is out of scope.
-
-**The responsibility split:**
-- **Integration layer** (customer script, n8n, webhook): reads DMS metadata, applies any required filtering (e.g. only status=Released), maps DMS field names to Lancy's fixed schema, and delivers the file + metadata to Lancy
-- **Lancy**: accepts the file and the pre-mapped metadata, stamps it onto chunks, and handles replacement using the `document_id` it is given
-
-Lancy defines the schema; the integration layer handles the transformation. This keeps the ingestion code simple and avoids building a configurable ETL engine inside the RAG system.
-
-**Lancy metadata schema:**
-
-Sidecar file: `document.pdf.meta.json` alongside the file, or a JSON body field in the File Upload API request.
-
-```json
-{
-  "document_id": "stable-uid-from-dms",
-  "title": "Human-readable document title",
-  "author": "Name or department",
-  "document_class": "Technical",
-  "document_type": "Specification",
-  "document_created_at": "2024-01-15",
-  "document_released_at": "2025-03-01",
-  "source_url": "https://dms.example.com/documents/12345",
-  "tags": ["project-x", "team-z"]
-}
-```
-
-Only `document_id` is required for versioning. All other fields are optional and stored as chunk metadata. `document_released_at` serves as the version timestamp for stale-version detection. `document_class` is a category above `document_type` (e.g. Technical / Commercial / Legal / Internal) and is intended as a future retrieval filter — letting users scope answers to a specific document class.
-
-`source_url` is an optional deep link back to the document in the originating DMS or file system. When present, source citations in the answer should link directly to this URL rather than opening the current local content popup. When absent, fall back to the existing behaviour (filename link → content popup). Implementation: the `source://` URL handler in the frontend Markdown renderer checks the chunk's stored metadata for `source_url` and opens it in a new tab if available; the backend already stores all metadata fields on each chunk so no ingestion-side changes are needed beyond reading the field.
-
-**Document replacement (versioning):**
+The metadata schema (title, author, document_id, document_class, etc.) and upload API are in place. What remains is the **versioning/replacement and deletion layer**:
 
 - `VectorStore.delete_chunks_by_document_id(document_id)` — new abstract method, implemented for ChromaDB (metadata filter delete) and pgvector (DELETE WHERE clause)
 - Ingestion pipeline: when a file carries a `document_id` that already exists in the store, delete the old chunks before adding the new ones
 - `ReindexResult` extended with `files_updated` count (replacements) alongside existing skip counts
 - Reindex toast updated: N added / N updated / N skipped
-- Optional optimisation: if the incoming file hash matches the hash already stored in the existing chunks' metadata, and no metadata fields differ, the delete+reindex cycle can be skipped entirely — treating it as a no-op rather than an update
-
-**Stale version protection:**
-
-The integration layer (webhook/script) is stateless — it cannot know whether a newer version of a document is already in the store. Two complementary mechanisms:
-
-- `GET /api/v1/kb/{id}/documents/{document_id}` — returns the current metadata stored for that document_id (title, `document_released_at`, chunk count), or 404 if not present. The caller can compare `document_released_at` values and abort if the stored version is already newer.
-- Optional version guard on the upload endpoint: accept an `if_released_after` parameter; if the stored `document_released_at` is equal to or newer, Lancy returns 409 Conflict with the stored metadata. This keeps the guard logic server-side and avoids requiring a pre-check round-trip.
-
-**Document invalidation (explicit deletion):**
-
-When a document is withdrawn or put out of validation in the DMS, the integration layer calls:
-
-`DELETE /api/v1/kb/{id}/documents/{document_id}` — removes all chunks for that document_id from the vector store. Returns 404 if not found, 200 with a count of chunks removed otherwise.
-
-This is the correct primitive for the "document no longer valid" use case. Lancy does not automatically expire documents based on timestamps — the DMS workflow owns that decision and calls the delete endpoint explicitly.
-
-**Dual-store deletion (multimodal):**
-
-When `image_indexing_enabled` is on for a KB, a document's chunks exist in both `vs_text` and `vs_image`. The `DELETE` endpoint must call `delete_chunks_by_document_id` on both stores. The same applies to document replacement during versioning: old chunks must be purged from both stores before new ones are inserted. Image chunks carry the same `document_id` and `file_hash` metadata as text chunks from the same source file, so the deletion predicate is identical — the endpoint just needs to know that two stores exist for the KB.
+- `GET /api/v1/kb/{id}/documents/{document_id}` — returns current metadata for that document_id or 404
+- `DELETE /api/v1/kb/{id}/documents/{document_id}` — removes all chunks for that document_id; 404 if not found; for image-enabled KBs, deletes from both `vs_text` and `vs_image`
+- Optional stale-version guard on upload: `if_released_after` param; returns 409 if the stored `document_released_at` is equal to or newer
+- Optional hash-dedup: skip delete+reindex cycle if incoming file hash matches stored hash and no metadata fields differ
 
 **What is explicitly out of scope for Lancy:**
 - UI for selecting or mapping metadata fields from an uploaded sample JSON
-- Interpretation of version vs. revision semantics (the integration layer decides what counts as a replacement)
 - Status-based filtering at ingestion time (filter at the DMS export / webhook level)
 - Automatic time-based expiry of documents based on metadata timestamps
-- Direct DMS API or database connectivity (DMS-specific, belongs in the integration layer)
+- Direct DMS API or database connectivity
 
 ### Document Actuality — Time-Based Metadata and Retrieval Weighting
 
 **Goal:** make document age a first-class signal in retrieval so that answers can prefer recent documents, flag outdated sources, or apply a hard cutoff by date.
 
-**Why:** in knowledge bases that evolve over time (policy documents, technical specs, product data), an older document may be technically relevant but factually superseded. The current retrieval pipeline has no concept of document age — a 2018 spec ranks the same as the 2024 revision if their embeddings are similar.
+**Why:** in knowledge bases that evolve over time (policy documents, technical specs, product data), an older document may be technically relevant but factually superseded. The current retrieval pipeline has no concept of document age.
 
-**Ingest side:**
+**Ingest side:** `document_released_at` is already part of the metadata schema. Additionally, stamp every chunk with `ingested_at` (ISO date, set automatically) as a fallback when no explicit date is provided.
 
-- `document_released_at` is already part of the planned metadata schema (see External Metadata Ingestion above) — this feature builds directly on it
-- Additionally, stamp every chunk with `ingested_at` (ISO date, set automatically at indexing time) — no sidecar file needed; the ingestion pipeline writes it unconditionally
-- `ingested_at` serves as a fallback when no explicit `document_released_at` is provided
+**Retrieval side:** three configurable strategies, selectable per session or preset:
 
-**Retrieval side:**
+1. **Prefer recent** — time-decay score penalty; recent documents rank higher all else being equal
+2. **Hard cutoff** — exclude chunks older than a given date from the candidate pool entirely
+3. **Soft penalty** — scale down the final score of old chunks by a configurable factor without fully excluding them
 
-Three configurable strategies, selectable per session or preset:
-
-1. **Prefer recent** — apply a time-decay score penalty to older chunks before or after reranking; recent documents rank higher all else being equal. Penalty function: linear or exponential decay from the reference date (today, or a configurable anchor).
-2. **Hard cutoff** — exclude chunks older than a given date from the candidate pool entirely. Useful when historical documents are indexed for reference but should never appear in answers about current state.
-3. **Soft penalty** — scale down the final score of old chunks by a configurable factor without fully excluding them. A 2018 document can still surface if nothing more recent is relevant.
-
-**UI:**
-
-- New session parameter in the RAG Config sidebar: "Document actuality" — off / prefer recent / cutoff (with a date picker) / soft penalty (with a slider for decay strength)
-- Source citations in the chat show the document date when available — lets users judge recency themselves even when no penalty is applied
-
-**Scope note:** this feature is complementary to the versioning/replacement system above — that handles explicit document supersession; this handles implicit age-based preference for live corpora where old documents are never explicitly removed.
-
----
-
-### Ingestion Event Log — Persistent Per-File Audit Trail
-
-**Goal:** persist the outcome of every upload-API ingestion attempt (success, crash, timeout, skip, no-chunks) so admins can audit bulk runs after the fact rather than parsing `backend.log`.
-
-**Why:** the upload API responds immediately with `{"started": true}` — the caller has no way to know the final outcome. After a bulk run of hundreds of files some may have silently crashed or timed out. Currently the only record is in `logs/backend.log`, which is not queryable.
-
-**Schema** — one table, one row per attempt:
-
-```sql
-CREATE TABLE IF NOT EXISTS ingest_events (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts            TEXT NOT NULL,           -- ISO timestamp (UTC)
-    kb_id         TEXT NOT NULL,
-    document_id   TEXT NOT NULL,
-    filename      TEXT NOT NULL,
-    status        TEXT NOT NULL,           -- success | crashed | timeout | skipped_dedup | no_chunks
-    chunks        INTEGER,                 -- null on failure
-    file_size_mb  REAL,
-    duration_ms   INTEGER,
-    error         TEXT                     -- null on success
-)
-```
-
-**Write points in `ingestion.py`:**
-- End of `ingest_uploaded_file` success path
-- `TimeoutError` handler (subprocess hung > 600s)
-- `BrokenExecutor` handler (glibc crash)
-- `no_chunks` early return
-- Outer exception handler in the upload worker (any other failure)
-
-**Admin API** — one new endpoint in `admin_router.py`:
-`GET /api/admin/ingest-events?kb_id=&status=&days=&limit=200&offset=0`
-
-**Admin UI** — new "Ingestion Log" tab in the admin page. Table view: KB · filename · status (colour-coded) · chunks · file size · duration · timestamp. Filterable by KB dropdown and status. Paginated for large runs.
-
-**What the upload caller gets:** the existing upload API contract (`{"started": true}`) stays unchanged. Admins review outcomes in the log after the batch finishes. Optionally `GET /api/admin/ingest-events?document_id=<id>` can be used to poll a specific file's result programmatically.
-
-**DB file — separate `ingest_events.db` vs `conversations.db`:**
-
-Using `conversations.db` is tempting because the admin router already connects to it for usage and performance stats. However, a dedicated `ingest_events.db` is the better call:
-
-- `ingestion.py` currently has no dependency on the conversations DB — adding one couples two independent subsystems. A dedicated DB avoids that import.
-- The ingestion pipeline runs in a different context (including from subprocess workers) — keeping its persistence isolated is cleaner.
-- Backup, archival, and eventual size growth of ingest events are independent of conversation history. A bulk run of thousands of documents can generate thousands of rows; this should not affect conversation query performance.
-- If the user wants to clear/archive old conversations, ingest history is unaffected and vice versa.
-
-The admin router simply opens both files, same pattern as any other SQLite read.
-
-**Scope boundary:** full-reindex runs (the blue reindex button) are not covered in the first pass — `ReindexResult` already surfaces aggregate counts for those. This feature targets the upload API path where per-file outcomes are currently invisible.
-
----
+**UI:** new session parameter in the RAG Config sidebar: "Document actuality" — off / prefer recent / cutoff (with a date picker) / soft penalty (with a decay-strength slider). Source citations show the document date when available.
 
 ### Ingestion Pipeline — File-by-File Processing for Crash Recovery
 
-**Current architecture:** `run_ingestion` processes all files in two sequential sweeps — Docling parses every file first (phase 1), then all resulting chunks are embedded and written to the vector store (phase 2). A crash mid-embedding loses all Docling work for the remaining files; they must be re-parsed on the next run.
+**Current architecture:** `run_ingestion` processes all files in two sequential sweeps — Docling parses every file first (phase 1), then all resulting chunks are embedded and written to the vector store (phase 2). A crash mid-embedding loses all Docling work for the remaining files.
 
-**The fix:** process one file at a time — Docling → embed → store → next file. A crash then costs at most one file; everything already committed is safe and will be skipped by the hash-based dedup on the next run.
-
-**Progress indication:** the current two-phase model at least makes phase boundaries clear (loading / embedding). The file-by-file model must preserve meaningful progress visibility: current file name, file N of M, chunks so far, and ideally an overall percentage. The phase label should reflect what is happening to the *current* file (parsing / embedding), not the batch as a whole.
-
-**Why deferred:** meaningful refactor of `run_ingestion` and `load_chunks`. The dedup and image indexing paths also need updating. Low urgency while corpora are small enough that a full re-run is tolerable.
+**The fix:** process one file at a time — Docling → embed → store → next file. A crash then costs at most one file; everything already committed is safe and will be skipped by hash-based dedup on the next run.
 
 The main things to untangle:
 
-1. Embedding model initialization — currently build_embedding_model() is called once for the whole batch. In a per-file loop you'd still want to do this once before the loop, not once per file. Easy to extract.
-
-2. build_vector_store() already accepts any chunk list — you can call it with one file's chunks at a time. It already works incrementally; we're just currently handing it everything at once. No API change needed.
-
+1. Embedding model initialization — still done once before the loop, not once per file.
+2. `build_vector_store()` already accepts any chunk list — call it with one file's chunks at a time. No API change needed.
 3. The pre-pass stays as-is — still useful to run upfront to identify which files to skip via hash dedup. It just no longer loads chunks.
+4. Image chunks — initialize the image vector store once before the loop too; store each file's image chunks immediately after its text chunks.
+5. Progress reporting — actually gets simpler. Instead of "loading phase / embedding phase" across the whole batch, each file has its own mini-lifecycle.
 
-4. Image chunks — currently handled as a separate sweep after all text. Per-file, you'd store each file's image chunks immediately after its text chunks. The image vector store just needs to be initialized once before the loop too.
-
-5. Progress reporting — actually gets simpler. Instead of "loading phase / embedding phase" across the whole batch, each file has its own mini-lifecycle. The status can say "parsing file 3/34" then "embedding file 3/34".
-
-So it's really: pull model and store initialization out of the batch logic, wrap the chunk-embed-store steps in a per-file loop, update the progress callbacks. Probably 1-2 hours of careful work with good test coverage.
-
-
----
+Roughly 1–2 hours of careful work once the decision to do it is made.
 
 ### Chunking Strategy Investigation — Lessons from Large-Scale Ingestion
 
-**Trigger:** Practitioner account of ingesting 20k documents / 600k pages. Key insight: not all pages need to be chunked — the pipeline must first analyze each page and chunk only relevant content. Images and tables require separate handling, not the same path as prose text.
+**Trigger:** practitioner account of ingesting 20k documents / 600k pages. Key insight: not all pages need to be chunked — the pipeline must first analyze each page and chunk only relevant content. Images and tables require separate handling, not the same path as prose text.
 
 **Questions to investigate:**
 - Is our current fixed-token chunking strategy appropriate for heterogeneous documents (prose, tables, images)?
@@ -334,8 +147,6 @@ So it's really: pull model and store initialization out of the batch logic, wrap
 - At what document volume does page-level chunking outperform paragraph/sentence-level chunking for retrieval quality?
 
 **Likely outcome:** a chunking strategy ADR that maps content type → chunking method, with a smarter pre-filter before indexing.
-
----
 
 ### Minimum Chunk Quality — Filter Near-Empty Chunks at Ingestion
 
@@ -347,31 +158,26 @@ So it's really: pull model and store initialization out of the batch logic, wrap
 <!-- image -->
 ```
 
-This is a heading with an image placeholder — no prose, no facts, nothing an embedding model can meaningfully represent. When retrieved (e.g. by a keyword match on "Water"), it contributes noise to the context window and can dilute or displace useful chunks.
-
-**Root cause:** Markdown conversion of PDFs often produces heading-only or image-only fragments when a section starts with a figure before any prose. Fixed-token chunking then slices these into their own chunk rather than merging them with the next substantive paragraph.
+This is a heading with an image placeholder — no prose, no facts, nothing an embedding model can meaningfully represent.
 
 **What to address:**
 - Add a minimum content threshold at ingestion time: merge forward any chunk below N non-whitespace characters or M meaningful tokens after stripping Markdown syntax (`#`, `<!-- ... -->`, `![]()`, etc.) — the heading or image placeholder becomes a prefix of the next substantive chunk rather than a standalone entry
-- Optionally log merged chunks so the user can see what was fused and why
-- Consider a "content score" heuristic: chunks with only headings, only image tags, or only whitespace score 0 and are candidates for merging
-
-**The tricky part:** merge direction and merge limits. A heading should merge forward into the paragraph that follows it — but what if the next chunk is also near-empty? A merging loop with a maximum merged size cap (respecting `max_chunk_tokens`) is needed to avoid creating oversized chunks.
+- A "content score" heuristic: chunks with only headings, only image tags, or only whitespace score 0 and are candidates for merging
+- Merge direction and merge limits: a merging loop with a maximum merged size cap (respecting `max_chunk_tokens`) to avoid creating oversized chunks
 
 **Why it matters:** retrieved chunks go directly into the LLM context. A useless chunk at rank 1 wastes a slot, confuses the reranker, and can cause the LLM to return "I don't have enough information" when the real answer exists just one chunk away.
 
 ---
 
-
-
-
 ## UI & Settings
 
-### Align design of left and right sidebar, main chat page
-**All three look nice now** but they are not really aligned with each other. Not necessary, but is an inconsitency.
+### Align Design of Left and Right Sidebar, Main Chat Page
 
-### Improve design of source citation window
-**Definitely does not look nice now** but is hard to design as just raw markdown is shown. We can still improve this visually and align more with our design.
+All three look nice now but they are not really aligned with each other. Not necessary, but is an inconsistency.
+
+### Improve Design of Source Citation Window
+
+Definitely does not look nice now but is hard to design as just raw markdown is shown. We can still improve this visually and align more with our design.
 
 ---
 
@@ -379,30 +185,28 @@ This is a heading with an image placeholder — no prose, no facts, nothing an e
 
 **Current behaviour:** retrieval returns exactly `top_k` chunks. Each chunk is an isolated slice of the source document — the text immediately before and after it is not included, even if it would provide useful context.
 
-**What's needed:** a toggleable option (e.g. `neighbour_chunks: bool`, default off) that, after retrieval, fetches the preceding and succeeding chunks from the same source file for each result (i.e. `chunk_index - 1` and `chunk_index + 1`). The expanded set is deduplicated (a neighbour retrieved independently stays once) and passed to the LLM in place of the bare result set.
+**What's needed:** a toggleable option (e.g. `neighbour_chunks: int`, default 0) that, after retrieval, fetches preceding and succeeding chunks from the same source file for each result. The expanded set is deduplicated and passed to the LLM in place of the bare result set.
 
-**Option:** Instead of a bool, we make it an int variable, in increments of two. Zero means no Neighbours get taken into account. Four would mean to preceeding and two succeeding chunks. Maximum value should be 6.
+- Value is in increments of two: 0 = off, 2 = one neighbour each side, 4 = two each side. Maximum 6.
+- **Option:** more automation — if the found chunk is very small, do an automatic expansion. Stop at a maximum number of chunks and a maximum combined character length.
 
-**Option 2:** More automation, i.E. if the found chunk is very small, do an automatic expansion looking for neighbours. Stop at a maximum number of chunks as well as a maximum number of character length of the combined result.
+**Use case:** documents where a retrieved chunk contains a partial answer — the conclusion of a paragraph, a table row without its header, or a clause that references the sentence above.
 
-**Use case:** documents where a retrieved chunk contains a partial answer — the conclusion of a paragraph, a table row without its header, or a clause that references the sentence above. Adding neighbours restores that immediate context without changing what was retrieved.
-
-**Warning to surface in the UI:** enabling this option can up to triple the number of tokens sent to the LLM (up to `3 × top_k` chunks after dedup). It requires a model with a large enough context window and will noticeably increase latency and token cost.
+**Warning to surface in the UI:** enabling this option can up to triple the number of tokens sent to the LLM (up to `3 × top_k` chunks after dedup). Requires a large context window.
 
 **Implementation notes:**
-- `ContextWindowRetriever` in `context_window_retriever.py` already implements this fully — it wraps any base retriever, fetches `chunk_index ± window_size` neighbours from the same `source_file`, and stitches them into an expanded content block. It is currently unused (not wired up).
-- Backend change: wrap the active retriever with `ContextWindowRetriever` when the option is enabled in the RAG query path, before context assembly
-- Config: `neighbour_chunks` bool (or `window_size: int`) added to `RagConfig`; surfaced in the RAG Config panel next to `top_k`
+- `ContextWindowRetriever` in `context_window_retriever.py` already implements this fully — it is currently unused (not wired up).
+- Backend change: wrap the active retriever with `ContextWindowRetriever` when the option is enabled in the RAG query path
+- Config: `window_size: int` added to `RagConfig`; surfaced in the RAG Config panel next to `top_k`
 
 **Variant — source citation view only (no LLM cost):**
-Instead of (or in addition to) feeding neighbours to the LLM, show them in the sources panel when the user expands a citation. The retrieved chunk renders normally; the preceding and succeeding chunks render below/above it in a muted style (e.g. dimmed text, lighter background) to show what surrounded it in the document. This gives the user reading context without touching the LLM prompt at all — cheaper, zero latency impact, and always safe to enable. The backend would return `neighbour_content_before` / `neighbour_content_after` alongside each source chunk in the RAG response.
+Show neighbours in the sources panel when the user expands a citation. The retrieved chunk renders normally; preceding and succeeding chunks render below/above it in a muted style. The backend returns `neighbour_content_before` / `neighbour_content_after` alongside each source chunk. Zero latency impact, always safe to enable.
 
 ---
 
 ### RAG Settings: LLM Call Calculation
 
-Especially with Neighbour Chunk Expansion, we have many variable that control how many chunks could get sent to the helper llm and the main model. We should have text based preview telling the user that maximum value each. If no helper model is selected, it should show that all reranking etc. calls go to the main model. The stats are: number of calls, max. number of chunks, for each.
-
+Especially with Neighbour Chunk Expansion, we have many variables that control how many chunks could get sent to the helper LLM and the main model. We should have a text-based preview telling the user the maximum value for each. If no helper model is selected, it should show that all reranking etc. calls go to the main model. The stats are: number of calls, max. number of chunks, for each.
 
 ---
 
@@ -410,36 +214,25 @@ Especially with Neighbour Chunk Expansion, we have many variable that control ho
 
 **Goal:** let the user filter the chunk browser by chunk character count — e.g. "show only chunks shorter than 100 chars" to find near-empty chunks, or "show only chunks over 1500 chars" to find runaway pages.
 
-**Why:** the analytics histogram shows the distribution; this feature lets the user drill into the actual outliers. It's the natural complement to the KB Analytics tab.
+**Why:** the analytics histogram shows the distribution; this feature lets the user drill into the actual outliers. Natural complement to the KB Analytics tab.
 
-**Prerequisite — store `chunk_chars` as metadata at ingestion:** chunk length is not currently recorded in the vector store. It needs to be stamped onto `chunk.metadata["chunk_chars"] = len(chunk.content)` in `load_chunks()` in `feature0_baseline_rag.py` before chunks are inserted. This is a one-liner, but **existing KBs require a re-index** to pick it up. The same field is useful to the analytics stats computation, so both features share this prerequisite.
+**Prerequisite — store `chunk_chars` as metadata at ingestion:** stamp `chunk.metadata["chunk_chars"] = len(chunk.content)` in `load_chunks()`. This is a one-liner, but **existing KBs require a re-index** to pick it up.
 
-**Backend:** ChromaDB's `$gte`/`$lte` operators support numeric range filters natively, but `_to_chroma_where()` in `chromadb.py` currently only translates equality (`$eq`) filters. It needs extending to pass through range operators when the value is a dict rather than a scalar. The chunk browser endpoint then accepts optional `min_chars` / `max_chars` query params and builds the appropriate where clause.
+**Backend:** ChromaDB's `$gte`/`$lte` operators support numeric range filters natively, but `_to_chroma_where()` in `chromadb.py` currently only translates equality (`$eq`) filters — needs extending. The chunk browser endpoint accepts optional `min_chars` / `max_chars` query params.
 
 **Frontend:** a compact range input (two number fields or a dual-handle slider) in the Chunk Browser filter bar, alongside the existing source-file typeahead. Filters apply on submit, not on every keystroke.
 
-**pgvector:** metadata is stored as JSONB; a `chunk_chars` numeric range filter maps to a SQL `WHERE (metadata->>'chunk_chars')::int BETWEEN $1 AND $2` clause.
+**pgvector:** `WHERE (metadata->>'chunk_chars')::int BETWEEN $1 AND $2`
 
 ---
-
 
 ### Chunk Browser — Server-side File Search for Large KBs
 
-**Current behaviour:** the file typeahead in the Chunk Browser fetches the full file list from `GET /api/v1/rag/store-info` on tab switch and filters client-side as the user types. Works fine for KBs with up to a few hundred files; for large KBs (thousands of source files) the upfront fetch becomes expensive.
+**Current behaviour:** the file typeahead in the Chunk Browser fetches the full file list from `GET /api/v1/rag/store-info` on tab switch and filters client-side. Works fine for KBs with up to a few hundred files; for large KBs (thousands of source files) the upfront fetch becomes expensive.
 
-**What's needed:** a dedicated `GET /api/v1/rag/files?q=<prefix>` endpoint that searches filenames server-side and returns only matches (e.g. top 20). The typeahead would then fetch on each keystroke (debounced) instead of loading all filenames upfront.
+**What's needed:** a dedicated `GET /api/v1/rag/files?q=<prefix>` endpoint that searches filenames server-side and returns only matches. The typeahead would fetch on each keystroke (debounced) instead of loading all filenames upfront.
 
-**Blocker:** ChromaDB has no native metadata prefix-search — a full scan is required to filter by filename, making it no cheaper than the current approach unless results are cached. pgvector's SQL `LIKE` query would make this trivial and cheap. Worth revisiting when pgvector support matures or if a separate filename index is introduced.
-
-**For now:** the client-side typeahead is kept. It avoids rendering a giant `<select>` DOM, which was the main UX problem at small-to-medium scale.
-
----
-
-### Disable RAG Config Panel During KB Switch
-
-While a KB switch is in progress (`POST /api/v1/kb/{id}/activate`), the RAG config sidebar remains fully interactive. A user who saves config changes mid-switch could write state that gets immediately overwritten by the incoming KB config, or cause a race between the config save and the agent rebuild triggered by the switch.
-
-**Fix:** disable (or visually lock) the config panel while a switch is pending — show a brief loading state on the KB selector and prevent saves until the activate response returns.
+**Blocker:** ChromaDB has no native metadata prefix-search — a full scan is required. pgvector's SQL `LIKE` query would make this trivial. Worth revisiting when pgvector support matures.
 
 ---
 
@@ -451,69 +244,37 @@ The preset save/load flow has grown organically and needs a thorough walkthrough
 
 ---
 
-### UI Branding & Customization
+### UI Branding & Customization — Remaining Scope
 
-**Goal:** allow deployers to surface key branding variables through the admin settings UI without touching source code — agent display name, agent avatar icon, application name, and application favicon.
+Agent name and avatar are done (v0.3.1). Remaining:
 
-**Variables to expose:**
+- **App name** — browser tab title and any top-bar branding; currently hardcoded in the Next.js layout
+- **App favicon** — browser tab icon; replacing at runtime requires serving a dynamic file from a known path
 
-- **Agent name** — the name shown in the chat UI (e.g. "Lancy", "AskMyDocs", "Company Assistant"). Currently hardcoded in the frontend.
-- **Agent avatar** — the icon shown next to agent messages. Allow uploading a custom image (PNG/SVG, constrained size) or selecting from a small set of built-ins.
-- **App name** — the browser tab title and any top-bar branding. Currently a hardcoded string in the Next.js layout.
-- **App favicon** — the browser tab icon. Replacing it at runtime requires serving a dynamic file from a known path that the Next.js `<link rel="icon">` tag points to.
+Both require backend config storage plumbing that is already in place (`branding.json` / `GET|PUT /api/v1/branding`). The frontend side needs to apply the fetched values to `<title>` and `<link rel="icon">`.
 
-**Implementation sketch:**
-
-- Store branding config in a new `branding.json` in `backend/src/lancy/db/` (gitignored, like `rag_config.json`). Provide a `branding.example.json` with defaults.
-- Backend: expose `GET /api/v1/branding` (public, read by the frontend on load) and `PUT /api/v1/branding` (admin-only). Uploaded icons are saved to a static-files directory served by FastAPI.
-- Frontend: on app load, fetch branding and apply: page `<title>`, favicon `<link>`, agent name string, agent avatar `<img src>`. Use a React context so components don't each fetch separately.
-
-**Deployment feasibility:**
-
-| Method | Agent name / App name | Agent / App icon upload |
-|---|---|---|
-| **Python / systemd** | Straightforward — JSON file on disk, served by FastAPI. | Also straightforward — FastAPI serves the `uploads/` static folder; file persists on disk alongside the app. |
-| **Docker (single container)** | Same as above — JSON written into a bind-mounted volume. | Icon files must also live in the bind-mounted volume, otherwise they are lost on container restart. Document the required volume mount. |
-| **Docker (multi-container / compose)** | JSON in a named volume shared with the backend service. | Same volume approach. Frontend container does not need access — it fetches icons via the backend's static endpoint at runtime. |
-| **Reverse-proxy (nginx / Caddy in front of Next.js)** | No change needed — branding is fetched client-side from the backend API. | Same. The reverse proxy does not need to know about icon files. |
-
-**What is not straightforward:** replacing the Next.js app icon at build time (e.g. for PWA manifest or OG images) requires a rebuild. Runtime-swappable favicons via a dynamic endpoint are feasible but only work for the browser tab icon, not build-time assets. If PWA/OG image support is needed, a separate build-time config step would be required.
-
-**Suggested scope for a first pass:** agent name + agent avatar only (simpler, higher user-facing value). App name and favicon can follow once the branding config plumbing is in place.
+**Note:** PWA manifest / OG images require a build-time step, not feasible at runtime.
 
 ---
 
 ### Industrial Cyber-Noir Theme ("Cyber-Purple")
 
-**Goal:** add a third app theme — alongside light and dark — that matches the visual identity of the lancy.tech website: deep purple-tinted backgrounds, violet/cyan accents, glassmorphic card surfaces, a grid-dot body background, and optional CRT scanline overlay.
+**Goal:** add a third app theme — alongside light and dark — matching the lancy.tech visual identity: deep purple-tinted backgrounds, violet/cyan accents, glassmorphic card surfaces, a grid-dot body background, and optional CRT scanline overlay.
 
-**Why it's appealing:** the existing CSS variable architecture makes the color layer trivially extensible. The theme would differentiate Lancy visually and reinforce the project identity for deployments that want something beyond a generic dark mode.
+**How the current theming system works:** `useTheme.tsx` (custom Context, no next-themes), `globals.css` (HSL CSS variables in `:root` and `.dark`), Tailwind resolves via CSS variables.
 
-**How the current theming system works (verified in code):**
-
-- `frontend/src/hooks/useTheme.tsx` — custom React Context provider, no `next-themes`. Exports a `Theme` enum (`LIGHT`, `DARK`, `SYSTEM`), persists to localStorage, applies `"dark"` CSS class to `<body>`.
-- `frontend/src/styles/globals.css` — all color tokens as HSL CSS variables. Light mode in `:root`, dark mode in `.dark`. Tailwind resolves all color classes via `hsla(var(--token))`.
-- `frontend/tailwind.config.ts` — `darkMode: ["class"]`, all palette entries point to CSS variables.
-- `frontend/src/components/sections/sidebar/settings.tsx` — theme toggle button cycles between light and dark using `useTheme()`.
-- `frontend/src/components/template/home.tsx` — main layout applies `bg-background` which resolves from CSS variables.
-
-**Implementation layers and estimated effort:**
+**Implementation layers:**
 
 | Layer | What it involves | Effort |
 |---|---|---|
-| Color palette | Add `.cyber-purple` CSS variable block in `globals.css` — deep near-black purple backgrounds, violet primary, cyan secondary, translucent borders | ~1–2h |
-| Theme enum + provider | Add `CYBER_PURPLE` to `Theme` enum; update provider to apply `cyber-purple` class to body instead of/alongside `dark` | ~30 min |
-| Toggle UI | Change settings toggle from 2-state to 3-state cycle (or a small icon group); add a purple/cyber icon | ~30 min |
-| Grid dot background | CSS `background-image` radial-gradient pattern on `body` scoped to `.cyber-purple` | ~30 min |
-| Glassmorphic cards | Cards/panels need `backdrop-blur` + semi-transparent fill. Cleanest approach: CSS variable opacity (`--card` with alpha) so blur only activates in this theme; may need per-component class tweaks | ~1h |
-| CRT scanline overlay | Full-viewport pseudo-element with repeating-linear-gradient, low opacity, `pointer-events: none` | ~30 min |
-| Glitch text effects | Keyframe animations on specific headings — cool but probably skip for a functional app UI | ~1–2h if wanted |
+| Color palette | `.cyber-purple` CSS variable block in `globals.css` | ~1–2h |
+| Theme enum + provider | Add `CYBER_PURPLE`; apply `cyber-purple` class to body | ~30 min |
+| Toggle UI | 3-state cycle in settings | ~30 min |
+| Grid dot background | CSS `background-image` radial-gradient scoped to `.cyber-purple` | ~30 min |
+| Glassmorphic cards | `backdrop-blur` + semi-transparent `--card` CSS variable (alpha only in this theme) | ~1h |
+| CRT scanline overlay | Full-viewport pseudo-element, `pointer-events: none` | ~30 min |
 
-**Total for a solid first pass** (colors + grid background + glassmorphism + theme switch, no glitch): roughly a half-day of focused work.
-
-**The main complexity:** glassmorphism requires card/panel components to use semi-transparent fills + `backdrop-blur` instead of solid backgrounds. This either means adding conditional classes per component, or accepting the effect applies in all themes (not desirable). The cleanest approach is a CSS variable with alpha for `--card` and `--popover` that only kicks in under `.cyber-purple`, so card components don't need to change at all.
-
-**Suggested approach:** branch off `main`, implement the color palette + theme switch + grid background first, eyeball it in the browser, then decide if glassmorphism and scanlines are worth the extra component-level work.
+**Total for a solid first pass** (colors + grid + glassmorphism + theme switch, no glitch text): roughly a half-day.
 
 ---
 
@@ -521,39 +282,30 @@ The preset save/load flow has grown organically and needs a thorough walkthrough
 
 ### User Feedback — Thumbs Up / Down
 
-**Goal:** let users rate individual answers with a thumbs up or down. Capture the active RAG configuration at the time of rating so quality can be correlated with retrieval settings. The thumbs up / down function is already implemented in the UI.
-
-**Why:** RAG quality is hard to judge in aggregate without structured feedback. Recording which configuration settings (k, BM25, reranking, model, temperature) were active when a good or bad answer was given lets admins identify which presets actually work on the real corpus.
+**Goal:** let users rate individual answers with a thumbs up or down. Capture the active RAG configuration at the time of rating so quality can be correlated with retrieval settings. The thumbs up / down UI is already implemented.
 
 **Scope:**
-- Thumbs up / down button visible per answer in the chat (logged-in users only)
 - Rating stored in the conversation database alongside the conversation and message ID, with a full snapshot of the `RagConfig` active at that moment
 - Admin view: a simple feedback log showing recent ratings, the question, the answer excerpt, and the config snapshot — sortable by rating and date
-- Optional aggregation: rating counts per model, per KB, per preset — useful for spotting that a specific LLM or k value consistently gets low ratings
-
-**Privacy note:** feedback entries are stored server-side in the existing DB; no external service involved. On public or multi-user deployments, the feedback log should be admin-only.
+- Optional aggregation: rating counts per model, per KB, per preset
 
 ---
 
 ### Session Logs
 
-**Goal:** Expanding on the Thumbs Up / Down Log, we want to capture valuable statistics about each user query run.
-
-**Why:** RAG performance is hard to judge in aggregate without structured feedback. Query parameters helps with optimizing the setup
+**Goal:** capture valuable statistics about each user query run.
 
 **Scope:**
-Capture the following query run statistics:
-- Used kb
+- Used KB
 - Used model (main and helper model)
 - Duration in seconds (as displayed to the user)
-- Calculated Token per Second (as displayed to the user)
-- Considered Chunks during the process (i.e. total including candidates, neighbour expansion)
+- Calculated tokens per second (as displayed to the user)
+- Considered chunks during the process (i.e. total including candidates, neighbour expansion)
 - Chunks sent to reranking
 - Chunks sent to the main model
-- The above three stats, but in length (numer of characters)
+- The above three stats, but in character count
 
-**Technical solution** Evaluate how to implement this requirement, and what else would be already available to collect in the code. 
-
+**Technical solution:** evaluate how to implement this requirement, and what else would already be available to collect in the code.
 
 ---
 
@@ -562,26 +314,19 @@ Capture the following query run statistics:
 The query expansion, HyDE, and reranking prompts are currently hardcoded in Python. Unlike the system prompt (answer tone/format), these affect retrieval quality and could benefit from domain-specific tuning.
 
 **Candidates:**
-- **Query expansion** (`utils/retriever.py`) — could guide rephrasing toward domain vocabulary (e.g. industry terminology, local acronyms)
+- **Query expansion** (`utils/retriever.py`) — could guide rephrasing toward domain vocabulary
 - **HyDE** (`utils/retriever.py`) — hypothetical document generation; domain context improves embedding match quality
-- **LLM reranking** (`retriever/reranking_retriever.py`) — could define what "relevant" means for the specific corpus (e.g. prioritise verified sources over marketing material)
+- **LLM reranking** (`retriever/reranking_retriever.py`) — could define what "relevant" means for the specific corpus
 
 **Scope:** same file-based pattern as the system prompt — `prompts/query_expansion.default.md`, `prompts/hyde.default.md`, `prompts/reranking.default.md`, each with a gitignored `.custom.md` override. Admin-only UI exposure makes sense given the technical nature.
 
-**Why:** hardcoded prompts cannot be tuned without touching source code; domain-specific guidance measurably improves retrieval recall and precision.
-
 **System prompt UX — default vs. custom toggle:**
-The system prompt field should have an explicit Default / Custom toggle. When the user switches to Custom for the first time, pre-fill the editor with the server default so they have a starting point rather than a blank slate. After that, the custom text is kept separate — stored in the session and persisted on save — and the default is never overwritten. Switching back to Default should restore the server default without destroying the custom draft (keep it in state so toggling back doesn't lose their work).
+The system prompt field should have an explicit Default / Custom toggle. When the user switches to Custom for the first time, pre-fill the editor with the server default so they have a starting point. After that, the custom text is kept separate — switching back to Default restores the server default without destroying the custom draft.
 
 **Domain context prompt (corpus glossary):**
-Investigate adding a second, lightweight prompt field — a "corpus context" block — where the user can provide domain-specific instructions: special terminology, common abbreviations, ID patterns found in the documents, or notes on document provenance. This is distinct from the system prompt (which governs answer format and tone) and from retrieval prompts (which govern query rewriting). It would be appended to the context sent to the LLM only when non-empty, so it has zero effect on default deployments. Useful for specialised corpora where the LLM would otherwise misinterpret jargon.
+Investigate adding a second, lightweight prompt field — a "corpus context" block — where the user can provide domain-specific instructions: special terminology, common abbreviations, ID patterns, or notes on document provenance. Distinct from the system prompt (answer format/tone) and from retrieval prompts (query rewriting). Appended to LLM context only when non-empty.
 
-**Prompt editor UI — consider a dedicated admin section:**
-The current sidebar panel is too narrow for comfortable prompt editing. Options to consider:
-- A dedicated **Prompt Settings** page in the admin section (separate route), giving full-width layout.
-- A **markdown editor with syntax highlighting and preview** (e.g. `@uiw/react-md-editor` or CodeMirror with a markdown mode) — prompts are markdown, so rendering the preview inline helps the user see what the LLM will receive.
-- The retrieval prompts (expansion, HyDE, reranking) are more technical than the system prompt; grouping them under a collapsible "Advanced" section within the same page keeps the UI approachable for non-technical admins.
-
+**Prompt editor UI:** the current sidebar is too narrow for comfortable prompt editing. Options: dedicated admin page (full-width), markdown editor with syntax highlighting and preview.
 
 ---
 
@@ -606,58 +351,48 @@ The current sidebar panel is too narrow for comfortable prompt editing. Options 
 
 **Goal:** the system should be fully functional with no internet connection after initial setup (model downloads). All dependencies that phone home should have their update checks suppressed by default.
 
-**Known issue:** SentenceTransformer (and potentially other services in the stack) makes outbound requests on every model load to check for updates, even when all assets are fully cached locally. With no internet this causes multi-second retry delays and noisy error logs before falling back to the cache. It also constitutes unnecessary telemetry to third-party services.
+**Known issue:** SentenceTransformer (and potentially other services in the stack) makes outbound requests on every model load to check for updates, even when all assets are fully cached locally. With no internet this causes multi-second retry delays and noisy error logs.
 
-**Fix:** set an `Lancy_OFFLINE=1` environment variable in `start.sh` that maps to the relevant library-specific offline flags (e.g. `HF_HUB_OFFLINE=1` for the HuggingFace ecosystem). As other services are identified, their suppression flags are added under the same umbrella variable.
+**Fix:** set a `LANCY_OFFLINE=1` environment variable in `start.sh` that maps to the relevant library-specific offline flags (e.g. `HF_HUB_OFFLINE=1` for the HuggingFace ecosystem).
 
 ```bash
 # in start.sh, before the backend launch:
-Lancy_OFFLINE="${Lancy_OFFLINE:-1}" \
-HF_HUB_OFFLINE="${Lancy_OFFLINE:-1}" \
-PYTHONPATH="$REPO/backend/src" \
-BACKEND=ollama \
-  "$VENV/bin/python" -m lancy.main ...
+LANCY_OFFLINE="${LANCY_OFFLINE:-1}" \
+HF_HUB_OFFLINE="${LANCY_OFFLINE:-1}" \
+...
 ```
 
-Also document in `local_setup.md` that after first run the system is designed to operate fully offline, what `Lancy_OFFLINE=1` suppresses, and how to temporarily disable it if a model update is actually wanted (`Lancy_OFFLINE=0 ./start.sh`).
+Document in the setup guide: after first run the system is designed to operate fully offline; how to temporarily disable for a model update (`LANCY_OFFLINE=0 ./start.sh`).
 
 ### Network Egress Audit — What Phones Home?
 
-**Goal:** produce a complete, verified list of all external network calls made by the system under normal operation, so that the deployment can be assessed for air-gap readiness and data privacy.
+**Goal:** produce a complete, verified list of all external network calls made by the system under normal operation, for air-gap readiness and data privacy assessment.
 
-**Known calls (from observation):**
-- `huggingface.co` — SentenceTransformer model update check on every `build_embedding_model()` call (fixable with `HF_HUB_OFFLINE=1`, see above)
+**Known calls:**
+- `huggingface.co` — SentenceTransformer model update check on every `build_embedding_model()` call (fixable with `HF_HUB_OFFLINE=1`)
 - `ollama.com` — Ollama may check for binary or model updates; needs verification
 
-**Unknown / to verify:**
-- ChromaDB — any telemetry or update checks?
-- Docling — any calls during document parsing?
-- Any other Python dependencies that phone home on import or first use?
+**Unknown / to verify:** ChromaDB telemetry, Docling calls during document parsing, other Python dependencies that phone home on import.
 
-**Method:** run the backend with network access but with a local DNS proxy or `tcpdump` to capture all outbound DNS queries and HTTPS connections during startup, ingestion, and a query. Catalogue every external host contacted, the reason, and whether it can be suppressed.
+**Method:** run the backend with a local DNS proxy or `tcpdump` to capture all outbound DNS queries and HTTPS connections during startup, ingestion, and a query.
 
-**Output:** a documented list in `local_setup.md` (or a dedicated `SECURITY.md`) of all external hosts, what triggers the call, and how to suppress it for air-gapped or privacy-sensitive deployments.
+**Output:** a documented list in `docs/admin-guides/` of all external hosts, what triggers the call, and how to suppress it.
 
 ### API Endpoint Protection — Rate Limiting and Request Queueing
 
-The backend currently has no rate limiting or concurrency guards beyond the single-job check on `/api/v1/rag/reindex`. With multiple simultaneous users this matters: the `/api/v1/messages/stream` endpoint triggers a full retrieval + LLM call per request, and `/api/v1/rag/retrieve` runs embedding inference — both are expensive and unbounded. The login/passcode endpoints have no brute-force protection either.
+The backend currently has no rate limiting or concurrency guards beyond the single-job check on `/api/v1/rag/reindex`.
 
 **Recommended approach:**
 
-- **Rate limiting:** add `slowapi` (the FastAPI equivalent of Flask-Limiter) with per-IP limits on the hot endpoints — e.g. 10 requests/minute on `/messages/stream`, 30/minute on `/rag/retrieve`, and 5/minute on the auth endpoint. Limits are set as decorators on the route functions and require no architectural change.
-- **Reindex queueing:** the existing in-progress guard (409 if already indexing) is sufficient for now; a proper job queue is only needed if concurrent reindex requests from different KBs become a requirement.
-- **LLM concurrency:** if Ollama is running on limited hardware (single GPU), concurrent LLM calls queue internally in Ollama — but FastAPI will still accept all requests and hold open connections. A simple asyncio semaphore on the answer path (e.g. max 3 concurrent LLM calls) prevents connection pile-up under load.
-- **Auth hardening:** the passcode endpoint should reject requests after N failed attempts within a time window — a simple in-memory counter per IP is enough for a non-public deployment.
-
-**Why now:** input sanitization (max lengths, enum guards) is in place, which closes the "bad data" surface. Rate limiting closes the "too much data" surface. Together they cover the realistic abuse scenarios for a small multi-user internal deployment.
+- **Rate limiting:** add `slowapi` with per-IP limits on the hot endpoints — e.g. 10 requests/minute on `/messages/stream`, 30/minute on `/rag/retrieve`, and 5/minute on the auth endpoint.
+- **LLM concurrency:** a simple asyncio semaphore on the answer path (e.g. max 3 concurrent LLM calls) prevents connection pile-up under load.
+- **Auth hardening:** the passcode endpoint should reject requests after N failed attempts within a time window — a simple in-memory counter per IP.
 
 ---
 
 ## Production Installation and Architecture
 
 ### Component Map — What Runs Where
-
-Understanding what each process does helps decide how to split them across hardware:
 
 | Component | Process | Compute profile | Can run remotely? |
 |---|---|---|---|
@@ -677,7 +412,7 @@ Understanding what each process does helps decide how to split them across hardw
 
 **Profile 1 — Single machine (current dev setup)**
 
-Everything on one machine. Ollama local, ChromaDB local, no GPU required (text-only). Simple but not scalable.
+Everything on one machine. Ollama local, ChromaDB local, no GPU required (text-only).
 
 ```
 [User browser] → localhost:3000 (Next.js) → localhost:8080 (FastAPI) → localhost:11434 (Ollama)
@@ -685,7 +420,7 @@ Everything on one machine. Ollama local, ChromaDB local, no GPU required (text-o
 
 **Profile 2 — GPU server + thin access machine**
 
-Backend and Ollama on a GPU server (on-prem or cloud). Frontend served from the same server or a lightweight separate host. Best fit for the planned deployment: GPU server does the heavy lifting; users access via browser.
+Backend and Ollama on a GPU server. Frontend served from the same server or a lightweight separate host.
 
 ```
 [User browser] → frontend-host:3000 (Next.js)
@@ -696,11 +431,11 @@ Backend and Ollama on a GPU server (on-prem or cloud). Frontend served from the 
                  gpu-server:5432  (pgvector, optional)
 ```
 
-Ollama can alternatively run on a *different* GPU server than the backend — configure via `ollama_host` in the RAG config panel. Useful if the company already has a dedicated Ollama instance.
+Ollama can alternatively run on a different GPU server than the backend — configure via `ollama_host` in the RAG config panel.
 
 **Profile 3 — Full production split**
 
-Frontend on a web server / reverse proxy (nginx, Caddy), backend on a GPU machine, pgvector on a managed PostgreSQL instance. Ollama on the same GPU machine as the backend or on a dedicated inference server.
+Frontend on a web server / reverse proxy (nginx, Caddy), backend on a GPU machine, pgvector on a managed PostgreSQL instance.
 
 ---
 
@@ -718,52 +453,32 @@ services:
 
 **Challenges to solve before containerising:**
 
-- **GPU passthrough:** Ollama and Qwen3VL both need CUDA. Requires `nvidia-container-toolkit` on the Docker host and `deploy.resources.reservations.devices` in Compose. Must be tested on the target hardware before claiming it works.
-- **Model persistence:** Ollama model files (~7 GB for mistral-nemo) and Qwen3VL weights (~5 GB) must be volume-mounted or pre-baked into the image. Pre-baking makes images large but removes the first-run download. Volume mounts are more flexible but require setup on the host.
-- **Data and config persistence:** `db/` (ChromaDB collections, `rag_config.json`, `knowledge_bases.json`) and `data/` (document corpus) must be volume-mounted — never baked into the image.
-- **HuggingFace cache:** SentenceTransformer and Qwen3VL download model weights to `~/.cache/huggingface`. This cache should be volume-mounted so it survives container restarts. For air-gapped deployments, pre-populate the cache and set `HF_HUB_OFFLINE=1`.
-- **`SERVER_URL`:** in a Compose setup, the frontend container reaches the backend via the Compose service name (e.g. `http://backend:8080`), not localhost. The `frontend/.env` (or an env override in Compose) must set `SERVER_URL=http://backend:8080`.
-- **The dev server problem:** the current frontend runs `next dev`, which is not suitable for production containers. A production Compose setup should build with `next build` and serve with `next start`. This also removes the port-leaking issue from `stop.sh` entirely.
+- **GPU passthrough:** Ollama and Qwen3VL both need CUDA. Requires `nvidia-container-toolkit` on the Docker host.
+- **Model persistence:** Ollama model files (~7 GB for mistral-nemo) and Qwen3VL weights (~5 GB) must be volume-mounted or pre-baked into the image.
+- **Data and config persistence:** `db/` and `data/` must be volume-mounted — never baked into the image.
+- **HuggingFace cache:** volume-mount `~/.cache/huggingface` so it survives container restarts. For air-gapped deployments, pre-populate the cache and set `HF_HUB_OFFLINE=1`.
+- **`SERVER_URL`:** in a Compose setup, the frontend container reaches the backend via the Compose service name (e.g. `http://backend:8080`). `frontend/.env` must set `SERVER_URL=http://backend:8080`.
+- **The dev server problem:** the current frontend runs `next dev`. A production Compose setup should build with `next build` and serve with `next start`.
 
 ---
 
 ### Using pgvector as Database
 
-Use HNSW indexes on vector columns. Without an index, pgvector does a sequential scan (every row compared to the query), causing CPU spikes. With HNSW, queries are fast and lightweight regardless of collection size.
+Use HNSW indexes on vector columns. Without an index, pgvector does a sequential scan (every row compared to the query), causing CPU spikes.
 
 ```sql
 CREATE INDEX ON chunks USING hnsw (embedding vector_cosine_ops);
 ```
 
-The index should be created after initial bulk ingestion, not before — building it on an empty or growing table wastes time. Add this to the KB setup documentation when pgvector becomes the primary target.
+The index should be created after initial bulk ingestion, not before. Add this to the KB setup documentation when pgvector becomes the primary target.
 
 ---
 
 ### nginx Reverse Proxy Configuration
 
-No example nginx config exists in the repo yet. The systemd services get both processes running, but for any real deployment nginx sits in front and handles several things that Next.js and FastAPI should not do themselves:
+No example nginx config exists in the repo yet. Needed for any real deployment: TLS termination, single public entry point on port 443, HTTP → HTTPS redirect, security headers (`Strict-Transport-Security`, `X-Frame-Options`, `X-Content-Type-Options`).
 
-- **TLS termination** — serve over HTTPS with a cert from certbot or a manual cert; without this, passwords and session cookies travel in plaintext
-- **Single public entry point** — expose only port 443 externally; nginx proxies to Next.js on `:3000`, and Next.js proxies backend calls server-side to FastAPI on `:8080` — the backend never needs to be publicly reachable
-- **HTTP → HTTPS redirect** — any request on port 80 gets redirected permanently
-- **Security headers** — `Strict-Transport-Security`, `X-Frame-Options`, `X-Content-Type-Options` added in one place rather than in application code
-
-**What to build:** a minimal `nginx.conf` example committed to `docs/admin-guides/`. Should cover a single-host deployment (one domain, certbot cert, proxy to `:3000`). The frontend's existing proxy rewrite handles the backend — nginx only needs to know about port 3000.
-
-
----
-
-### Investigate API Completeness and Check if More Consequent API Design is Necessary
-
-Finding on a question about API status:
-No, /api/rag/query (or /api/v1/rag/query) does not exist in the current codebase.
-
-I found a reference to it in the ARCHITECTURE.md file, but based on the actual implementation in main.py and the router files (rag_router.py, kb_router.py), that seems to be a documentation artifact or a typo for /api/v1/messages.
-
-The current query-related endpoints are:
-
-/api/v1/messages: The main endpoint used by the frontend for chat queries.
-/api/v1/rag/query-status: Used by the frontend to poll for the current phase of a running query (e.g., "retrieving" vs "generating").
+**What to build:** a minimal `nginx.conf` example committed to `docs/admin-guides/`. Should cover a single-host deployment (one domain, certbot cert, proxy to `:3000`).
 
 ---
 
@@ -771,33 +486,19 @@ The current query-related endpoints are:
 
 ### Agentic RAG — RAG as a Tool
 
-The current architecture uses a fixed pipeline: every query always triggers retrieval first (`CustomRAG`). The notebook prototypes (feature4b/d) explored a `ToolAgent` using the ReAct pattern, where retrieval is an *optional* tool call — the model decides whether to search the vector store or answer from its own knowledge. This is the natural next evolution of the system.
+The current architecture uses a fixed pipeline: every query always triggers retrieval first (`CustomRAG`). The notebook prototypes (feature4b/d) explored a `ToolAgent` using the ReAct pattern, where retrieval is an *optional* tool call — the model decides whether to search the vector store or answer from its own knowledge.
 
 **What exists in the codebase:**
 - `ToolAgent` is already implemented in `conversational-toolkit/src/conversational_toolkit/agents/`
-- The `Tool` base class lives in `conversational_toolkit.tools.base` — any new tool subclasses it and implements `async call(args) -> dict`
-- The infrastructure is there; it is just not wired into `main.py`
+- The `Tool` base class lives in `conversational_toolkit.tools.base`
 
-**How `RetrieveRelevantChunks` was prototyped (from the now-deleted `feature4_tool_agents.py`):**
-```python
-class RetrieveRelevantChunks(Tool):
-    def __init__(self, name, description, parameters, retriever):
-        ...
-    async def call(self, args):
-        chunks = await self.retriever.retrieve(args["query"])
-        return {"result": chunks_to_text(chunks)}  # formatted as ## Chunk {title}: ``` {content} ```
-```
-Wiring: instantiate with the active KB's retriever, register with `ToolAgent` at startup in `main.py`.
+**Three levels of agentic capability:**
 
-**Three levels of agentic capability identified in the notebooks:**
-
-1. **Agentic Mode toggle** — switch the backend from `CustomRAG` to `ToolAgent`, making retrieval optional. The model answers general questions without a vector store lookup, saving tokens and latency. Implement as a toggle in the RAG config panel.
-
+1. **Agentic Mode toggle** — switch the backend from `CustomRAG` to `ToolAgent`, making retrieval optional. Implement as a toggle in the RAG config panel.
 2. **Extended tool registration** — register additional tools (e.g. calculators, external lookups) with the production agent by subclassing `Tool` and registering at startup.
+3. **Multi-agent / subagent pattern** — wrap the RAG pipeline as a tool for a coordinator agent. Enables routing across multiple KBs by domain.
 
-3. **Multi-agent / subagent pattern** — wrap the RAG pipeline as a tool for a coordinator agent. Enables routing across multiple KBs (e.g. one subagent per domain). Lower priority; useful only once multi-KB usage becomes a real need.
-
-**Recommended first step:** implement the Agentic Mode toggle (level 1) — it is the highest-value change with the smallest footprint, and the existing `ToolAgent` class makes it straightforward.
+**Recommended first step:** implement the Agentic Mode toggle (level 1) — highest-value change with the smallest footprint, and the existing `ToolAgent` makes it straightforward.
 
 ---
 
@@ -807,7 +508,7 @@ Standard RAG retrieves isolated chunks. Graph-RAG builds a knowledge graph over 
 
 **Candidates to evaluate:**
 - [LightRAG](https://github.com/HKUDS/LightRAG) — lightweight graph-RAG framework; builds a KG from documents, hybrid graph + vector retrieval
-- [RAG-Anything](https://github.com/HKUDS/RAG-Anything) — multimodal extension of LightRAG; handles text, tables, images, and figures natively in the same graph
+- [RAG-Anything](https://github.com/HKUDS/RAG-Anything) — multimodal extension of LightRAG; handles text, tables, images, and figures natively
 
 **Questions to answer before committing:**
 - Does graph-RAG meaningfully improve answer quality on our target document types (technical specs, policy docs)?
@@ -815,26 +516,17 @@ Standard RAG retrieves isolated chunks. Graph-RAG builds a knowledge graph over 
 - Can it coexist with the current ChromaDB / BM25 hybrid, or does it replace the retrieval layer entirely?
 - How does it interact with our per-KB isolation model?
 
-**Suggested first step:** run LightRAG on the PrimePack demo dataset, compare retrieval quality on a set of multi-hop test questions against the current hybrid pipeline.
-
-
 ---
 
 ## Documentation
 
-### Add API Landscape and Description in Architecture
-
-**Done:** `docs/API_Endpoints.md` covers all current endpoints. `docs/ARCHITECTURE.md` references them.
-
 ### Interactive API Documentation with Example Payloads
 
-FastAPI auto-generates an OpenAPI schema and exposes a Swagger UI at `/docs` and ReDoc at `/redoc` — both are already live, but they show only field types and defaults, not realistic example payloads. Enriching the Pydantic models with `json_schema_extra` examples would make the Swagger UI directly useful for manual testing and integration work: a developer could open `/docs`, pick an endpoint, click "Try it out", and fire a real request against the running backend with a pre-filled example body.
+FastAPI auto-generates an OpenAPI schema and exposes a Swagger UI at `/docs` and ReDoc at `/redoc` — both are already live, but they show only field types and defaults, not realistic example payloads.
 
 **Scope:**
-
-- Add `model_config = ConfigDict(json_schema_extra={"examples": [...]})` to the key request models: `RagConfig`, `KBCreate`, `RetrieveRequest`, `MessageInput`, and `ChatCompletionRequest` — one realistic example payload per model is enough
-- The auto-generated response schemas are already complete; adding a few `response_description` strings to the route decorators improves readability
-- Consider locking `/docs` and `/redoc` behind the existing auth check for non-development deployments — currently anyone who knows the URL can browse and call the API without a passcode
+- Add `model_config = ConfigDict(json_schema_extra={"examples": [...]})` to the key request models: `RagConfig`, `KBCreate`, `RetrieveRequest`, `MessageInput`, `ChatCompletionRequest`
+- Consider locking `/docs` and `/redoc` behind the existing auth check for non-development deployments
 
 ---
 
@@ -847,48 +539,45 @@ FastAPI auto-generates an OpenAPI schema and exposes a Swagger UI at `/docs` and
 No urgent updates. The following are worth revisiting when there is a concrete reason:
 
 - **Tailwind CSS v3 → v4** — v4 replaces `tailwind.config.js` with a CSS-first config. Real migration effort, not a version bump. Only worth doing if a v4-specific feature is needed.
-- **React 18 → 19** — React 19 is stable. Gains are moderate for a chat app; breaking changes are mostly legacy API removals. Low risk, low urgency.
-- **`@types/node: ^20` → `^22`** — Node 22 is LTS. Trivial bump with no real risk.
+- **React 18 → 19** — React 19 is stable. Low urgency.
+- **`@types/node: ^20` → `^22`** — trivial bump.
 
 Minor/patch updates within existing major versions (`^` ranges in `package.json`) are picked up automatically by `npm update` and can be run periodically without concern.
 
 #### Python
 
-The pinned versions in `requirements.txt` are the higher-priority concern — they don't auto-update and can drift from security or bug fixes. Packages to watch:
+The pinned versions in `requirements.txt` are the higher-priority concern — they don't auto-update. Packages to watch:
 
 - **`docling`** — updates frequently, has had breaking changes between minor versions
 - **`chromadb`** — actively developed, API surface has shifted across releases
 - **`ollama`** — Python client tracks new Ollama features; worth updating alongside Ollama server upgrades
 
-Run `pip list --outdated` periodically and update these selectively. Avoid bulk upgrades — test retrieval and ingestion after any chromadb or docling bump.
+Run `pip list --outdated` periodically and update these selectively. Test retrieval and ingestion after any chromadb or docling bump.
 
 ### Refactor: Reduce Size of main.py
 
-Done: Extract ingestion pipeline from main.py
+Done: Extract ingestion pipeline from `main.py` into `ingestion.py`. Done: KBPool and DispatchingAgent extracted to `kb_pool.py`.
 
-Still, `main.py` has grown quite large. More potential optimizations need to be identified.
+`main.py` is still large. More potential extractions need to be identified — the `build_server()` function in particular has grown.
 
 **Not in scope:** wrapping `build_server` shared state in a class — larger refactor, more risk, deferred.
 
-### Performance: Source display lag after streaming
+### Performance: Source Display Lag After Streaming
 
 After the LLM finishes streaming, there is a noticeable delay before sources appear in the UI. Two contributing factors:
 
 1. **Large final chunk**: sources (full chunk text) are sent only in the last stream chunk, after the LLM finishes. For many or large sources this chunk is heavy.
-2. **Redundant GET call**: `onEnd` in `useMessaging.tsx` fires `conversationService.get(activeConversationId)` immediately after the stream closes. This hits `GET /api/v1/conversations/{id}` on our backend, which re-fetches every message in the conversation and does a sequential `await source_db.get_sources_by_message_id()` per message. The result then overwrites `setThread`, which is what actually renders the sources.
+2. **Redundant GET call**: `onEnd` in `useMessaging.tsx` fires `conversationService.get(activeConversationId)` immediately after the stream closes. This re-fetches every message in the conversation and does a sequential `await source_db.get_sources_by_message_id()` per message. The sources already arrive in the final stream chunk, so this GET call is redundant for display purposes.
 
-The sources already arrive in the final stream chunk, so the GET call is redundant for display purposes. The original intent appears to be refreshing the conversation sidebar title and confirming persistence — not fetching sources.
-
-**Possible directions** (needs design decision):
+**Possible directions:**
 - Drop `setThread` from the `onEnd` GET result; use it only for sidebar/title refresh
 - Move source fetching out of `get_conversation_by_id` into a separate on-demand endpoint
 - Send sources as a lightweight reference (id + filename only) in the stream, fetch full content lazily on click
 
-
 ### Implement Backup for Databases
 
-The backup logic in database.py only covers user_config.db. The new conversations.db has none.
+The backup logic in `database.py` only covers `user_config.db`. The `conversations.db` has none.
 
-_maybe_backup() is called from init_db() in database.py:70, which is only invoked for the config DB. The new SQLite module's create_table() methods just run CREATE TABLE IF NOT EXISTS via SQLAlchemy — no backup step anywhere.
+`_maybe_backup()` is called from `init_db()` in `database.py:70`, which is only invoked for the config DB. The SQLite module's `create_table()` methods just run `CREATE TABLE IF NOT EXISTS` via SQLAlchemy — no backup step anywhere.
 
-To fix this properly, the backup should run at startup in main.py, right after the SQLite engine is created and before create_table() is called — same pattern as user_config.db. Something like a small helper that does sqlite3.connect(src).backup(dst) on conversations.db if it exists and is older than 24h.
+To fix this properly, the backup should run at startup in `main.py`, right after the SQLite engine is created and before `create_table()` is called — same pattern as `user_config.db`. A small helper that does `sqlite3.connect(src).backup(dst)` on `conversations.db` if it exists and is older than 24h.
