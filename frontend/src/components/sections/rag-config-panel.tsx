@@ -402,6 +402,14 @@ export const RagConfigPanel: FunctionComponent = () => {
     const savedKbConfig = useRef<KBConfig>(DEFAULT_KB_CONFIG);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
 
+    // Pool status (loaded KBs, which are loading, embedding key)
+    const [poolStatus, setPoolStatus] = useState<{
+        loaded: string[];
+        loading: string[];
+        active: string | null;
+        emb_key: { backend: string; model: string } | null;
+    }>({ loaded: [], loading: [], active: null, emb_key: null });
+
     // LiteLLM dynamic model list
     const [litellmModels, setLitellmModels] = useState<string[]>([]);
     const [litellmLoading, setLitellmLoading] = useState(false);
@@ -595,15 +603,31 @@ export const RagConfigPanel: FunctionComponent = () => {
         return () => { active = false; clearInterval(id); };
     }, [t, fetchKbRegistry]);
 
+    useEffect(() => {
+        let active = true;
+        const poll = async () => {
+            try {
+                const r = await fetch(`${API_BASE}/api/v1/kb/pool`, { credentials: "include" });
+                if (r.ok && active) setPoolStatus(await r.json());
+            } catch { /* ignore */ }
+        };
+        poll();
+        const id = setInterval(poll, 2000);
+        return () => { active = false; clearInterval(id); };
+    }, []);
+
     useEffect(() => { if (showSaveAs) saveAsRef.current?.focus(); }, [showSaveAs]);
 
     // ── KB actions ────────────────────────────────────────────────────────────
 
     const switchKb = async (id: string) => {
         if (id === activeKb?.id) return;
+        const targetKb = kbRegistry?.bases[id];
+        const needsReset = targetKb && !isKbCompatible(targetKb);
         setStatus({ type: "loading", text: t("rag.statusSwitchingKb") });
         try {
-            const r = await fetch(`${API_BASE}/api/v1/kb/${id}/activate`, {
+            const qs = needsReset ? "?reset=true" : "";
+            const r = await fetch(`${API_BASE}/api/v1/kb/${id}/activate${qs}`, {
                 method: "POST", credentials: "include",
             });
             if (r.ok) {
@@ -832,6 +856,14 @@ export const RagConfigPanel: FunctionComponent = () => {
 
     const kbList = kbRegistry ? Object.values(kbRegistry.bases) : [];
 
+    const isKbCompatible = (kb: KBInfo): boolean => {
+        if (!poolStatus.emb_key) return true;
+        return kb.embedding_backend === poolStatus.emb_key.backend &&
+            kb.embedding_model === poolStatus.emb_key.model;
+    };
+
+    const kbLoading = poolStatus.loading.length > 0;
+
     // ── Per-section dirty flags (compared against last applied server state) ──
 
     const promptDirty =
@@ -915,12 +947,24 @@ export const RagConfigPanel: FunctionComponent = () => {
                     <select
                         value={activeKb?.id ?? ""}
                         onChange={(e) => switchKb(e.target.value)}
-                        className="flex-1 bg-muted border border-border text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
+                        disabled={kbLoading}
+                        className="flex-1 bg-muted border border-border text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors disabled:opacity-50 disabled:cursor-default"
                     >
-                        {kbList.map((kb) => (
-                            <option key={kb.id} value={kb.id}>{kb.name}</option>
-                        ))}
+                        {kbList.map((kb) => {
+                            const compatible = isKbCompatible(kb);
+                            return (
+                                <option
+                                    key={kb.id}
+                                    value={kb.id}
+                                    disabled={!compatible && !isAdmin}
+                                    style={!compatible && isAdmin ? { color: "#f87171" } : undefined}
+                                >
+                                    {kb.name}{!compatible && isAdmin ? " ⚠" : ""}
+                                </option>
+                            );
+                        })}
                     </select>
+                    {kbLoading && <Loader2 size={12} className="animate-spin text-muted-foreground flex-shrink-0" />}
                     <button
                         onClick={() => setKbForm("create")}
                         title={t("rag.kbCreateTitle")}
@@ -1477,7 +1521,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                 <div className="flex gap-2">
                     <button
                         onClick={() => reindex(false)}
-                        disabled={status.type === "loading" || isIndexing || !isAdmin}
+                        disabled={status.type === "loading" || isIndexing || !isAdmin || kbLoading}
                         title={isIndexing ? t("rag.btnAlreadyIndexingTitle") : t("rag.btnIncrementalTitle")}
                         className="flex-1 text-xs py-1.5 rounded font-medium bg-muted hover:bg-accent/20 text-foreground transition-colors disabled:opacity-40"
                     >
@@ -1485,7 +1529,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                     </button>
                     <button
                         onClick={() => setShowResetConfirm(true)}
-                        disabled={status.type === "loading" || isIndexing || !isAdmin}
+                        disabled={status.type === "loading" || isIndexing || !isAdmin || kbLoading}
                         title={isIndexing ? t("rag.btnAlreadyIndexingTitle") : t("rag.btnReindexTitle")}
                         className="flex-1 text-xs py-1.5 rounded font-medium bg-amber-700/60 hover:bg-amber-600/70 text-amber-200 transition-colors disabled:opacity-40"
                     >

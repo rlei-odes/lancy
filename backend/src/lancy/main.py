@@ -91,6 +91,7 @@ from lancy.ingestion import (
     run_ingestion,
     upload_worker,
 )
+from lancy.kb_pool import DispatchingAgent, EmbeddingConflict, KBPool
 from lancy.admin_router import create_admin_router, run_auto_cleanup
 from lancy.branding_router import create_branding_router
 from lancy.kb_router import KBInfo, create_kb_router
@@ -273,24 +274,6 @@ class CustomRAG(RAG):
             follow_up_questions=follow_up_questions,
             retrieval_stats=answer.retrieval_stats,
         )
-
-
-# ---------------------------------------------------------------------------
-# Hot-swap proxy — delegates all attribute access to a swappable inner object.
-# Used so the controller / retrievers keep their references while the KB changes.
-# ---------------------------------------------------------------------------
-class _Proxy:
-    def __init__(self, obj: object) -> None:
-        object.__setattr__(self, "_obj", obj)
-
-    def switch(self, obj: object) -> None:
-        object.__setattr__(self, "_obj", obj)
-
-    def __getattr__(self, name: str):
-        return getattr(object.__getattribute__(self, "_obj"), name)
-
-    def __setattr__(self, name: str, value) -> None:
-        setattr(object.__getattribute__(self, "_obj"), name, value)
 
 
 # ---------------------------------------------------------------------------
@@ -482,12 +465,8 @@ def build_server():
             vs_path=str(_DB_DIR / "vs_text"),
         )
 
-    # ── Initial components ────────────────────────────────────────────────
-    init_vs, init_agent, init_emb = _build_components(active_kb, session_cfg)
-    vs_proxy = _Proxy(init_vs)
-    agent_proxy = _Proxy(init_agent)
-    emb_proxy = _Proxy(init_emb)
-    _probe_bm25: BM25Retriever | None = None
+    # ── KB pool (initial load deferred to _startup so it runs in the async executor) ──
+    pool = KBPool()
 
     _secret_key = os.getenv("SECRET_KEY", "1234567890")
 
@@ -518,13 +497,21 @@ def build_server():
         _user_db = SQLiteUserDatabase(_db_engine)
         log.info(f"Conversation DB: SQLite ({_DB_DIR}/conversations.db)")
 
+    def _active_kb_id() -> str:
+        try:
+            return json.loads(kb_registry_path.read_text())["active"]
+        except Exception:
+            return active_kb.id
+
+    dispatching_agent = DispatchingAgent(pool, _conv_db, _active_kb_id)
+
     controller = ConversationalToolkitController(
         conversation_db=_conv_db,
         message_db=_msg_db,
         reaction_db=_react_db,
         source_db=_src_db,
         user_db=_user_db,
-        agent=agent_proxy,
+        agent=dispatching_agent,
     )
 
     # ── conversation_metadata_provider — injects active KB + config into new conversations ──
@@ -568,9 +555,7 @@ def build_server():
     )
 
     # ── KB Router ─────────────────────────────────────────────────────────
-    async def on_kb_activate(kb: KBInfo) -> None:
-        nonlocal _probe_bm25
-        log.info(f"KB switch → '{kb.name}' (id={kb.id})")
+    async def on_kb_activate(kb: KBInfo, reset: bool = False) -> None:
         try:
             cfg = (
                 RagConfig(**json.loads(session_cfg_path.read_text()))
@@ -579,12 +564,14 @@ def build_server():
             )
         except Exception:
             cfg = session_cfg
-        new_vs, new_agent, new_emb = _build_components(kb, cfg)
-        vs_proxy.switch(new_vs)
-        agent_proxy.switch(new_agent)
-        emb_proxy.switch(new_emb)
-        _probe_bm25 = None
-        log.info(f"Agent ready for KB '{kb.name}'")
+        if reset:
+            entry = await pool.reset(kb, cfg, _build_components)
+        else:
+            entry = await pool.load(kb, cfg, _build_components)  # raises EmbeddingConflict if incompatible
+        pool.set_active(kb.id)
+        base_prompt = cfg.system_prompt.strip() or _load_system_prompt()
+        await _inject_source_files(entry.agent, entry.vs, base_prompt)
+        log.info(f"KB '{kb.name}' ready in pool")
 
     async def _upload_cb(file_path: Path, kb: KBInfo, extra_metadata: dict) -> None:
         try:
@@ -595,9 +582,22 @@ def build_server():
             )
         except Exception:
             upload_cfg = session_cfg
+        entry = pool.get(kb.id)
+        if entry is not None:
+            vs = entry.vs
+        else:
+            # KB not in pool — open a standalone VS reference for the upload
+            _vs_type = getattr(kb, "vs_type", "chromadb") or "chromadb"
+            vs = make_vector_store(
+                vs_type=_vs_type,
+                db_path=Path(kb.vs_path) if _vs_type == "chromadb" else None,
+                embedding_model_name=kb.embedding_model,
+                vs_connection_string=getattr(kb, "vs_connection_string", "") or "",
+                table_name=f"rag_{kb.id.replace('-', '_')}",
+            )
         await enqueue_upload(
             file_path, kb, extra_metadata,
-            vs_proxy=vs_proxy, kb_router=kb_router, db_dir=_DB_DIR, db_engine=_db_engine, cfg=upload_cfg,
+            vs=vs, kb_router=kb_router, db_dir=_DB_DIR, db_engine=_db_engine, cfg=upload_cfg,
         )
 
     kb_router = create_kb_router(
@@ -605,6 +605,8 @@ def build_server():
         activate_callback=on_kb_activate,
         project_root=_ROOT,
         upload_callback=_upload_cb,
+        pool_status_factory=pool.status,
+        deactivate_callback=pool.unload,
     )
     app.include_router(kb_router)
 
@@ -643,19 +645,19 @@ def build_server():
                     error        TEXT
                 )
             """))
-        vs = object.__getattribute__(vs_proxy, "_obj")
-        agent = object.__getattribute__(agent_proxy, "_obj")
-        count = await vs.count()
+        entry = await pool.load(active_kb, session_cfg, _build_components)
+        pool.set_active(active_kb.id)
+        count = await entry.vs.count()
         if count > 0:
             try:
-                indexed_files = await vs.get_source_files()
+                indexed_files = await entry.vs.get_source_files()
                 n_files = len(indexed_files)
             except Exception:
                 indexed_files = []
                 n_files = 0
             kb_router.update_stats(active_kb.id, count, n_files)
             base_prompt = session_cfg.system_prompt.strip() or _load_system_prompt()
-            await _inject_source_files(agent, vs, base_prompt)
+            await _inject_source_files(entry.agent, entry.vs, base_prompt)
             log.info(f"Vector store loaded: {count} chunks from {n_files} files.")
         else:
             log.info("Vector store empty — use the UI to index a knowledge base.")
@@ -664,7 +666,6 @@ def build_server():
 
     # ── RAG Config / Reindex router ───────────────────────────────────────
     async def rebuild_callback(cfg: RagConfig, reset: bool) -> ReindexResult:
-        nonlocal _probe_bm25
         try:
             reg = json.loads(kb_registry_path.read_text())
             kb = KBInfo(**reg["bases"][reg["active"]])
@@ -683,25 +684,23 @@ def build_server():
                 reset=reset,
             )
 
-        # Rebuild so BM25 re-indexes new content
-        new_vs, new_agent, new_emb = _build_components(kb, cfg)
-        _probe_bm25 = None
+        # Rebuild pool entry so BM25 and source-file list are fresh
+        pool.unload(kb.id)
+        entry = await pool.load(kb, cfg, _build_components)
+        pool.set_active(kb.id)
         base_prompt = cfg.system_prompt.strip() or _load_system_prompt()
-        await _inject_source_files(new_agent, new_vs, base_prompt)
-        vs_proxy.switch(new_vs)
+        await _inject_source_files(entry.agent, entry.vs, base_prompt)
 
         # Use the actual VS total, not just the delta from this run.
         # When all files are already indexed (incremental run, nothing new),
         # chunks_n == 0, which would overwrite the correct count with 0.
         try:
-            total_count = await new_vs.count()
-            total_files = len(await new_vs.get_source_files())
+            total_count = await entry.vs.count()
+            total_files = len(await entry.vs.get_source_files())
         except Exception:
             total_count = chunks_n
             total_files = files_n
         kb_router.update_stats(kb.id, total_count, total_files)
-        agent_proxy.switch(new_agent)
-        emb_proxy.switch(new_emb)
 
         from datetime import datetime, timezone
 
@@ -717,18 +716,11 @@ def build_server():
         _index_status["finished_at"] = datetime.now(timezone.utc).isoformat()
         return result
 
-    def on_agent_rebuild(cfg: RagConfig) -> None:
-        nonlocal _probe_bm25
-        kb = kb_router.get_active_kb()
-        new_vs, new_agent, new_emb = _build_components(kb, cfg)
-        vs_proxy.switch(new_vs)
-        agent_proxy.switch(new_agent)
-        emb_proxy.switch(new_emb)
-        _probe_bm25 = None
-        log.info(f"Agent rebuilt with llm={cfg.llm_backend}/{cfg.llm_model}")
+    async def on_agent_rebuild(cfg: RagConfig) -> None:
+        await pool.rebuild_all_agents(cfg, _build_components)
+        log.info(f"All pool agents rebuilt with llm={cfg.llm_backend}/{cfg.llm_model}")
 
     async def retrieve_callback(req: RetrieveRequest) -> RetrieveResponse:
-        nonlocal _probe_bm25
         try:
             cfg = (
                 RagConfig(**json.loads(session_cfg_path.read_text()))
@@ -745,20 +737,26 @@ def build_server():
             else top_k + math.ceil(top_k * 0.4)
         )
 
+        active_entry = pool.get_active()
+        if active_entry is None:
+            return RetrieveResponse(chunks=[], top_k=top_k, total_returned=0, reranking_skipped=False)
+        vs = active_entry.vs
+        emb = pool.emb
+
         # Semantic retrieval — embed query and search VS directly
-        emb_vectors = await emb_proxy.get_embeddings(req.query)
-        sem_results = await vs_proxy.get_chunks_by_embedding(
+        emb_vectors = await emb.get_embeddings(req.query)
+        sem_results = await vs.get_chunks_by_embedding(
             emb_vectors[0], fetch_k, req.filters or None
         )
 
-        # BM25 retrieval — lazy-init and cache the retriever
+        # BM25 retrieval — lazy-init and cache per-KB retriever
         bm25_results: list = []
         if req.bm25_enabled:
-            if _probe_bm25 is None:
-                _probe_bm25 = BM25Retriever(vs_proxy, top_k=fetch_k)
+            if active_entry.probe_bm25 is None:
+                active_entry.probe_bm25 = BM25Retriever(vs, top_k=fetch_k)
             else:
-                _probe_bm25.top_k = fetch_k
-            bm25_results = await _probe_bm25.retrieve(req.query)
+                active_entry.probe_bm25.top_k = fetch_k
+            bm25_results = await active_entry.probe_bm25.retrieve(req.query)
             # Post-filter by source_file if requested (BM25 doesn't support native filters)
             if req.filters and req.filters.get("source_file"):
                 sf = req.filters["source_file"]
@@ -796,7 +794,7 @@ def build_server():
         pre_rerank_ranks: dict[str, int] = {}
         if req.reranking_enabled:
             try:
-                utility_llm = agent_proxy.utility_llm
+                utility_llm = dispatching_agent.utility_llm
                 candidates = [chunk_map[cid] for cid in ordered_ids if cid in chunk_map]
                 for i, cid in enumerate(ordered_ids):
                     pre_rerank_ranks[cid] = i + 1
@@ -840,7 +838,7 @@ def build_server():
     rag_router = create_rag_router(
         db_dir=_DB_DIR,
         prompts_dir=_PROMPTS_DIR,
-        vector_store_factory=lambda: vs_proxy,
+        vector_store_factory=lambda: pool.get_active().vs if pool.get_active() else None,
         rebuild_callback=rebuild_callback,
         status_factory=lambda: dict(_index_status),
         query_status_factory=lambda: dict(_query_status),
@@ -851,7 +849,7 @@ def build_server():
     app.include_router(rag_router)
 
     # ── OpenAI-compatible endpoint ────────────────────────────────────────
-    openai_router = create_openai_compat_router(agent_proxy)
+    openai_router = create_openai_compat_router(dispatching_agent)
     app.include_router(openai_router)
 
     # ── Admin API ─────────────────────────────────────────────────────────

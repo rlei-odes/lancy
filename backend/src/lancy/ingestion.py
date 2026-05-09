@@ -718,7 +718,7 @@ async def ingest_uploaded_file(
     kb: KBInfo,
     extra_metadata: dict,
     *,
-    vs_proxy: Any,
+    vs: Any,
     kb_router: Any,
     db_dir: Path,
     db_engine: Any = None,
@@ -751,7 +751,6 @@ async def ingest_uploaded_file(
 
     loop = asyncio.get_event_loop()
     try:
-        vs = object.__getattribute__(vs_proxy, "_obj")
         deleted = await vs.delete_chunks_by_document_id(document_id)
         if deleted:
             log.info(f"Removed {deleted} existing chunk(s) for document_id='{document_id}'")
@@ -858,7 +857,6 @@ async def ingest_uploaded_file(
         def _sync_embed_insert():
             new_loop = asyncio.new_event_loop()
             try:
-                vs_instance = object.__getattribute__(vs_proxy, "_obj")
                 return new_loop.run_until_complete(
                     build_vector_store(
                         chunks=text_chunks,
@@ -867,7 +865,7 @@ async def ingest_uploaded_file(
                         reset=False,
                         on_embed_progress=_on_embed_progress,
                         batch_size=kb.embedding_batch_size,
-                        vector_store=vs_instance,
+                        vector_store=vs,
                         existing_hashes=set(),  # replacement already handled above
                         use_task_prefix=kb.nomic_prefix,
                     )
@@ -983,7 +981,7 @@ async def enqueue_upload(
     kb: KBInfo,
     extra_metadata: dict,
     *,
-    vs_proxy: Any,
+    vs: Any,
     kb_router: Any,
     db_dir: Path,
     db_engine: Any = None,
@@ -991,18 +989,18 @@ async def enqueue_upload(
 ) -> None:
     """Queue a file for ingestion. Returns immediately; processing is serialised."""
     _index_status["queued"] = _upload_queue.qsize() + 1
-    await _upload_queue.put((file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir, db_engine, cfg))
+    await _upload_queue.put((file_path, kb, extra_metadata, vs, kb_router, db_dir, db_engine, cfg))
 
 
 async def upload_worker() -> None:
     """Drain the upload queue one file at a time. Start once at app startup."""
     while True:
-        file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir, db_engine, cfg = await _upload_queue.get()
+        file_path, kb, extra_metadata, vs, kb_router, db_dir, db_engine, cfg = await _upload_queue.get()
         _index_status["queued"] = _upload_queue.qsize()
         try:
             await ingest_uploaded_file(
                 file_path, kb, extra_metadata,
-                vs_proxy=vs_proxy,
+                vs=vs,
                 kb_router=kb_router,
                 db_dir=db_dir,
                 db_engine=db_engine,
