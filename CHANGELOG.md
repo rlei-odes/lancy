@@ -22,6 +22,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Selecting an incompatible KB as admin automatically passes `?reset=true` to the activate call — no confirmation dialog.
 - KB dropdown and reindex controls are disabled while the pool is loading a KB (polled every 2s via `GET /api/v1/kb/pool`); a spinner appears next to the selector.
 
+### Added — LLM Debug Mode
+
+- Admin-toggleable mode that logs all LLM input and output to `logs/llm_debug.log` — useful for diagnosing prompt issues, unexpected answers, or retrieval quality problems without touching code.
+- Each entry is timestamped and contains the full prompt (system prompt + conversation history + retrieved chunks) and the full response text.
+- State is in-memory only — resets on backend restart to avoid accidentally retaining sensitive content.
+- `POST /api/admin/llm-debug/enable` and `POST /api/admin/llm-debug/disable` endpoints (admin only); `GET /api/admin/llm-debug/status`.
+- Admin UI: on/off toggle with a warning that prompts and retrieved content will be written to disk; log viewer panel showing the last N entries, auto-refreshed every 5s while debug mode is active.
+
 ### Added — API Documentation
 
 - Swagger UI enabled at `/docs` (admin only) and ReDoc at `/redoc` (all authenticated users), proxied through Next.js.

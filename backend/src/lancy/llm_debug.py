@@ -94,11 +94,18 @@ class DebugLLM(LLM):
 
     async def generate_stream(self, conversation: list[LLMMessage]) -> AsyncGenerator[LLMMessage, None]:
         accumulated: list[str] = []
-        async for chunk in self._inner.generate_stream(conversation):
-            if _enabled:
-                for c in chunk.content:
-                    if c.text:
-                        accumulated.append(c.text)
-            yield chunk
-        if _enabled:
-            _write_entry(conversation, "".join(accumulated))
+        completed = False
+        try:
+            async for chunk in self._inner.generate_stream(conversation):
+                if _enabled:
+                    for c in chunk.content:
+                        if c.text:
+                            accumulated.append(c.text)
+                yield chunk
+            completed = True
+        finally:
+            if _enabled and accumulated:
+                text = "".join(accumulated)
+                if not completed:
+                    text += " [truncated — stream cancelled]"
+                _write_entry(conversation, text)

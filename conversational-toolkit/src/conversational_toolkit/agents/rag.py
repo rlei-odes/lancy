@@ -29,8 +29,6 @@ class RAG(Agent):
     RAG agent that retrieves document chunks before generating an answer.
 
     # TODO: LLM response is assumed to be text-only; image output from the model is not handled.
-    # TODO: Image sources are injected as USER role messages.
-    # TODO: Remove their concept of sources in their format XML
 
     Attributes:
         utility_llm: A (typically cheaper) LLM used for query rewriting and expansion. Kept separate so a fast model can handle preprocessing while a more capable model handles generation.
@@ -117,42 +115,32 @@ class RAG(Agent):
             )
             logger.info(f"Retrieval: {len(sources)} chunk(s) to LLM")
 
-        sources_list = []
+        context_message = LLMMessage(role=Roles.USER, content=[
+            MessageContent(type="text", text="<sources>"),
+        ])
 
         for source in sources:
             if "text" in source.mime_type:
-                sources_as_message = LLMMessage(role=Roles.USER, content=[])
-                sources_as_message.content.append(
+                context_message.content.append(
                     MessageContent(
                         type="text",
                         text=f"<source id='{source.id}' file='{source.metadata.get('source_file', '')}'>{source.content}</source>",
                     )
                 )
-                sources_list.append(sources_as_message)
-
             elif "image" in source.mime_type:
-                sources_as_message = LLMMessage(role=Roles.USER, content=[])
-                sources_as_message.content.append(
-                    MessageContent(
-                        type="text",
-                        text=f"<source id='{source.id}' file='{source.metadata.get('source_file', '')}' type='image'>",
-                    )
+                context_message.content.append(
+                    MessageContent(type="text", text=f"<source id='{source.id}' file='{source.metadata.get('source_file', '')}' type='image'>")
                 )
-                sources_as_message.content.append(
-                    MessageContent(
-                        type="image",
-                        image_url=source.content,
-                    )
+                context_message.content.append(
+                    MessageContent(type="image", image_url=source.content)
                 )
-                sources_as_message.content.append(
-                    MessageContent(
-                        type="text",
-                        text="</source>",
-                    )
+                context_message.content.append(
+                    MessageContent(type="text", text="</source>")
                 )
-                sources_list.append(sources_as_message)
             else:
                 raise ValueError(f"Unsupported MIME type: {source.mime_type}")
+
+        context_message.content.append(MessageContent(type="text", text=f"</sources>\n<user_question>\n{query}\n</user_question>"))
 
         response_stream = self.llm.generate_stream(
             [
@@ -161,11 +149,7 @@ class RAG(Agent):
                     content=[MessageContent(type="text", text=self.system_prompt)],
                 ),
                 *history,
-                *sources_list,
-                LLMMessage(
-                    role=Roles.USER,
-                    content=[MessageContent(type="text", text=query)],
-                ),
+                context_message,
             ]
         )
 

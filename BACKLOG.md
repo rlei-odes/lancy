@@ -309,22 +309,6 @@ Both require backend config storage plumbing that is already in place (`branding
 
 ---
 
-### LLM Debug Mode
-
-**Goal:** admin-toggleable mode that logs everything sent to and received from the LLM — useful for diagnosing prompt issues, unexpected answers, or retrieval quality problems without touching code.
-
-**Behaviour:**
-- Toggle via a button in the Admin page (or RAG Parameters panel); active state held in memory only — resets on backend restart
-- While active: each LLM call writes a timestamped entry to `logs/llm_debug.log` containing the full prompt (system prompt + conversation history + retrieved chunks) and the full response text
-- No persistence across restarts by design — avoids accidentally logging sensitive content long-term
-
-**Scope:**
-- Backend: a global `LLM_DEBUG` flag; hook into the `build_llm()` call or wrap the LLM instance with a thin logging shim
-- `POST /api/admin/llm-debug/enable` and `/disable` endpoints (admin only); `GET /api/admin/llm-debug/status`
-- Admin UI: simple on/off toggle with a visible warning that prompts and retrieved content will be written to disk
-
----
-
 ### Customisable Retrieval Prompts
 
 The query expansion, HyDE, and reranking prompts are currently hardcoded in Python. Unlike the system prompt (answer tone/format), these affect retrieval quality and could benefit from domain-specific tuning.

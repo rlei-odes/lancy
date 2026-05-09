@@ -405,7 +405,7 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
     agent = CustomRAG(
         llm=DebugLLM(llm),
         utility_llm=DebugLLM(utility_llm),
-        system_prompt=base_prompt,  # file list injected asynchronously after build
+        system_prompt=base_prompt,
         retrievers=all_retrievers,
         number_query_expansion=cfg.query_expansion,
         enable_hyde=cfg.hyde_enabled,
@@ -413,20 +413,6 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
     )
     return vs, agent, emb
 
-
-async def _inject_source_files(agent: Any, vs: VectorStore, base_prompt: str) -> None:
-    """Append the indexed file list to the agent's system prompt.
-    Called asynchronously after _build_components so the VectorStore abstraction is respected."""
-    try:
-        indexed_files = await vs.get_source_files()
-    except Exception:
-        return
-    if indexed_files:
-        file_list = "\n".join(f"- {f}" for f in indexed_files)
-        agent.system_prompt = (
-            base_prompt
-            + f"\n\nINDEXED FILES ({len(indexed_files)} files):\n{file_list}"
-        )
 
 
 
@@ -571,8 +557,6 @@ def build_server():
         else:
             entry = await pool.load(kb, cfg, _build_components)  # raises EmbeddingConflict if incompatible
         pool.set_active(kb.id)
-        base_prompt = cfg.system_prompt.strip() or _load_system_prompt()
-        await _inject_source_files(entry.agent, entry.vs, base_prompt)
         log.info(f"KB '{kb.name}' ready in pool")
 
     async def _upload_cb(file_path: Path, kb: KBInfo, extra_metadata: dict) -> None:
@@ -661,8 +645,6 @@ def build_server():
                 indexed_files = []
                 n_files = 0
             kb_router.update_stats(active_kb.id, count, n_files)
-            base_prompt = session_cfg.system_prompt.strip() or _load_system_prompt()
-            await _inject_source_files(entry.agent, entry.vs, base_prompt)
             log.info(f"Vector store loaded: {count} chunks from {n_files} files.")
         else:
             log.info("Vector store empty — use the UI to index a knowledge base.")
@@ -693,8 +675,6 @@ def build_server():
         pool.unload(kb.id)
         entry = await pool.load(kb, cfg, _build_components)
         pool.set_active(kb.id)
-        base_prompt = cfg.system_prompt.strip() or _load_system_prompt()
-        await _inject_source_files(entry.agent, entry.vs, base_prompt)
 
         # Use the actual VS total, not just the delta from this run.
         # When all files are already indexed (incremental run, nothing new),
