@@ -28,6 +28,27 @@ echo "==> Installing Python dependencies..."
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt
 
+echo "==> Pre-downloading embedding models to HuggingFace cache..."
+echo "    (backend runs with HF_HUB_OFFLINE=1 — models must be cached before first use)"
+.venv/bin/python - <<'EOF'
+from sentence_transformers import SentenceTransformer
+
+MODELS = [
+    ("nomic-ai/nomic-embed-text-v1",          {"trust_remote_code": True}),
+    ("intfloat/multilingual-e5-large",         {}),
+    ("BAAI/bge-m3",                            {}),
+    ("sentence-transformers/all-MiniLM-L6-v2", {}),
+]
+
+for name, kwargs in MODELS:
+    try:
+        print(f"  Downloading {name}...")
+        SentenceTransformer(name, **kwargs)
+        print(f"  OK: {name}")
+    except Exception as exc:
+        print(f"  WARN: {name} — {exc}")
+EOF
+
 echo ""
 echo "Install complete."
 echo ""

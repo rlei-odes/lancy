@@ -671,9 +671,17 @@ def build_server():
         except Exception:
             kb = active_kb
 
-        chunks_n, files_n, skipped_store_n, skipped_batch_n = await run_ingestion(
-            kb, reset, db_dir=_DB_DIR, cfg=cfg, db_engine=_db_engine
-        )
+        try:
+            chunks_n, files_n, skipped_store_n, skipped_batch_n = await run_ingestion(
+                kb, reset, db_dir=_DB_DIR, cfg=cfg, db_engine=_db_engine
+            )
+        except RuntimeError as exc:
+            log.error(f"Ingestion failed for KB '{kb.name}': {exc}")
+            return ReindexResult(
+                chunks_indexed=0, files_processed=0,
+                files_skipped=0, files_skipped_store=0, files_skipped_batch=0,
+                reset=reset,
+            )
 
         # Rebuild so BM25 re-indexes new content
         new_vs, new_agent, new_emb = _build_components(kb, cfg)
