@@ -453,6 +453,14 @@ export const RagConfigPanel: FunctionComponent = () => {
                 setActiveKb(kb);
                 sessionStorage.setItem("lancy_selected_kb_id", kb.id);
                 sessionStorage.setItem("lancy_selected_kb_name", kb.name);
+                // Ensure the KB is in the pool. If it's already loaded this is a fast no-op.
+                // Required when the session restores a KB that differs from the server's active
+                // (e.g. after a server restart, or first load with two users on different KBs).
+                if (kb.id !== reg.active) {
+                    fetch(`${API_BASE}/api/v1/kb/${kb.id}/activate`, {
+                        method: "POST", credentials: "include",
+                    }).catch(() => { /* pool load is best-effort on mount */ });
+                }
                 const kbCfg = kbInfoToConfig(kb);
                 setKbConfig(kbCfg);
                 savedKbConfig.current = kbCfg;

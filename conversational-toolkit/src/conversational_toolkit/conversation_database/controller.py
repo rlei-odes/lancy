@@ -199,6 +199,7 @@ class ConversationalToolkitController:
                         LLMMessage(role=message.role, content=[MessageContent(type="text", text=message.content)])
                         for message in sorted(thread, key=lambda m: m.create_timestamp)
                     ],
+                    conversation_id=conversation.id,
                 )
             )
 
