@@ -44,9 +44,9 @@ export const app = {
         twoWeeksAgo: "Vor zwei Wochen",
     },
     suggestions: [
-        { text: "Zusammenfassen:", subtext: "alle Dokumente in der Wissensdatenbank" },
-        { text: "Vergleichen", subtext: "Sie die Dokumente miteinander" },
-        { text: "Welche offenen Fragen", subtext: "bleiben in den Dokumenten?" },
+        { text: "Was sagt die Wissensdatenbank über", subtext: "Blumen und Gartenarbeit?" },
+        { text: "Welche Schlussfolgerungen lassen sich zu", subtext: "erneuerbaren Energien ziehen?" },
+        { text: "Wie wird", subtext: "Softwareentwicklung in den Dokumenten beschrieben?" },
         { text: "Was sind die wichtigsten", subtext: "Risiken in diesem Projekt?" },
     ],
     suggestionTemplates: [

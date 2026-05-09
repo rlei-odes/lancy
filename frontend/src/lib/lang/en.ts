@@ -44,9 +44,9 @@ export const app = {
         twoWeeksAgo: "Two weeks ago",
     },
     suggestions: [
-        { text: "Summarise:", subtext: "all documents in the knowledge base" },
-        { text: "Compare", subtext: "the documents with each other" },
-        { text: "What open questions", subtext: "remain in the documents?" },
+        { text: "What does the knowledge base say about", subtext: "flowers and gardening?" },
+        { text: "What conclusions can be drawn about", subtext: "renewable energy?" },
+        { text: "How is", subtext: "software development described in the documents?" },
         { text: "What are the main", subtext: "risks in this project?" },
     ],
     suggestionTemplates: [

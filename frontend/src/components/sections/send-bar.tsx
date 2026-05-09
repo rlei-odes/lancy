@@ -31,11 +31,20 @@ export const SendBar: FunctionComponent = () => {
         }
     }, [sessionLabel]);
 
-    useEffect(() => {
-        fetch(`${API_BASE}/api/v1/rag/store-info`, { credentials: "include" })
+    const fetchKbFiles = (kbId?: string) => {
+        const qs = kbId ? `?kb_id=${encodeURIComponent(kbId)}` : "";
+        fetch(`${API_BASE}/api/v1/rag/store-info${qs}`, { credentials: "include" })
             .then((r) => r.ok ? r.json() : null)
             .then((d) => { if (d?.file_list?.length) setKbFiles(d.file_list); })
             .catch(() => {});
+    };
+
+    useEffect(() => {
+        const kbId = sessionStorage.getItem("lancy_selected_kb_id") ?? undefined;
+        fetchKbFiles(kbId);
+        const handler = (e: Event) => fetchKbFiles((e as CustomEvent).detail?.kbId);
+        window.addEventListener("lancy-kb-changed", handler);
+        return () => window.removeEventListener("lancy-kb-changed", handler);
     }, []);
 
     const showSuggestions = !loading && !thread.length;

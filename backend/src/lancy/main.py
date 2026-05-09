@@ -839,6 +839,7 @@ def build_server():
         db_dir=_DB_DIR,
         prompts_dir=_PROMPTS_DIR,
         vector_store_factory=lambda: pool.get_active().vs if pool.get_active() else None,
+        vs_by_kb_factory=lambda kb_id: pool.get(kb_id).vs if pool.get(kb_id) else None,
         rebuild_callback=rebuild_callback,
         status_factory=lambda: dict(_index_status),
         query_status_factory=lambda: dict(_query_status),

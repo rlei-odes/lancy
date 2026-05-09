@@ -453,6 +453,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                 setActiveKb(kb);
                 sessionStorage.setItem("lancy_selected_kb_id", kb.id);
                 sessionStorage.setItem("lancy_selected_kb_name", kb.name);
+                window.dispatchEvent(new CustomEvent("lancy-kb-changed", { detail: { kbId: kb.id } }));
                 // Ensure the KB is in the pool. If it's already loaded this is a fast no-op.
                 // Required when the session restores a KB that differs from the server's active
                 // (e.g. after a server restart, or first load with two users on different KBs).
@@ -647,6 +648,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                 setActiveKb(kb);
                 sessionStorage.setItem("lancy_selected_kb_id", kb.id);
                 sessionStorage.setItem("lancy_selected_kb_name", kb.name);
+                window.dispatchEvent(new CustomEvent("lancy-kb-changed", { detail: { kbId: kb.id } }));
                 const kbCfg = kbInfoToConfig(kb);
                 setKbConfig(kbCfg);
                 savedKbConfig.current = kbCfg;
