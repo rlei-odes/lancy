@@ -17,4 +17,8 @@ class MarkdownChunker(PDFChunker):
         image_path: str | None = None,
         **kwargs,  # absorb PDF-specific params (e.g. do_ocr) passed by parent make_chunks
     ) -> str:
-        return Path(file_path).read_text(encoding="utf-8")
+        path = Path(file_path)
+        try:
+            return path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            return path.read_text(encoding="latin-1")

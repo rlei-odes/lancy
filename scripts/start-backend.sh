@@ -50,6 +50,7 @@ fi
 # --- Backend ---
 echo "Starting Lancy backend on port $PORT..."
 PYTHONPATH="$REPO/backend/src" \
+  HF_HUB_OFFLINE=1 \
   "$VENV/bin/python" -m lancy.main \
   > "$LOG_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!

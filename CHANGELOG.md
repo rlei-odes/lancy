@@ -5,6 +5,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.3.2] — 2026-05-08 · rlei-odes
+
+### Added — Ingestion Event Log
+
+- Per-file audit trail for every upload-API ingestion attempt. Each attempt writes one row to the `ingest_events` table (same DB as conversations — SQLite or Postgres) with status, chunk count, file size, duration, and error message.
+- Statuses: `success`, `crashed` (glibc heap corruption or unhandled exception), `timeout` (chunking subprocess exceeded scaled limit), `no_chunks` (file processed but produced nothing indexable).
+- `GET /api/admin/ingest-events` endpoint with `kb_id`, `status`, `days`, `limit`, `offset` filters.
+- **Ingestion Log tab** in the Admin page: paginated table (KB · filename · status · chunks · size · duration · timestamp · error), filterable by KB, status, and time window.
+- Re-index and Incremental Indexing now write to the Ingestion Log and scan KB directories recursively.
+- Task-specific embedding prefixes extended to intfloat E5 models (`passage:` / `query:`); toggle greyed out for unsupported models.
+
+### Fixed
+
+- Done banner no longer re-appears on navigation back to the main page after it has faded out.
+- Plain-text files with non-UTF-8 encoding (e.g. ISO-8859) no longer ingest as empty.
+- NFC Unicode normalization applied to all extracted text.
+
+---
+
 ## [Lancy v0.3.1] — 2026-05-03 · rlei-odes
 
 ### Changed — Preset protection levels and clean per-user isolation

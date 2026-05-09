@@ -3,6 +3,32 @@
 Planned improvements and feature work for the Lancy fork.
 Items are grouped by theme and roughly prioritised within each section.
 
+## Multi-KB Concurrent Retrieval
+
+### Per-User KB Selection (same-embedding constraint)
+
+**Goal:** allow multiple users to query different KBs simultaneously, rather than sharing a single globally active KB.
+
+**Constraint:** KBs available for concurrent use must share the same embedding model (backend + model name). This avoids loading multiple large embedding models into GPU memory at once. KBs with different embedding configurations continue to work but cannot be selected alongside incompatible ones.
+
+**Scope:**
+
+- Replace the single global `(vs, agent, emb)` in `main.py` with a pool: `dict[kb_id → (vs, agent)]` sharing one `emb` instance
+- KB "activation" becomes "load into pool" — a KB is loaded on first selection and stays resident
+- Query endpoint (`/api/v1/rag/chat` or equivalent) accepts a `kb_id` parameter; requests are routed to the corresponding agent
+- Group KBs in the UI by embedding compatibility; only KBs sharing the active embedding configuration are selectable for concurrent use — others remain available but require a full reload (breaking the shared-emb assumption)
+- "Active KB" becomes a per-session concept in the frontend rather than a global server-side setting
+
+**Open questions:**
+- Eviction policy for the pool (unload least-recently-used KB when memory pressure is high?)
+- How to surface embedding-incompatible KBs in the UI without confusing users — greyed out with a tooltip, or a separate "switch context" flow that warns about the reload cost?
+
+**Needed Improvements:**
+- During KB change, the RAG Panel sidebar allows changes to be made. This needs to be prevented
+- During KB change, we frequently get "Backend not responding" message
+
+---
+
 ## Known Bugs
 
 ### Low Source Citation Count
@@ -215,6 +241,58 @@ Three configurable strategies, selectable per session or preset:
 - Source citations in the chat show the document date when available — lets users judge recency themselves even when no penalty is applied
 
 **Scope note:** this feature is complementary to the versioning/replacement system above — that handles explicit document supersession; this handles implicit age-based preference for live corpora where old documents are never explicitly removed.
+
+---
+
+### Ingestion Event Log — Persistent Per-File Audit Trail
+
+**Goal:** persist the outcome of every upload-API ingestion attempt (success, crash, timeout, skip, no-chunks) so admins can audit bulk runs after the fact rather than parsing `backend.log`.
+
+**Why:** the upload API responds immediately with `{"started": true}` — the caller has no way to know the final outcome. After a bulk run of hundreds of files some may have silently crashed or timed out. Currently the only record is in `logs/backend.log`, which is not queryable.
+
+**Schema** — one table, one row per attempt:
+
+```sql
+CREATE TABLE IF NOT EXISTS ingest_events (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts            TEXT NOT NULL,           -- ISO timestamp (UTC)
+    kb_id         TEXT NOT NULL,
+    document_id   TEXT NOT NULL,
+    filename      TEXT NOT NULL,
+    status        TEXT NOT NULL,           -- success | crashed | timeout | skipped_dedup | no_chunks
+    chunks        INTEGER,                 -- null on failure
+    file_size_mb  REAL,
+    duration_ms   INTEGER,
+    error         TEXT                     -- null on success
+)
+```
+
+**Write points in `ingestion.py`:**
+- End of `ingest_uploaded_file` success path
+- `TimeoutError` handler (subprocess hung > 600s)
+- `BrokenExecutor` handler (glibc crash)
+- `no_chunks` early return
+- Outer exception handler in the upload worker (any other failure)
+
+**Admin API** — one new endpoint in `admin_router.py`:
+`GET /api/admin/ingest-events?kb_id=&status=&days=&limit=200&offset=0`
+
+**Admin UI** — new "Ingestion Log" tab in the admin page. Table view: KB · filename · status (colour-coded) · chunks · file size · duration · timestamp. Filterable by KB dropdown and status. Paginated for large runs.
+
+**What the upload caller gets:** the existing upload API contract (`{"started": true}`) stays unchanged. Admins review outcomes in the log after the batch finishes. Optionally `GET /api/admin/ingest-events?document_id=<id>` can be used to poll a specific file's result programmatically.
+
+**DB file — separate `ingest_events.db` vs `conversations.db`:**
+
+Using `conversations.db` is tempting because the admin router already connects to it for usage and performance stats. However, a dedicated `ingest_events.db` is the better call:
+
+- `ingestion.py` currently has no dependency on the conversations DB — adding one couples two independent subsystems. A dedicated DB avoids that import.
+- The ingestion pipeline runs in a different context (including from subprocess workers) — keeping its persistence isolated is cleaner.
+- Backup, archival, and eventual size growth of ingest events are independent of conversation history. A bulk run of thousands of documents can generate thousands of rows; this should not affect conversation query performance.
+- If the user wants to clear/archive old conversations, ingest history is unaffected and vice versa.
+
+The admin router simply opens both files, same pattern as any other SQLite read.
+
+**Scope boundary:** full-reindex runs (the blue reindex button) are not covered in the first pass — `ReindexResult` already surfaces aggregate counts for those. This feature targets the upload API path where per-file outcomes are currently invisible.
 
 ---
 

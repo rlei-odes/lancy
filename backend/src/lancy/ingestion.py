@@ -5,6 +5,8 @@ import hashlib
 import io
 import logging
 import multiprocessing
+import os
+import signal
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -108,11 +110,47 @@ def _get_chunking_pool() -> concurrent.futures.ProcessPoolExecutor:
 def _reset_chunking_pool() -> None:
     global _chunking_pool
     if _chunking_pool is not None:
+        # Kill running subprocesses immediately so they don't linger holding GPU memory.
+        # shutdown(wait=False, cancel_futures=True) only cancels *pending* futures, not
+        # already-running ones — the subprocess keeps going unless we SIGKILL it.
+        try:
+            for pid in list(_chunking_pool._processes.keys()):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        except Exception:
+            pass
         try:
             _chunking_pool.shutdown(wait=False, cancel_futures=True)
         except Exception:
             pass
         _chunking_pool = None
+
+
+# ---------------------------------------------------------------------------
+# Embedding model cache — keep one loaded instance per (backend, model_name)
+# so it isn't reloaded from GPU on every document. Cleared on KB switch.
+# ---------------------------------------------------------------------------
+_emb_cache: dict[tuple, Any] = {}
+_emb_cache_key: tuple = ()
+
+
+def _get_cached_embedding_model(kb) -> Any:
+    global _emb_cache, _emb_cache_key
+    key = (kb.embedding_backend, kb.embedding_model, kb.embedding_ollama_host,
+           kb.embedding_custom_base_url)
+    if key != _emb_cache_key or not _emb_cache:
+        _emb_cache.clear()
+        _emb_cache[key] = build_embedding_model(
+            kb.embedding_backend,
+            kb.embedding_model,
+            ollama_host=kb.embedding_ollama_host or "",
+            custom_base_url=kb.embedding_custom_base_url or "",
+            custom_api_key=kb.embedding_custom_api_key or "",
+        )
+        _emb_cache_key = key
+    return _emb_cache[key]
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +339,7 @@ def cancel_indexing() -> None:
 
 
 async def run_ingestion(
-    kb: KBInfo, reset: bool, db_dir: Path, cfg: RagConfig | None = None
+    kb: KBInfo, reset: bool, db_dir: Path, cfg: RagConfig | None = None, db_engine: Any = None
 ) -> tuple[int, int, int, int]:
     """Chunk + embed all files in kb.data_dirs.
 
@@ -391,7 +429,7 @@ async def run_ingestion(
 
         # Pre-pass: collect candidates, hash them, apply dedup filters.
         # File hashing reads entire file bytes — blocking I/O, run in executor.
-        def _prepass() -> tuple[list[Path], dict[Path, str], int, int]:
+        def _prepass() -> tuple[list[Path], dict[Path, str], int, int, list[Path], list[Path]]:
             candidates = _collect_candidate_files(
                 data_dirs,
                 max_file_size_mb=kb.max_file_size_mb,
@@ -402,6 +440,8 @@ async def run_ingestion(
                 hashes[f] = file_hash(f)
 
             filtered: list[Path] = []
+            skipped_store: list[Path] = []
+            skipped_batch: list[Path] = []
             seen_hashes: set[str] = set()
             n_skipped_store = 0
             n_skipped_batch = 0
@@ -411,11 +451,13 @@ async def run_ingestion(
                 if h in existing_hashes:
                     log.info(f"Skipping {f.name!r} — already in store (hash={h[:8]}…)")
                     n_skipped_store += 1
+                    skipped_store.append(f)
                 elif h in seen_hashes:
                     log.warning(
                         f"Skipping {f.name!r} — duplicate content in batch (hash={h[:8]}…)"
                     )
                     n_skipped_batch += 1
+                    skipped_batch.append(f)
                 else:
                     seen_hashes.add(h)
                     filtered.append(f)
@@ -425,13 +467,15 @@ async def run_ingestion(
                 f"{n_skipped_store} already in store, "
                 f"{n_skipped_batch} duplicate in batch"
             )
-            return filtered, hashes, n_skipped_store, n_skipped_batch
+            return filtered, hashes, n_skipped_store, n_skipped_batch, skipped_store, skipped_batch
 
         (
             filtered_files,
             file_hashes_map,
             n_skipped_store,
             n_skipped_batch,
+            skipped_store_files,
+            skipped_batch_files,
         ) = await loop.run_in_executor(None, _prepass)
 
         if not filtered_files:
@@ -480,13 +524,19 @@ async def run_ingestion(
                 "skipping captioning. Re-index via the UI to caption images."
             )
 
-        emb = build_embedding_model(
-            kb.embedding_backend,
-            kb.embedding_model,
-            ollama_host=kb.embedding_ollama_host or "",
-            custom_base_url=kb.embedding_custom_base_url or "",
-            custom_api_key=kb.embedding_custom_api_key or "",
-        )
+        try:
+            emb = build_embedding_model(
+                kb.embedding_backend,
+                kb.embedding_model,
+                ollama_host=kb.embedding_ollama_host or "",
+                custom_base_url=kb.embedding_custom_base_url or "",
+                custom_api_key=kb.embedding_custom_api_key or "",
+            )
+        except OSError as exc:
+            raise RuntimeError(
+                f"Embedding model '{kb.embedding_model}' is not in the local cache. "
+                "Pre-download it on the server before indexing (HF_HUB_OFFLINE is enabled)."
+            ) from exc
         _index_status["phase"] = "embedding"
 
         def _on_embed_progress(batch_idx: int, total_batches: int) -> None:
@@ -523,6 +573,7 @@ async def run_ingestion(
                         batch_size=kb.embedding_batch_size,
                         vector_store=vs_instance,
                         existing_hashes=existing_hashes,
+                        use_task_prefix=kb.nomic_prefix,
                     )
                 )
             finally:
@@ -567,6 +618,7 @@ async def run_ingestion(
                             vector_store=image_vs,
                             reset=reset,
                             existing_hashes=existing_image_hashes,
+                            use_task_prefix=False,
                         )
                     )
                 finally:
@@ -583,6 +635,29 @@ async def run_ingestion(
             f"{n_skipped_store} skipped (already in store), "
             f"{n_skipped_batch} skipped (duplicate in batch)"
         )
+
+        if db_engine is not None:
+            chunks_per_file: dict[str, int] = {}
+            for c in chunks:
+                src = c.metadata.get("source_file", "")
+                chunks_per_file[src] = chunks_per_file.get(src, 0) + 1
+            for f in filtered_files:
+                status = "ok" if f.name in chunks_per_file else "no_chunks"
+                size_mb = round(f.stat().st_size / (1024 * 1024), 3)
+                await _write_ingest_event(
+                    db_engine, kb.id, f.name, f.name, status,
+                    chunks=chunks_per_file.get(f.name, 0), file_size_mb=size_mb,
+                )
+            for f in skipped_store_files:
+                size_mb = round(f.stat().st_size / (1024 * 1024), 3)
+                await _write_ingest_event(
+                    db_engine, kb.id, f.name, f.name, "skipped", file_size_mb=size_mb,
+                )
+            for f in skipped_batch_files:
+                size_mb = round(f.stat().st_size / (1024 * 1024), 3)
+                await _write_ingest_event(
+                    db_engine, kb.id, f.name, f.name, "skipped_duplicate", file_size_mb=size_mb,
+                )
         if text_chunks:
             try:
                 write_kb_stats(
@@ -605,6 +680,39 @@ async def run_ingestion(
         _index_status["indexing"] = False
 
 
+async def _write_ingest_event(
+    db_engine: Any,
+    kb_id: str,
+    document_id: str,
+    filename: str,
+    status: str,
+    *,
+    chunks: int | None = None,
+    file_size_mb: float | None = None,
+    duration_ms: int | None = None,
+    error: str | None = None,
+) -> None:
+    try:
+        from sqlalchemy import text as _sa_text
+        ts = datetime.now(timezone.utc).isoformat()
+        async with db_engine.begin() as conn:
+            await conn.execute(
+                _sa_text(
+                    "INSERT INTO ingest_events "
+                    "(ts, kb_id, document_id, filename, status, chunks, file_size_mb, duration_ms, error) "
+                    "VALUES (:ts, :kb_id, :document_id, :filename, :status, :chunks, :file_size_mb, :duration_ms, :error)"
+                ),
+                {
+                    "ts": ts, "kb_id": kb_id, "document_id": document_id,
+                    "filename": filename, "status": status,
+                    "chunks": chunks, "file_size_mb": file_size_mb,
+                    "duration_ms": duration_ms, "error": error,
+                },
+            )
+    except Exception as exc:
+        log.warning(f"Failed to write ingest event: {exc}")
+
+
 async def ingest_uploaded_file(
     file_path: Path,
     kb: KBInfo,
@@ -613,6 +721,7 @@ async def ingest_uploaded_file(
     vs_proxy: Any,
     kb_router: Any,
     db_dir: Path,
+    db_engine: Any = None,
     cfg: RagConfig | None = None,
 ) -> None:
     """Ingest a single uploaded file into the active KB, then delete the temp file.
@@ -621,10 +730,14 @@ async def ingest_uploaded_file(
     Called by the upload worker — never call directly from request handlers.
     """
     document_id: str = extra_metadata["document_id"]
+    source_name = extra_metadata.get("source_file", file_path.name)
+    _ingest_start = datetime.now(timezone.utc)
+    _size_mb: float | None = None
+    _event_written = False
     _index_status.update({
         "indexing": True,
         "phase": "loading",
-        "current_file": extra_metadata.get("source_file", file_path.name),
+        "current_file": source_name,
         "file_index": 0,
         "total_files": 1,
         "chunks_so_far": 0,
@@ -646,9 +759,9 @@ async def ingest_uploaded_file(
         h = await loop.run_in_executor(None, lambda: file_hash(file_path))
 
         size_mb = file_path.stat().st_size / 1_048_576
+        _size_mb = size_mb
         ram_gb = _available_ram_gb()
         ram_info = f", {ram_gb:.1f} GB RAM free" if ram_gb is not None else ""
-        source_name = extra_metadata.get("source_file", file_path.name)
         if size_mb > 50:
             log.warning(
                 f"Large file upload: '{source_name}' is {size_mb:.1f} MB{ram_info} "
@@ -664,17 +777,36 @@ async def ingest_uploaded_file(
             getattr(kb, "max_chunk_tokens", 0),
             kb.image_indexing_enabled or kb.image_captioning_enabled,
         )
+        # Scale timeout with file size: large documents need proportionally more time.
+        # Floor of 600s; ~60s per MB above that (19 MB → ~1140s, 50 MB → 3000s).
+        chunk_timeout = max(600, int(size_mb * 60))
         try:
-            chunks = await loop.run_in_executor(None, lambda: future.result(timeout=600))
+            chunks = await loop.run_in_executor(None, lambda: future.result(timeout=chunk_timeout))
         except concurrent.futures.TimeoutError:
             log.error(
-                f"Chunking subprocess timed out after 600s for '{source_name}' — "
+                f"Chunking subprocess timed out after {chunk_timeout}s for '{source_name}' — "
                 "killing worker pool. Backend is safe; upload skipped."
             )
             _reset_chunking_pool()
+            if db_engine is not None:
+                _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
+                await _write_ingest_event(
+                    db_engine, kb.id, document_id, source_name, "timeout",
+                    file_size_mb=_size_mb, duration_ms=_ms,
+                    error=f"Chunking timed out after {chunk_timeout}s",
+                )
+                _event_written = True
             raise RuntimeError(f"Chunking timed out for '{source_name}'")
         except concurrent.futures.BrokenExecutor:
             _reset_chunking_pool()
+            if db_engine is not None:
+                _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
+                await _write_ingest_event(
+                    db_engine, kb.id, document_id, source_name, "crashed",
+                    file_size_mb=_size_mb, duration_ms=_ms,
+                    error="Chunking subprocess crashed (glibc heap corruption)",
+                )
+                _event_written = True
             raise RuntimeError(
                 f"Chunking subprocess crashed for '{source_name}' — "
                 "glibc heap corruption in docling native code. "
@@ -684,6 +816,12 @@ async def ingest_uploaded_file(
 
         if not chunks:
             log.warning(f"No chunks produced from uploaded file '{file_path.name}'")
+            if db_engine is not None:
+                _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
+                await _write_ingest_event(
+                    db_engine, kb.id, document_id, source_name, "no_chunks",
+                    chunks=0, file_size_mb=_size_mb, duration_ms=_ms,
+                )
             return
 
         for chunk in chunks:
@@ -711,13 +849,7 @@ async def ingest_uploaded_file(
                 "skipping captioning for this upload."
             )
 
-        emb = build_embedding_model(
-            kb.embedding_backend,
-            kb.embedding_model,
-            ollama_host=kb.embedding_ollama_host or "",
-            custom_base_url=kb.embedding_custom_base_url or "",
-            custom_api_key=kb.embedding_custom_api_key or "",
-        )
+        emb = _get_cached_embedding_model(kb)
         _index_status["phase"] = "embedding"
 
         def _on_embed_progress(batch_idx: int, total_batches: int) -> None:
@@ -737,12 +869,14 @@ async def ingest_uploaded_file(
                         batch_size=kb.embedding_batch_size,
                         vector_store=vs_instance,
                         existing_hashes=set(),  # replacement already handled above
+                        use_task_prefix=kb.nomic_prefix,
                     )
                 )
             finally:
                 new_loop.close()
 
         await loop.run_in_executor(None, _sync_embed_insert)
+        _clear_cuda_cache()  # release GPU memory held by embedding between documents
 
         if kb.image_indexing_enabled and image_chunks:
             vs_type = getattr(kb, "vs_type", "chromadb") or "chromadb"
@@ -777,6 +911,7 @@ async def ingest_uploaded_file(
                             vector_store=image_vs,
                             reset=False,
                             existing_hashes=set(),
+                            use_task_prefix=False,
                         )
                     )
                 finally:
@@ -821,8 +956,22 @@ async def ingest_uploaded_file(
             f"Upload ingest complete: {len(chunks)} chunks from '{file_path.name}' "
             f"(document_id='{document_id}')"
         )
+        if db_engine is not None:
+            _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
+            await _write_ingest_event(
+                db_engine, kb.id, document_id, source_name, "success",
+                chunks=len(chunks), file_size_mb=_size_mb, duration_ms=_ms,
+            )
+            _event_written = True
     except Exception as exc:
         log.error(f"Upload ingestion failed for '{file_path.name}': {exc!r}")
+        if db_engine is not None and not _event_written:
+            _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
+            await _write_ingest_event(
+                db_engine, kb.id, document_id, source_name, "crashed",
+                file_size_mb=_size_mb, duration_ms=_ms,
+                error=str(exc)[:500],
+            )
         raise
     finally:
         _index_status["indexing"] = False
@@ -837,17 +986,18 @@ async def enqueue_upload(
     vs_proxy: Any,
     kb_router: Any,
     db_dir: Path,
+    db_engine: Any = None,
     cfg: RagConfig | None = None,
 ) -> None:
     """Queue a file for ingestion. Returns immediately; processing is serialised."""
     _index_status["queued"] = _upload_queue.qsize() + 1
-    await _upload_queue.put((file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir, cfg))
+    await _upload_queue.put((file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir, db_engine, cfg))
 
 
 async def upload_worker() -> None:
     """Drain the upload queue one file at a time. Start once at app startup."""
     while True:
-        file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir, cfg = await _upload_queue.get()
+        file_path, kb, extra_metadata, vs_proxy, kb_router, db_dir, db_engine, cfg = await _upload_queue.get()
         _index_status["queued"] = _upload_queue.qsize()
         try:
             await ingest_uploaded_file(
@@ -855,6 +1005,7 @@ async def upload_worker() -> None:
                 vs_proxy=vs_proxy,
                 kb_router=kb_router,
                 db_dir=db_dir,
+                db_engine=db_engine,
                 cfg=cfg,
             )
         except Exception:

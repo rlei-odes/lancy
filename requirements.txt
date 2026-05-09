@@ -6,7 +6,7 @@ einops
 fastapi==0.115.14
 httpx==0.28.1
 loguru==0.6.0
-markitdown[pdf]==0.1.4
+markitdown[pdf,docx]==0.1.4
 numpy==2.3.3
 ollama==0.6.1
 openai==2.21.0

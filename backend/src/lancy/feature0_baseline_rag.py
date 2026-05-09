@@ -120,17 +120,29 @@ def make_vector_store(
         return ChromaDBVectorStore(db_path=str(db_path))
 
 
-class NomicVectorStoreRetriever(VectorStoreRetriever):
-    """VectorStoreRetriever that prepends 'search_query: ' for nomic-embed-text.
+def _task_prefixes(model_name: str) -> tuple[str, str] | None:
+    """Return (document_prefix, query_prefix) for models trained with task prefixes, else None.
 
-    nomic-embed-text-v1 is trained with task prefixes:
-      - 'search_document: ...' at index time  (applied in build_vector_store)
-      - 'search_query: ...'    at query time   (applied here)
-    Skipping the prefix noticeably degrades retrieval quality.
+    - nomic-embed-text: "search_document: " / "search_query: "
+    - intfloat E5 family: "passage: " / "query: "
     """
+    name = model_name.lower()
+    if "nomic" in name:
+        return ("search_document: ", "search_query: ")
+    if "e5" in name:
+        return ("passage: ", "query: ")
+    return None
+
+
+class TaskPrefixRetriever(VectorStoreRetriever):
+    """VectorStoreRetriever that prepends a model-specific task prefix to queries."""
+
+    def __init__(self, embedding_model, vector_store, top_k: int, query_prefix: str):
+        super().__init__(embedding_model, vector_store, top_k=top_k)
+        self._query_prefix = query_prefix
 
     async def retrieve(self, query: str) -> list[ChunkMatch]:
-        return await super().retrieve(f"search_query: {query}")
+        return await super().retrieve(f"{self._query_prefix}{query}")
 
 
 # Paths and defaults
@@ -449,7 +461,7 @@ def _collect_candidate_files(
         if not d.exists():
             logger.warning(f"Data directory not found, skipping: {d}")
             continue
-        all_files.extend(sorted(f for f in d.iterdir() if f.is_file()))
+        all_files.extend(sorted(f for f in d.rglob("*") if f.is_file()))
 
     if max_files is not None:
         all_files = all_files[:max_files]
@@ -612,6 +624,7 @@ async def build_vector_store(
     | None = None,  # if provided, use instead of creating ChromaDB
     existing_hashes: set[str]
     | None = None,  # precomputed from pre-pass; avoids second metadata scan
+    use_task_prefix: bool = True,
 ) -> VectorStore:
     """Embed chunks and persist them in a vector store (ChromaDB or PGVector).
 
@@ -676,17 +689,17 @@ async def build_vector_store(
 
     logger.info(f"Embedding {len(chunks_to_embed)} chunks ...")
 
-    # nomic-embed-text requires task-specific prefixes for best retrieval quality:
-    #   "search_document: <text>"  when indexing corpus chunks
-    #   "search_query: <text>"     when embedding a query at retrieval time
-    # Other models ignore these prefixes harmlessly.
-    use_nomic_prefix = "nomic" in getattr(embedding_model, "model_name", "").lower()
+    doc_prefix: str | None = None
+    if use_task_prefix:
+        prefixes = _task_prefixes(getattr(embedding_model, "model_name", ""))
+        if prefixes:
+            doc_prefix = prefixes[0]
 
     for i in range(0, len(chunks_to_embed), batch_size):
         batch = chunks_to_embed[i : i + batch_size]
 
-        if use_nomic_prefix:
-            texts = [f"search_document: {c.content}" for c in batch]
+        if doc_prefix:
+            texts = [f"{doc_prefix}{c.content}" for c in batch]
         else:
             texts = [c.content for c in batch]
 
@@ -726,10 +739,13 @@ def _make_retriever(
     embedding_model: EmbeddingsModel,
     vector_store: VectorStore,
     top_k: int,
+    use_task_prefix: bool = True,
 ) -> VectorStoreRetriever:
     """Return a retriever with the correct query prefix for the embedding model."""
-    if "nomic" in getattr(embedding_model, "model_name", "").lower():
-        return NomicVectorStoreRetriever(embedding_model, vector_store, top_k=top_k)
+    if use_task_prefix:
+        prefixes = _task_prefixes(getattr(embedding_model, "model_name", ""))
+        if prefixes:
+            return TaskPrefixRetriever(embedding_model, vector_store, top_k, query_prefix=prefixes[1])
     return VectorStoreRetriever(embedding_model, vector_store, top_k=top_k)
 
 

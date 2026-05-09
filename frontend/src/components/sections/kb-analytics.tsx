@@ -298,7 +298,7 @@ export const KbAnalytics: FunctionComponent<{ active: boolean }> = ({ active }) 
                     <select
                         value={selectedKb}
                         onChange={(e) => setSelectedKb(e.target.value)}
-                        className="text-sm bg-transparent outline-none text-foreground border border-border rounded-md px-2 py-1"
+                        className="text-xs [font-family:inherit] bg-muted border border-border text-foreground rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
                     >
                         {kbOptions.map((kb) => (
                             <option key={kb.id} value={kb.id}>{kb.name}</option>

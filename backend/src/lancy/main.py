@@ -318,7 +318,7 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
     top_k = cfg.retriever_top_k
     # When reranking, fetch a larger candidate pool first
     retriever_k = cfg.reranking_candidate_pool if cfg.reranking_enabled else top_k
-    semantic = _make_retriever(emb, vs, retriever_k)
+    semantic = _make_retriever(emb, vs, retriever_k, kb.nomic_prefix)
     retrievers = (
         [semantic, BM25Retriever(vs, top_k=retriever_k)]
         if cfg.bm25_enabled
@@ -408,7 +408,7 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
             table_name=f"rag_{kb.id.replace('-', '_')}_images",
         )
         image_retriever = _make_retriever(
-            image_emb, image_vs, cfg.image_retriever_top_k
+            image_emb, image_vs, cfg.image_retriever_top_k, False
         )
         all_retrievers.append(image_retriever)
         log.info(
@@ -597,7 +597,7 @@ def build_server():
             upload_cfg = session_cfg
         await enqueue_upload(
             file_path, kb, extra_metadata,
-            vs_proxy=vs_proxy, kb_router=kb_router, db_dir=_DB_DIR, cfg=upload_cfg,
+            vs_proxy=vs_proxy, kb_router=kb_router, db_dir=_DB_DIR, db_engine=_db_engine, cfg=upload_cfg,
         )
 
     kb_router = create_kb_router(
@@ -626,6 +626,23 @@ def build_server():
         await _react_db.create_table()
         await _src_db.create_table()
         await _user_db.create_table()
+        from sqlalchemy import text as _sa_text
+        _pk = "id BIGSERIAL PRIMARY KEY" if _database_url else "id INTEGER PRIMARY KEY"
+        async with _db_engine.begin() as _conn:
+            await _conn.execute(_sa_text(f"""
+                CREATE TABLE IF NOT EXISTS ingest_events (
+                    {_pk},
+                    ts           TEXT    NOT NULL,
+                    kb_id        TEXT    NOT NULL,
+                    document_id  TEXT    NOT NULL,
+                    filename     TEXT    NOT NULL,
+                    status       TEXT    NOT NULL,
+                    chunks       INTEGER,
+                    file_size_mb REAL,
+                    duration_ms  INTEGER,
+                    error        TEXT
+                )
+            """))
         vs = object.__getattribute__(vs_proxy, "_obj")
         agent = object.__getattribute__(agent_proxy, "_obj")
         count = await vs.count()
@@ -654,9 +671,17 @@ def build_server():
         except Exception:
             kb = active_kb
 
-        chunks_n, files_n, skipped_store_n, skipped_batch_n = await run_ingestion(
-            kb, reset, db_dir=_DB_DIR, cfg=cfg
-        )
+        try:
+            chunks_n, files_n, skipped_store_n, skipped_batch_n = await run_ingestion(
+                kb, reset, db_dir=_DB_DIR, cfg=cfg, db_engine=_db_engine
+            )
+        except RuntimeError as exc:
+            log.error(f"Ingestion failed for KB '{kb.name}': {exc}")
+            return ReindexResult(
+                chunks_indexed=0, files_processed=0,
+                files_skipped=0, files_skipped_store=0, files_skipped_batch=0,
+                reset=reset,
+            )
 
         # Rebuild so BM25 re-indexes new content
         new_vs, new_agent, new_emb = _build_components(kb, cfg)

@@ -196,14 +196,20 @@ const NumberInput: FunctionComponent<{
     </div>
 );
 
-const Toggle: FunctionComponent<{ checked: boolean; onChange: (v: boolean) => void }> = ({ checked, onChange }) => (
+const Toggle: FunctionComponent<{ checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }> = ({ checked, onChange, disabled }) => (
     <button
-        onClick={() => onChange(!checked)}
+        onClick={() => !disabled && onChange(!checked)}
+        disabled={disabled}
         className={`relative w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-default ${checked ? "bg-blue-500" : "bg-muted-foreground/40"}`}
     >
         <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${checked ? "translate-x-4" : "translate-x-0"}`} />
     </button>
 );
+
+const supportsTaskPrefix = (model: string): boolean => {
+    const m = model.toLowerCase();
+    return m.includes("nomic") || m.includes("e5");
+};
 
 const SelectInput: FunctionComponent<{
     value: string; options: string[]; onChange: (v: string) => void;
@@ -703,7 +709,7 @@ export const RagConfigPanel: FunctionComponent = () => {
             ...c,
             embedding_backend: backend,
             embedding_model: firstModel,
-            nomic_prefix: backend === "local" && firstModel.includes("nomic"),
+            nomic_prefix: backend === "local" && supportsTaskPrefix(firstModel),
         }));
         setSelectedKbPreset("");
         // litellm fetch is handled by the useEffect watching embedding_backend
@@ -1320,7 +1326,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                         <SelectInput
                                             value={kbConfig.embedding_model || litellmModels[0]}
                                             options={litellmModels}
-                                            onChange={(v) => { updateKbConfig("embedding_model", v); updateKbConfig("nomic_prefix", false); }}
+                                            onChange={(v) => { updateKbConfig("embedding_model", v); updateKbConfig("nomic_prefix", supportsTaskPrefix(v)); }}
                                         />
                                     ) : (
                                         <input
@@ -1339,7 +1345,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                         <SelectInput
                                             value={kbConfig.embedding_model || ollamaEmbedModels[0]}
                                             options={ollamaEmbedModels}
-                                            onChange={(v) => { updateKbConfig("embedding_model", v); updateKbConfig("nomic_prefix", v.includes("nomic")); }}
+                                            onChange={(v) => { updateKbConfig("embedding_model", v); updateKbConfig("nomic_prefix", supportsTaskPrefix(v)); }}
                                         />
                                     ) : (
                                         <input
@@ -1355,12 +1361,12 @@ export const RagConfigPanel: FunctionComponent = () => {
                                     <SelectInput
                                         value={kbConfig.embedding_model}
                                         options={EMBEDDING_MODELS[kbConfig.embedding_backend] || [kbConfig.embedding_model]}
-                                        onChange={(v) => { updateKbConfig("embedding_model", v); updateKbConfig("nomic_prefix", v.includes("nomic")); }}
+                                        onChange={(v) => { updateKbConfig("embedding_model", v); updateKbConfig("nomic_prefix", supportsTaskPrefix(v)); }}
                                     />
                                 )}
                             </FieldRow>
                             <FieldRow label={t("rag.fieldNomicPrefix")} hint={t("rag.fieldNomicPrefixHint")}>
-                                <Toggle checked={kbConfig.nomic_prefix} onChange={(v) => updateKbConfig("nomic_prefix", v)} />
+                                <Toggle checked={kbConfig.nomic_prefix} onChange={(v) => updateKbConfig("nomic_prefix", v)} disabled={!supportsTaskPrefix(kbConfig.embedding_model)} />
                             </FieldRow>
                             <FieldRow label={t("rag.fieldMaxFileSize")} hint={t("rag.fieldMaxFileSizeHint")}>
                                 <NumberInput value={kbConfig.max_file_size_mb} min={1} max={100} step={1} onChange={(v) => updateKbConfig("max_file_size_mb", v)} />

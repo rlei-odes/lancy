@@ -4,20 +4,22 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, BarChart2, Database, Palette } from "lucide-react";
+import { ArrowLeft, BarChart2, Database, List, Palette } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { useRole } from "@/hooks/useRole";
 import { cn } from "@/lib/lorem";
 import { UsageAnalytics } from "@/components/sections/admin/usage-analytics";
 import { DatabaseStats } from "@/components/sections/admin/database-stats";
 import { BrandingSettings } from "@/components/sections/admin/branding-settings";
+import { IngestionLog } from "@/components/sections/admin/ingestion-log";
 
-type Tab = "usage" | "database" | "branding";
+type Tab = "usage" | "database" | "branding" | "ingest-log";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: "usage",    label: "Usage Analytics", icon: <BarChart2 className="h-3.5 w-3.5" /> },
-    { id: "database", label: "Database",         icon: <Database className="h-3.5 w-3.5" /> },
-    { id: "branding", label: "Branding",          icon: <Palette className="h-3.5 w-3.5" /> },
+    { id: "usage",      label: "Usage Analytics", icon: <BarChart2 className="h-3.5 w-3.5" /> },
+    { id: "database",   label: "Database",         icon: <Database className="h-3.5 w-3.5" /> },
+    { id: "branding",   label: "Branding",         icon: <Palette className="h-3.5 w-3.5" /> },
+    { id: "ingest-log", label: "Ingestion Log",    icon: <List className="h-3.5 w-3.5" /> },
 ];
 
 export default function AdminPage() {
@@ -75,10 +77,11 @@ export default function AdminPage() {
 
                     {/* Content */}
                     <div className="flex-1 overflow-y-auto">
-                        <div className="max-w-3xl mx-auto px-5 py-6">
-                            {activeTab === "usage"    && <UsageAnalytics />}
-                            {activeTab === "database" && <DatabaseStats />}
-                            {activeTab === "branding" && <BrandingSettings />}
+                        <div className={cn(activeTab === "ingest-log" ? "max-w-6xl" : "max-w-3xl", "mx-auto px-5 py-6")}>
+                            {activeTab === "usage"      && <UsageAnalytics />}
+                            {activeTab === "database"   && <DatabaseStats />}
+                            {activeTab === "branding"   && <BrandingSettings />}
+                            {activeTab === "ingest-log" && <IngestionLog />}
                         </div>
                     </div>
                 </div>
