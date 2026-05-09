@@ -1,4 +1,4 @@
-import React, { FunctionComponent, useEffect, useState } from "react";
+import React, { FunctionComponent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { BookOpen, ChevronDown, ChevronRight, FlaskConical, Settings, ShieldCheck, SquarePen, Tag, Trash2, Webhook } from "lucide-react";
@@ -33,6 +33,18 @@ export const History: FunctionComponent<Props> = (props: Props) => {
     const [filter, setFilter] = useState<string>("");
     const [filteredConversations, setFilteredConversations] = useState<Conversation[]>(conversations);
     const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+    const collapsedInitialized = useRef(false);
+
+    useEffect(() => {
+        if (collapsedInitialized.current || conversations.length === 0) return;
+        collapsedInitialized.current = true;
+        const sessionKeys = new Set(
+            conversations
+                .filter((c) => c.session_label)
+                .map((c) => "session:" + c.session_label)
+        );
+        if (sessionKeys.size > 0) setCollapsedGroups(sessionKeys);
+    }, [conversations]);
 
     const toggleGroup = (date: string) => {
         setCollapsedGroups((prev) => {

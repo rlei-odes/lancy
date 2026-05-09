@@ -1,6 +1,8 @@
 export const app = {
     notFound: "Page not found",
     messagePlaceholder: "Ask a question or type a message...",
+    tagPlaceholder: "Enter tag or select a previously used tag below",
+    clearAllTags: "clear all",
     disclaimer: "{{name}} can make mistakes and miss relevant sources. Consider checking important information.",
     credits: "Lancy with 💙 by <1>SDSC</1><2/><3>Vonlanthen INSIGHT</3> & <4>Lancy</4>",
     welcome: "What do you want to know?",
@@ -61,7 +63,7 @@ export const app = {
     },
     help: {
         back: "← Back",
-        title: "Quick Reference",
+        title: "Reference",
         secRetrieval: "🔍 Retrieval",
         secEmbedding: "🧠 Embedding",
         secLlm: "💬 LLM",

@@ -141,7 +141,7 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
         setConversationId("");
         setCursor("");
         setMessagesAndThread([], "");
-        // session label intentionally kept — user wants to keep labelling the same test session
+        setSessionLabel("");
     };
 
     const changeConversation = (conversationId: string) => {

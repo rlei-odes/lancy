@@ -174,7 +174,8 @@ export const Settings: FunctionComponent<Props> = (props: Props) => {
     const { setDisclaimerIsOpen } = useDisclaimer();
     const isDarkMode = theme === Theme.DARK;
 
-    const currentLanguage = i18n.language;
+    const baseLanguage = i18n.language?.split("-")[0] ?? "en";
+    const currentLanguage = Object.values(Languages).includes(baseLanguage as Languages) ? baseLanguage : "en";
 
     return (
         <div className="text-foreground flex flex-col justify-between h-full">

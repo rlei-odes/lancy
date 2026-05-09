@@ -122,7 +122,7 @@ export const SendBar: FunctionComponent = () => {
                                     type="text"
                                     value={sessionLabel}
                                     onChange={(e) => setSessionLabel(e.target.value)}
-                                    placeholder="Test-Session (optional)"
+                                    placeholder={t("tagPlaceholder")}
                                     className="flex-1 text-xs bg-transparent border-b border-foreground/10 focus:border-amber-400/50 outline-none text-muted-foreground placeholder:text-foreground/20 py-0.5 transition-colors"
                                 />
                                 {sessionLabel && (
@@ -161,7 +161,7 @@ export const SendBar: FunctionComponent = () => {
                                             setPastLabels([]);
                                         }}
                                         className="text-[10px] text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-                                    >clear all</button>
+                                    >{t("clearAllTags")}</button>
                                 </div>
                             )}
                         </div>
