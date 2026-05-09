@@ -309,6 +309,22 @@ Both require backend config storage plumbing that is already in place (`branding
 
 ---
 
+### LLM Debug Mode
+
+**Goal:** admin-toggleable mode that logs everything sent to and received from the LLM — useful for diagnosing prompt issues, unexpected answers, or retrieval quality problems without touching code.
+
+**Behaviour:**
+- Toggle via a button in the Admin page (or RAG Parameters panel); active state held in memory only — resets on backend restart
+- While active: each LLM call writes a timestamped entry to `logs/llm_debug.log` containing the full prompt (system prompt + conversation history + retrieved chunks) and the full response text
+- No persistence across restarts by design — avoids accidentally logging sensitive content long-term
+
+**Scope:**
+- Backend: a global `LLM_DEBUG` flag; hook into the `build_llm()` call or wrap the LLM instance with a thin logging shim
+- `POST /api/admin/llm-debug/enable` and `/disable` endpoints (admin only); `GET /api/admin/llm-debug/status`
+- Admin UI: simple on/off toggle with a visible warning that prompts and retrieved content will be written to disk
+
+---
+
 ### Customisable Retrieval Prompts
 
 The query expansion, HyDE, and reranking prompts are currently hardcoded in Python. Unlike the system prompt (answer tone/format), these affect retrieval quality and could benefit from domain-specific tuning.
@@ -562,10 +578,3 @@ After the LLM finishes streaming, there is a noticeable delay before sources app
 - Move source fetching out of `get_conversation_by_id` into a separate on-demand endpoint
 - Send sources as a lightweight reference (id + filename only) in the stream, fetch full content lazily on click
 
-### Implement Backup for Databases
-
-The backup logic in `database.py` only covers `user_config.db`. The `conversations.db` has none.
-
-`_maybe_backup()` is called from `init_db()` in `database.py:70`, which is only invoked for the config DB. The SQLite module's `create_table()` methods just run `CREATE TABLE IF NOT EXISTS` via SQLAlchemy — no backup step anywhere.
-
-To fix this properly, the backup should run at startup in `main.py`, right after the SQLite engine is created and before `create_table()` is called — same pattern as `user_config.db`. A small helper that does `sqlite3.connect(src).backup(dst)` on `conversations.db` if it exists and is older than 24h.

@@ -84,6 +84,8 @@ from lancy.feature0_baseline_rag import (
     make_vector_store,
     _make_retriever,
 )
+from lancy.llm_debug import DebugLLM, configure as _configure_llm_debug
+_configure_llm_debug(_ROOT / "logs" / "llm_debug.log")
 from lancy.ingestion import (
     _index_status,
     cancel_indexing,
@@ -401,8 +403,8 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
     base_prompt = cfg.system_prompt.strip() or _load_system_prompt()
 
     agent = CustomRAG(
-        llm=llm,
-        utility_llm=utility_llm,
+        llm=DebugLLM(llm),
+        utility_llm=DebugLLM(utility_llm),
         system_prompt=base_prompt,  # file list injected asynchronously after build
         retrievers=all_retrievers,
         number_query_expansion=cfg.query_expansion,
@@ -623,6 +625,9 @@ def build_server():
         asyncio.create_task(upload_worker())  # noqa: RUF006
         asyncio.create_task(_auto_cleanup_loop())  # noqa: RUF006
         configure_loguru()
+        if not _database_url:
+            from lancy.database import _maybe_backup
+            _maybe_backup(_DB_DIR / "conversations.db")
         await _conv_db.create_table()
         await _msg_db.create_table()
         await _react_db.create_table()

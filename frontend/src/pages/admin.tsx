@@ -4,7 +4,7 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, BarChart2, Database, List, Palette } from "lucide-react";
+import { ArrowLeft, BarChart2, Bug, Database, List, Palette } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { useRole } from "@/hooks/useRole";
 import { cn } from "@/lib/lorem";
@@ -12,14 +12,16 @@ import { UsageAnalytics } from "@/components/sections/admin/usage-analytics";
 import { DatabaseStats } from "@/components/sections/admin/database-stats";
 import { BrandingSettings } from "@/components/sections/admin/branding-settings";
 import { IngestionLog } from "@/components/sections/admin/ingestion-log";
+import { LlmDebugPanel } from "@/components/sections/admin/llm-debug-panel";
 
-type Tab = "usage" | "database" | "branding" | "ingest-log";
+type Tab = "usage" | "database" | "branding" | "ingest-log" | "llm-debug";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "usage",      label: "Usage Analytics", icon: <BarChart2 className="h-3.5 w-3.5" /> },
     { id: "database",   label: "Database",         icon: <Database className="h-3.5 w-3.5" /> },
     { id: "branding",   label: "Branding",         icon: <Palette className="h-3.5 w-3.5" /> },
     { id: "ingest-log", label: "Ingestion Log",    icon: <List className="h-3.5 w-3.5" /> },
+    { id: "llm-debug",  label: "LLM Debug",        icon: <Bug className="h-3.5 w-3.5" /> },
 ];
 
 export default function AdminPage() {
@@ -82,6 +84,7 @@ export default function AdminPage() {
                             {activeTab === "database"   && <DatabaseStats />}
                             {activeTab === "branding"   && <BrandingSettings />}
                             {activeTab === "ingest-log" && <IngestionLog />}
+                            {activeTab === "llm-debug"  && <LlmDebugPanel />}
                         </div>
                     </div>
                 </div>

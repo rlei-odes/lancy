@@ -408,4 +408,37 @@ def create_admin_router(
             offset=offset,
         )
 
+    # ── LLM debug mode ───────────────────────────────────────────────────────
+
+    @router.get("/llm-debug/status")
+    async def get_llm_debug_status() -> dict:
+        from lancy.llm_debug import is_enabled
+        return {"enabled": is_enabled()}
+
+    @router.post("/llm-debug/enable")
+    async def enable_llm_debug() -> dict:
+        from lancy.llm_debug import set_enabled
+        set_enabled(True)
+        return {"enabled": True}
+
+    @router.post("/llm-debug/disable")
+    async def disable_llm_debug() -> dict:
+        from lancy.llm_debug import set_enabled
+        set_enabled(False)
+        return {"enabled": False}
+
+    @router.get("/llm-debug/log")
+    async def get_llm_debug_log(lines: int = 100) -> dict:
+        from lancy.llm_debug import get_log_path
+        path = get_log_path()
+        if path is None or not path.exists():
+            return {"lines": [], "total_lines": 0}
+        try:
+            all_lines = path.read_text().splitlines()
+            n = max(1, min(1000, lines))
+            return {"lines": all_lines[-n:], "total_lines": len(all_lines)}
+        except Exception as exc:
+            log.warning(f"LLM debug log read failed: {exc}")
+            return {"lines": [], "total_lines": 0}
+
     return router

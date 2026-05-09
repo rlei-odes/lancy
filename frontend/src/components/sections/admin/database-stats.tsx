@@ -175,8 +175,9 @@ export const DatabaseStats: FunctionComponent = () => {
                     {/* DB Connections (read-only) */}
                     <SectionCard title="Connection Settings" icon={<HardDrive className="h-4 w-4 text-muted-foreground" />}>
                         <p className="text-xs text-muted-foreground pb-2">
-                            Connection strings are configured via environment variables (<code className="font-mono">DATABASE_URL</code>).
-                            Editing them here is not yet supported.
+                            Vector store backend and connection are configured per knowledge base in the RAG panel.
+                            The conversation database is configured via the <code className="font-mono">DATABASE_URL</code> environment variable (defaults to SQLite if unset).
+                            The per-user config and presets database (<code className="font-mono">user_config.db</code>) always uses SQLite regardless of <code className="font-mono">DATABASE_URL</code>.
                         </p>
                         <StatRow label="Vector store backend" value={stats.vs_db.vs_type} />
                         <StatRow label="Conversation DB backend" value={stats.conv_db.db_type} />
@@ -264,8 +265,9 @@ export const DatabaseStats: FunctionComponent = () => {
                     {/* Backup */}
                     <SectionCard title="Backup" icon={<HardDrive className="h-4 w-4 text-muted-foreground" />}>
                         <p className="text-xs text-muted-foreground">
-                            The per-user config database (<code className="font-mono">user_config.db</code>) is backed up automatically at startup when older than 24 hours.
-                            For the conversation database, use a manual file copy or scheduled job.
+                            Both SQLite databases (<code className="font-mono">user_config.db</code> and <code className="font-mono">conversations.db</code>) are backed up automatically at startup if the file is older than 24 hours.
+                            The backup is written to <code className="font-mono">&lt;name&gt;.db.bak</code> in the same directory, overwriting the previous backup.
+                            PostgreSQL backups are not managed by this application — use your database provider's tooling.
                         </p>
                         {stats.conv_db.path && (
                             <p className="text-xs text-muted-foreground mt-1">
