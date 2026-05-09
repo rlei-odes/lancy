@@ -35,7 +35,7 @@ def create_app(
     if allow_origins is None:
         allow_origins = ["http://localhost:3000", "http://localhost:8080"]
 
-    app = FastAPI(docs_url=None)
+    app = FastAPI(docs_url="/docs", redoc_url="/redoc")
 
     app.add_middleware(
         CORSMiddleware,  # type: ignore

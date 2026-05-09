@@ -21,7 +21,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - KB dropdown in the RAG Parameters panel now reflects pool compatibility: incompatible KBs are greyed out (user role) or shown in red with a ⚠ indicator (admin role).
 - Selecting an incompatible KB as admin automatically passes `?reset=true` to the activate call — no confirmation dialog.
 - KB dropdown and reindex controls are disabled while the pool is loading a KB (polled every 2s via `GET /api/v1/kb/pool`); a spinner appears next to the selector.
-- Version bumped to `0.3.3` in `frontend/src/config.ts`.
+
+### Added — API Documentation
+
+- Swagger UI enabled at `/docs` (admin only) and ReDoc at `/redoc` (all authenticated users), proxied through Next.js.
+- Middleware enforces role-based access: users hitting `/docs` are silently redirected to `/redoc`; unauthenticated requests are redirected to the login page.
 
 ### Changed
 

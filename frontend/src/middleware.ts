@@ -67,6 +67,16 @@ export async function middleware(request: NextRequest) {
     }
 
     const role = await getRole(request);
+
+    if (pathname === "/docs") {
+        if (!role) {
+            const loginUrl = new URL("/login", request.url);
+            loginUrl.searchParams.set("redirect", pathname);
+            return NextResponse.redirect(loginUrl);
+        }
+        if (role === "user") return NextResponse.redirect(new URL("/redoc", request.url));
+    }
+
     if (role === "user" && isAdminOnlyRequest(request.method, pathname)) {
         return new NextResponse(JSON.stringify({ error: "Forbidden" }), {
             status: 403,

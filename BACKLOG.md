@@ -518,18 +518,6 @@ Standard RAG retrieves isolated chunks. Graph-RAG builds a knowledge graph over 
 
 ---
 
-## Documentation
-
-### Interactive API Documentation with Example Payloads
-
-FastAPI auto-generates an OpenAPI schema and exposes a Swagger UI at `/docs` and ReDoc at `/redoc` — both are already live, but they show only field types and defaults, not realistic example payloads.
-
-**Scope:**
-- Add `model_config = ConfigDict(json_schema_extra={"examples": [...]})` to the key request models: `RagConfig`, `KBCreate`, `RetrieveRequest`, `MessageInput`, `ChatCompletionRequest`
-- Consider locking `/docs` and `/redoc` behind the existing auth check for non-development deployments
-
----
-
 ## Maintenance / Chores
 
 ### Dependency Updates
