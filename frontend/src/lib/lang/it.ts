@@ -117,7 +117,7 @@ export const app = {
         analyticsScopeFull: "Indice completo",
         analyticsScopeIncremental: "Indice incrementale",
         analyticsChunkSizeTitle: "Distribuzione dimensione chunk",
-        analyticsChunkSizeX: "Caratteri",
+        analyticsChunkSizeX: "N. di caratteri",
         analyticsChunkSizeY: "Chunk",
         analyticsChunksPerDocTitle: "Chunk per documento",
         analyticsChunksPerDocX: "Chunk per documento",

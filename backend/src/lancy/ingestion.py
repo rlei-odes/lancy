@@ -21,7 +21,9 @@ from conversational_toolkit.llms.base import LLM, LLMMessage, MessageContent, Ro
 from lancy.feature0_baseline_rag import (
     _ROOT,
     VS_PATH,
+    MIN_CONTENT_CHARS,
     _collect_candidate_files,
+    _content_score,
     build_embedding_model,
     build_llm,
     build_vector_store,
@@ -518,6 +520,10 @@ async def run_ingestion(
             )
             await _caption_image_chunks(text_chunks, image_chunks, caption_llm)
             image_chunks = []  # consumed by captioning; not stored in image VS
+            before = len(text_chunks)
+            text_chunks = [c for c in text_chunks if _content_score(c.content) >= MIN_CONTENT_CHARS]
+            if (dropped := before - len(text_chunks)):
+                log.info(f"Post-captioning quality filter: dropped {dropped} near-empty chunk(s)")
         elif kb.image_captioning_enabled and image_chunks and cfg is None:
             log.warning(
                 "Image captioning is enabled on this KB but no session config was provided — "
@@ -842,6 +848,10 @@ async def ingest_uploaded_file(
             )
             await _caption_image_chunks(text_chunks, image_chunks, caption_llm)
             image_chunks = []
+            before = len(text_chunks)
+            text_chunks = [c for c in text_chunks if _content_score(c.content) >= MIN_CONTENT_CHARS]
+            if (dropped := before - len(text_chunks)):
+                log.info(f"Post-captioning quality filter: dropped {dropped} near-empty chunk(s)")
         elif kb.image_captioning_enabled and image_chunks and cfg is None:
             log.warning(
                 "Image captioning is enabled on this KB but no session config was provided — "

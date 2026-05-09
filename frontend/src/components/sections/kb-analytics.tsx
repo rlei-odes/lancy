@@ -94,6 +94,7 @@ function ChunkSizeChart({ data }: { data: Record<string, number> }) {
                     <Tooltip
                         contentStyle={{ background: cssVar("--card"), border: `1px solid ${border}`, borderRadius: 8, fontSize: 12 }}
                         labelStyle={{ color: cssVar("--foreground") }}
+                        labelFormatter={(label) => `${t("explorer.analyticsChunkSizeX")}: ${label}`}
                         formatter={(value) => [formatNum(value as number), t("explorer.analyticsChunkSizeY")]}
                     />
                     <Bar dataKey="count" fill={primary} radius={[3, 3, 0, 0]} />

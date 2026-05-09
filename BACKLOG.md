@@ -148,25 +148,6 @@ Roughly 1–2 hours of careful work once the decision to do it is made.
 
 **Likely outcome:** a chunking strategy ADR that maps content type → chunking method, with a smarter pre-filter before indexing.
 
-### Minimum Chunk Quality — Filter Near-Empty Chunks at Ingestion
-
-**Problem:** the current pipeline indexes chunks that contain almost no retrievable content. A typical example from a PDF-converted document:
-
-```
-## Water-Activated Tape
-
-<!-- image -->
-```
-
-This is a heading with an image placeholder — no prose, no facts, nothing an embedding model can meaningfully represent.
-
-**What to address:**
-- Add a minimum content threshold at ingestion time: merge forward any chunk below N non-whitespace characters or M meaningful tokens after stripping Markdown syntax (`#`, `<!-- ... -->`, `![]()`, etc.) — the heading or image placeholder becomes a prefix of the next substantive chunk rather than a standalone entry
-- A "content score" heuristic: chunks with only headings, only image tags, or only whitespace score 0 and are candidates for merging
-- Merge direction and merge limits: a merging loop with a maximum merged size cap (respecting `max_chunk_tokens`) to avoid creating oversized chunks
-
-**Why it matters:** retrieved chunks go directly into the LLM context. A useless chunk at rank 1 wastes a slot, confuses the reranker, and can cause the LLM to return "I don't have enough information" when the real answer exists just one chunk away.
-
 ---
 
 ## UI & Settings

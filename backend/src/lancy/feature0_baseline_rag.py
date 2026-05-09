@@ -41,6 +41,7 @@ Usage:
 import asyncio
 import hashlib
 import os
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -432,6 +433,64 @@ def _split_chunk_by_tokens(chunk: Chunk, max_tokens: int) -> list[Chunk]:
     return sub_chunks if sub_chunks else [chunk]
 
 
+# ---------------------------------------------------------------------------
+# Chunk quality filter
+# ---------------------------------------------------------------------------
+
+_MARKDOWN_JUNK_RE = re.compile(
+    r"<!--.*?-->|"       # HTML comments  (<!-- image -->, etc.)
+    r"!\[.*?\]\(.*?\)|"  # image embeds   ![]()
+    r"\[.*?\]\(.*?\)|"   # links          [text](url)
+    r"^#{1,6}\s*|"       # heading markers
+    r"^[-*_]{3,}\s*$",   # horizontal rules  ---, ***, ___
+    re.MULTILINE | re.DOTALL,
+)
+
+# Non-whitespace characters required after stripping Markdown syntax.
+# Heading-only or image-placeholder-only chunks typically score ~15–25.
+MIN_CONTENT_CHARS = 50
+
+
+def _content_score(text: str) -> int:
+    """Non-whitespace character count after stripping Markdown syntax."""
+    return sum(1 for c in _MARKDOWN_JUNK_RE.sub("", text) if not c.isspace())
+
+
+def _merge_low_quality_chunks(chunks: list) -> list:
+    """Merge near-empty chunks forward into the next substantive chunk.
+
+    Any chunk whose stripped content scores below MIN_CONTENT_CHARS is
+    prepended to the following chunk.  A trailing low-quality chunk with no
+    successor is dropped entirely.
+    """
+    result = []
+    pending: str = ""
+    n_merged = 0
+
+    for chunk in chunks:
+        if _content_score(chunk.content) < MIN_CONTENT_CHARS:
+            pending = (pending + "\n\n" + chunk.content).strip() if pending else chunk.content.strip()
+            n_merged += 1
+        else:
+            if pending:
+                chunk = Chunk(
+                    title=chunk.title,
+                    content=pending + "\n\n" + chunk.content,
+                    mime_type=chunk.mime_type,
+                    metadata=chunk.metadata.copy(),
+                )
+                pending = ""
+            result.append(chunk)
+
+    if n_merged:
+        dropped = 1 if pending else 0
+        logger.info(
+            f"Chunk quality filter: {n_merged} low-quality chunk(s) merged forward"
+            + (f", {dropped} dropped (no successor)" if dropped else "")
+        )
+    return result
+
+
 def file_hash(path: Path) -> str:
     """SHA-256 fingerprint of a file's raw bytes.
 
@@ -579,6 +638,7 @@ def load_chunks(
                     for c in file_chunks:
                         split.extend(_split_chunk_by_tokens(c, max_chunk_tokens))
                     file_chunks = split
+                file_chunks = _merge_low_quality_chunks(file_chunks)
 
             h = (file_hashes or {}).get(file_path) or file_hash(file_path)
             for chunk in file_chunks:

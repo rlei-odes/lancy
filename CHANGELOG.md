@@ -30,6 +30,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `POST /api/admin/llm-debug/enable` and `POST /api/admin/llm-debug/disable` endpoints (admin only); `GET /api/admin/llm-debug/status`.
 - Admin UI: on/off toggle with a warning that prompts and retrieved content will be written to disk; log viewer panel showing the last N entries, auto-refreshed every 5s while debug mode is active.
 
+### Added — Chunk Quality Filter
+
+- Near-empty chunks (heading-only slides, image placeholders, horizontal rules with no body text) are now merged forward into the next substantive chunk at ingestion time rather than being indexed as standalone entries.
+- A `_content_score()` function strips all Markdown syntax (`#`, `<!-- -->`, `![]()`, links, horizontal rules) and counts remaining non-whitespace characters; chunks scoring below 50 are considered low-quality.
+- Merge direction: the low-quality chunk is prepended as a heading prefix to the following chunk, preserving section context. A trailing low-quality chunk with no successor is dropped.
+- Post-captioning safety net in `ingestion.py`: after image placeholders are replaced (or removed for non-useful images), any chunk that has now fallen below the threshold is dropped from both `run_ingestion` and `ingest_uploaded_file`.
+- Both steps log what was merged/dropped, making it easy to monitor quality improvements in `logs/backend.log` after re-indexing.
+
 ### Added — API Documentation
 
 - Swagger UI enabled at `/docs` (admin only) and ReDoc at `/redoc` (all authenticated users), proxied through Next.js.

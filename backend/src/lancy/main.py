@@ -39,6 +39,7 @@ import os
 import pathlib
 import re
 from pathlib import Path
+from urllib.parse import quote
 from typing import Any
 
 # Load litellm.env from project root if LITELLM env vars are not set via systemd
@@ -254,7 +255,7 @@ class CustomRAG(RAG):
             filename = id_to_file.get(uid, "")
             if not filename:
                 return ""
-            return f"[{filename}](<source://{filename}>)"
+            return f"[{filename}](<source://{quote(filename, safe='')}>)"
 
         content = _UUID_RE.sub(_replace_uuid, content)
 
@@ -268,7 +269,7 @@ class CustomRAG(RAG):
         for i, source in enumerate((s for s in ordered_sources if s), 1):
             fname = source.metadata.get("source_file", "")
             if fname and f"[{i}]" in content:
-                content = content.replace(f"[{i}]", f"[{fname}](<source://{fname}>)")
+                content = content.replace(f"[{i}]", f"[{fname}](<source://{quote(fname, safe='')}>)")
 
         return AgentAnswer(
             content=[MessageContent(type="text", text=content)],

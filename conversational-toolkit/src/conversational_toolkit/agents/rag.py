@@ -124,12 +124,12 @@ class RAG(Agent):
                 context_message.content.append(
                     MessageContent(
                         type="text",
-                        text=f"<source id='{source.id}' file='{source.metadata.get('source_file', '')}'>{source.content}</source>",
+                        text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}">{source.content}</source>',
                     )
                 )
             elif "image" in source.mime_type:
                 context_message.content.append(
-                    MessageContent(type="text", text=f"<source id='{source.id}' file='{source.metadata.get('source_file', '')}' type='image'>")
+                    MessageContent(type="text", text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}" type="image">')
                 )
                 context_message.content.append(
                     MessageContent(type="image", image_url=source.content)
