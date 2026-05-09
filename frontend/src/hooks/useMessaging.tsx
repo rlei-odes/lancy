@@ -243,6 +243,7 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
         };
         const kbId = !activeConversationId ? (sessionStorage.getItem("lancy_selected_kb_id") ?? undefined) : undefined;
         const kbName = !activeConversationId ? (sessionStorage.getItem("lancy_selected_kb_name") ?? undefined) : undefined;
+        console.log("[debug] send cursor=%o parentId=%o conversationId=%o", cursor, parentId, activeConversationId);
         const userInput = {
             content,
             type,

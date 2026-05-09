@@ -22,8 +22,13 @@ echo "  Backend URL: ${BACKEND_URL:-http://localhost:8080 (default)}"
 
 # --- Frontend ---
 cd "$FRONTEND"
-node_modules/.bin/next dev > "$LOG_DIR/frontend.log" 2>&1 &
+> "$LOG_DIR/frontend.log"
+FIFO="$LOG_DIR/frontend.fifo"
+rm -f "$FIFO" && mkfifo "$FIFO"
+awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' < "$FIFO" >> "$LOG_DIR/frontend.log" &
+node_modules/.bin/next dev > "$FIFO" 2>&1 &
 echo $! > "$LOG_DIR/frontend.pid"
+rm -f "$FIFO"
 echo "  Frontend PID: $(cat $LOG_DIR/frontend.pid)"
 echo "  Log:          $LOG_DIR/frontend.log"
 echo "  Stop:         scripts/stop-frontend.sh"

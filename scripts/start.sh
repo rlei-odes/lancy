@@ -74,8 +74,13 @@ echo "  Backend PID: $(cat $LOG_DIR/backend.pid)"
 # --- Frontend ---
 echo "Starting frontend on port 3000..."
 cd "$REPO/frontend"
-node_modules/.bin/next dev > "$LOG_DIR/frontend.log" 2>&1 &
+> "$LOG_DIR/frontend.log"
+FIFO="$LOG_DIR/frontend.fifo"
+rm -f "$FIFO" && mkfifo "$FIFO"
+awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' < "$FIFO" >> "$LOG_DIR/frontend.log" &
+node_modules/.bin/next dev > "$FIFO" 2>&1 &
 echo $! > "$LOG_DIR/frontend.pid"
+rm -f "$FIFO"
 echo "  Frontend PID: $(cat $LOG_DIR/frontend.pid)"
 
 echo ""
