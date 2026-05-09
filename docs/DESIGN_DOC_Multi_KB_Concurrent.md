@@ -181,7 +181,7 @@ The `controller` receives `DispatchingAgent` as its `agent`. No changes to the c
 | `POST /api/v1/kb/{id}/deactivate` | **New.** Removes KB from pool. |
 | `GET /api/v1/kb/pool` | **New.** Returns `{ loaded: [kb_id, ...], loading: [kb_id, ...], emb_key: {backend, model} }` |
 | `POST /api/v1/kb/{id}/activate` | **New param** `?reset=true` — clears pool before loading (for incompatible embedding switch). |
-| `POST /api/v1/conversations` (from toolkit) | Accepts `kb_id` in the create body (already stored as metadata; ensure it is routed to the active pool KB or a specific loaded KB). |
+| `POST /api/v1/messages` (from toolkit) | `MessageInput` extended with optional `kb_id`/`kb_name`. Used by the client to specify the KB for new conversations; ignored for messages in existing conversations. |
 
 ### 5.5 Frontend Changes
 
@@ -240,6 +240,8 @@ Not required for v1. Placeholder design:
 |---|---|---|
 | "Backend not responding" during KB switch | `_build_components()` runs blocking model-load on the event loop | Wrap in `run_in_executor`; load is now async |
 | Sidebar editable during KB switch | No client-side lock | Poll `GET /api/v1/kb/pool`; disable sidebar while `kb_id` in `loading` |
+| Multi-user KB display resets on reload | Frontend derived active KB from server global state (`kbRegistry.active`) | Per-tab `sessionStorage` persists the selected KB; restored on mount if still valid |
+| Multi-user new conversations use wrong KB | `conversation_metadata_provider` is a global callback; last session to call `activate` wins | Client passes `kb_id`/`kb_name` in `MessageInput` for new conversations; backend prefers it over global active |
 
 ---
 
@@ -248,8 +250,8 @@ Not required for v1. Placeholder design:
 **Q1 — Routing via `conversation_id` (decided: yes).**  
 `DispatchingAgent` resolves the KB by looking up `conversation_id` in the conversation DB. First verify that `ConversationalToolkitController` populates `query_with_context.conversation_id`; if not, use a `contextvars.ContextVar` set in HTTP middleware.
 
-**Q2 — `kb_id` derived from conversation record (decided: yes).**  
-The KB is fixed at conversation creation. No `kb_id` on individual message requests — avoids per-message inconsistency and keeps the API simple.
+**Q2 — `kb_id` derived from conversation record (decided: yes, with one exception).**  
+For existing conversations, `kb_id` is read from the stored conversation record — no per-message override. For *new* conversations, the client passes `kb_id`/`kb_name` in the `MessageInput` body so the frontend's per-session KB selection (stored in `sessionStorage`) is used instead of the global server active. This was necessary because `conversation_metadata_provider` is a global callback with no per-session context; in a multi-user scenario the global active KB can be set by any session at any time.
 
 **Q3 — Default KB from `knowledge_bases.json` `active` field (decided: yes).**  
 The `active` field in `knowledge_bases.json` designates the default. It is loaded at startup and is the fallback in `DispatchingAgent._resolve_kb()` when no conversation context is available.

@@ -446,9 +446,13 @@ export const RagConfigPanel: FunctionComponent = () => {
             if (!r.ok) return;
             const reg: KBRegistry = await r.json();
             setKbRegistry(reg);
-            const kb = reg.bases[reg.active];
+            const savedKbId = sessionStorage.getItem("lancy_selected_kb_id");
+            const resolvedKbId = savedKbId && reg.bases[savedKbId] ? savedKbId : reg.active;
+            const kb = reg.bases[resolvedKbId];
             if (kb) {
                 setActiveKb(kb);
+                sessionStorage.setItem("lancy_selected_kb_id", kb.id);
+                sessionStorage.setItem("lancy_selected_kb_name", kb.name);
                 const kbCfg = kbInfoToConfig(kb);
                 setKbConfig(kbCfg);
                 savedKbConfig.current = kbCfg;
@@ -633,6 +637,8 @@ export const RagConfigPanel: FunctionComponent = () => {
             if (r.ok) {
                 const kb: KBInfo = await r.json();
                 setActiveKb(kb);
+                sessionStorage.setItem("lancy_selected_kb_id", kb.id);
+                sessionStorage.setItem("lancy_selected_kb_name", kb.name);
                 const kbCfg = kbInfoToConfig(kb);
                 setKbConfig(kbCfg);
                 savedKbConfig.current = kbCfg;
