@@ -26,7 +26,7 @@
     "i18next-browser-languagedetector": "^7.2.0",
     "lodash.merge": "^4.6.2",
     "lucide-react": "^0.321.0",
-    "next": "^15.5.12",
+    "next": "^15.5.18",
     "react": "^18",
     "react-dom": "^18",
     "react-i18next": "^15.4.1",
