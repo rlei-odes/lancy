@@ -47,18 +47,6 @@ Unknown origin. Possibly connected to Query Expansion. Could be related to the L
 
 ## Ingestion
 
-### Image Retrieval — pgvector Support for `vs_image`
-
-**Goal:** extend the dual-collection pipeline to support pgvector as the image vector store, mirroring the existing text store backend selection.
-
-**Why:** ChromaDB is local-only and single-process; production deployments targeting pgvector currently have no image store option. The image pipeline was implemented ChromaDB-first to unblock feature work; this closes the gap.
-
-**Scope:**
-- `make_vector_store` call in `main.py` for the image store passes `table_name=f"rag_{kb_id}_images"` — pgvector already uses this for namespacing, so no schema change is needed
-- `_run_ingestion` in `main.py`: the image store instantiation mirrors the text store path; ensure the pgvector branch is exercised and the async/sync split is correct (same pattern as the existing text pgvector path)
-- `delete_kb` in `kb_router.py`: for pgvector, deletion of `vs_image` should drop the images table — verify the cleanup path covers both stores
-- Manual test: pgvector KB with image toggles on — index a PDF, query, confirm images surface
-
 ### Image Retrieval — Source Citations with Image Preview
 
 Test Learning: this seems to be partially working already.

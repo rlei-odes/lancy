@@ -218,15 +218,18 @@ class CustomRAG(RAG):
                 yield chunk
         except Exception as exc:
             # Yield the error as a visible message so the frontend doesn't spin forever.
-            # Common cases: model not pulled, Ollama not running, network error.
+            # Common cases: model not pulled, Ollama not running, pgvector unreachable.
             error_text = str(exc)
-            if "not found" in error_text and "404" in error_text:
+            exc_module = type(exc).__module__ or ""
+            if "sqlalchemy" in exc_module or "asyncpg" in exc_module:
+                msg = "Cannot reach the vector database. Is PostgreSQL running?"
+            elif "not found" in error_text and "404" in error_text:
                 msg = f"LLM model not found. Run: ollama pull {self.llm.model}"
             elif "connection" in error_text.lower() or "refused" in error_text.lower():
                 msg = "Cannot reach the LLM. Is it running?"
             else:
                 msg = f"LLM error: {error_text}"
-            log.error(f"LLM stream error: {exc}")
+            log.error(f"Stream error: {exc}")
             yield AgentAnswer(content=[MessageContent(type="text", text=msg)])
         finally:
             _query_status.update({"active": False, "phase": "idle"})

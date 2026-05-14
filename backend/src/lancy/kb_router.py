@@ -201,12 +201,30 @@ def create_kb_router(
             reg.active = next(iter(reg.bases))
             await activate_callback(reg.bases[reg.active])
         _save(reg)
-        # Only delete local directories for chromadb; pgvector tables are managed externally
         if kb.vs_type == "chromadb":
             for vs in [Path(kb.vs_path), Path(kb.vs_path + "_images")]:
                 if vs.exists():
                     shutil.rmtree(vs)
                     log.info(f"Deleted VS at {vs}")
+        elif kb.vs_type == "pgvector" and kb.vs_connection_string:
+            try:
+                from sqlalchemy import text
+                from sqlalchemy.ext.asyncio import create_async_engine
+
+                conn = kb.vs_connection_string.strip()
+                if conn.startswith("postgresql://"):
+                    conn = conn.replace("postgresql://", "postgresql+asyncpg://", 1)
+                elif conn.startswith("postgres://"):
+                    conn = conn.replace("postgres://", "postgresql+asyncpg://", 1)
+                engine = create_async_engine(conn)
+                kb_table = f"rag_{kb_id.replace('-', '_')}"
+                async with engine.begin() as c:
+                    await c.execute(text(f"DROP TABLE IF EXISTS {kb_table}"))
+                    await c.execute(text(f"DROP TABLE IF EXISTS {kb_table}_images"))
+                await engine.dispose()
+                log.info(f"Dropped pgvector tables: {kb_table}, {kb_table}_images")
+            except Exception as exc:
+                log.warning(f"Could not drop pgvector tables for KB '{kb_id}': {exc}")
         log.info(f"Deleted KB '{kb.name}' (id={kb_id})")
         return {"deleted": kb_id}
 

@@ -1,0 +1,159 @@
+<mxfile host="app.diagrams.net" version="24.0.0">
+  <diagram id="lancy-arch-placeholder" name="Architecture — Placeholder">
+    <mxGraphModel background="#0a0510" grid="0" page="0" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- LEGEND -->
+        <mxCell id="leg-box" value="Legend" style="text;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;strokeColor=#807090;fillColor=#0d0818;fontColor=#e6d8f0;fontSize=12;fontFamily=Courier New;fontStyle=1;rounded=1;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="20" y="30" width="210" height="128" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-1" value="— Primary / HTTPS" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#bf00ff;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="32" y="70" width="190" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-2" value="— Internal Flow" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#f5a623;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="32" y="92" width="190" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-3" value="- - API / Internal" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#807090;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="32" y="114" width="190" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-4" value="- - Direct / TCP" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#ff5544;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="32" y="136" width="190" height="18" as="geometry" />
+        </mxCell>
+
+        <!-- USERS -->
+        <mxCell id="users" value="&lt;b&gt;Users&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 9px;&quot;&gt;service.yourdomain.com&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0530;strokeColor=#bf00ff;fontColor=#bf00ff;fontSize=11;fontFamily=Courier New;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="140" y="210" width="200" height="68" as="geometry" />
+        </mxCell>
+
+        <!-- AUTH LAYER -->
+        <mxCell id="auth" value="&lt;b&gt;Auth Layer&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 9px; color: #807090;&quot;&gt;Zero Trust / Email OTP&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0530;strokeColor=#bf00ff;fontColor=#bf00ff;fontSize=11;fontFamily=Courier New;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="140" y="352" width="200" height="68" as="geometry" />
+        </mxCell>
+
+        <!-- TUNNEL -->
+        <mxCell id="tunnel" value="&lt;b&gt;Tunnel&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0d00;strokeColor=#f5a623;fontColor=#e6d8f0;fontSize=11;fontFamily=Courier New;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="140" y="494" width="200" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- PROXY / EDGE -->
+        <mxCell id="proxy" value="&lt;b&gt;proxy / edge&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0d00;strokeColor=#f5a623;fontColor=#e6d8f0;fontSize=11;fontFamily=Courier New;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="140" y="622" width="200" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- HOSTING BOUNDARY (red dashed) -->
+        <mxCell id="hosting-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#ff5544;dashed=1;dashPattern=8 4;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="88" y="738" width="860" height="336" as="geometry" />
+        </mxCell>
+        <mxCell id="hosting-label" value="Hosting / Cloud" style="text;html=1;strokeColor=none;fillColor=none;align=right;verticalAlign=middle;fontColor=#ff5544;fontSize=10;fontFamily=Courier New;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="720" y="1064" width="228" height="18" as="geometry" />
+        </mxCell>
+
+        <!-- FIREWALL LABEL -->
+        <mxCell id="firewall-label" value="Firewall: 0 open ports (rules via Control Plane)" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontColor=#ff5544;fontSize=10;fontFamily=Courier New;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="108" y="754" width="480" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- SERVER BOX -->
+        <mxCell id="server" value="&lt;b&gt;Server: Ubuntu 24.04&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#120820;strokeColor=#807090;fontColor=#e6d8f0;fontSize=11;fontFamily=Courier New;arcSize=4;" vertex="1" parent="1">
+          <mxGeometry x="108" y="783" width="822" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- DOCKER / SERVICES GROUP -->
+        <mxCell id="docker-group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0f0820;strokeColor=#bf00ff;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="108" y="847" width="822" height="184" as="geometry" />
+        </mxCell>
+        <mxCell id="docker-title" value="Services" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontColor=#bf00ff;fontSize=11;fontFamily=Courier New;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="124" y="856" width="200" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Service placeholders -->
+        <mxCell id="svc-a" value="Service A" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0530;strokeColor=#807090;fontColor=#e6d8f0;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="124" y="888" width="158" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="svc-b" value="Service B" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0530;strokeColor=#807090;fontColor=#e6d8f0;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="298" y="888" width="158" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="svc-c" value="Service C" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0530;strokeColor=#807090;fontColor=#e6d8f0;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="472" y="888" width="158" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="svc-d" value="Service D" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0530;strokeColor=#807090;fontColor=#e6d8f0;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="646" y="888" width="158" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="svc-more" value="+ N more services (M total, K categories)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontColor=#807090;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="124" y="940" width="796" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- PERSISTENT VOLUME -->
+        <mxCell id="volume" value="Persistent Volume / Data Store" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0d0d18;strokeColor=#807090;fontColor=#e6d8f0;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="318" y="1010" width="300" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- TCP CLIENTS (bottom left) -->
+        <mxCell id="tcp-clients" value="&lt;b&gt;TCP Clients&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 9px; color: #807090;&quot;&gt;db clients, CLI tools&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0d0818;strokeColor=#807090;fontColor=#e6d8f0;fontSize=11;fontFamily=Courier New;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="20" y="830" width="180" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- EXTERNAL SERVICES (right) -->
+        <mxCell id="ext-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#f5a623;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="210" width="250" height="420" as="geometry" />
+        </mxCell>
+        <mxCell id="ext-title" value="External Services" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontColor=#f5a623;fontSize=12;fontFamily=Courier New;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="222" width="250" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="ext-1" value="Storage / CDN" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0d00;strokeColor=#807090;fontColor=#e6d8f0;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="258" width="210" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="ext-2" value="Auth Provider" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0d00;strokeColor=#807090;fontColor=#e6d8f0;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="310" width="210" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="ext-3" value="API / Webhooks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0d00;strokeColor=#807090;fontColor=#e6d8f0;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="362" width="210" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="ext-4" value="Notifications / Email" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0d00;strokeColor=#807090;fontColor=#e6d8f0;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="414" width="210" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="ext-5" value="Database / Cache" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0d00;strokeColor=#807090;fontColor=#e6d8f0;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="466" width="210" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="ext-6" value="Logging / Monitoring" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0d00;strokeColor=#807090;fontColor=#e6d8f0;fontSize=10;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="518" width="210" height="38" as="geometry" />
+        </mxCell>
+
+        <!-- ARROWS -->
+
+        <!-- Users → Auth (purple solid) -->
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#bf00ff;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="users" target="auth" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Auth → Tunnel (purple, label "authenticated") -->
+        <mxCell id="e2" value="authenticated" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#bf00ff;strokeWidth=2;fontColor=#807090;fontSize=9;fontFamily=Courier New;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="auth" target="tunnel" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Tunnel → Proxy (orange, label "encrypted") -->
+        <mxCell id="e3" value="encrypted" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#f5a623;strokeWidth=2;fontColor=#807090;fontSize=9;fontFamily=Courier New;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="tunnel" target="proxy" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Proxy → Server (orange) -->
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#f5a623;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="proxy" target="server" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- TCP Clients → Hosting (red dashed, "direct") -->
+        <mxCell id="e5" value="A record (direct)" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#ff5544;strokeWidth=1.5;dashed=1;dashPattern=8 4;fontColor=#807090;fontSize=9;fontFamily=Courier New;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;verticalLabelPosition=bottom;" edge="1" source="tcp-clients" target="hosting-box" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- External Services → Server (gray dashed, "notify / API") -->
+        <mxCell id="e6" value="notify / API" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#807090;strokeWidth=1.5;dashed=1;dashPattern=6 4;fontColor=#807090;fontSize=9;fontFamily=Courier New;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="ext-box" target="server" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

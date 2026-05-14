@@ -51,12 +51,19 @@ frontend/auth_config.json
 prompts/system_prompt.custom.md
 prompts/image_captioning_prompt.custom.md
 
-# Customer data (never commit)
+# Customer data
 data */
 epub/
 
 # Graphify outputs (generated, not for version control)
 graphify-out/
+
+# Local-only documentation (private notes, drafts, etc.)
+docs_local/
+
+# draw.io working files
+*.drawio.bkp
+*.drawio.dtmp
 
 # Build artifacts
 tsconfig.tsbuildinfo
