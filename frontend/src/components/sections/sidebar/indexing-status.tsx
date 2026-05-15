@@ -1,6 +1,7 @@
 import React, { FunctionComponent, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Loader2, Square } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useRole } from "@/hooks/useRole";
 
 const API_BASE = typeof window !== "undefined" ? "" : (process.env.SERVER_URL ?? "");
 const DONE_VISIBLE_MS = 8000; // How long the "finished" banner stays visible
@@ -25,6 +26,8 @@ interface IndexStatus {
 
 export const IndexingStatus: FunctionComponent = () => {
     const { t } = useTranslation("app");
+    const { role } = useRole();
+    const isAdmin = role !== "user";
     const [status, setStatus] = useState<IndexStatus | null>(null);
     const [showDone, setShowDone] = useState(false);
     const [confirmStop, setConfirmStop] = useState(false);
@@ -112,7 +115,7 @@ export const IndexingStatus: FunctionComponent = () => {
                                 <span className="opacity-60 font-normal"> · {status.kb_name}</span>
                             )}
                         </span>
-                        {!cancelling && (
+                        {!cancelling && isAdmin && (
                             <button
                                 onClick={() => setConfirmStop(true)}
                                 className="shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] bg-red-900/60 hover:bg-red-800/80 text-red-300 transition-colors"
@@ -148,7 +151,7 @@ export const IndexingStatus: FunctionComponent = () => {
                         </span>
                     </div>
                 </div>
-                {confirmStop && (
+                {confirmStop && isAdmin && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
                         <div className="bg-background border border-border rounded-lg p-6 mx-4 max-w-sm w-full shadow-xl">
                             <h3 className="text-base font-semibold text-foreground mb-2">{t("rag.indexingStopTitle")}</h3>
