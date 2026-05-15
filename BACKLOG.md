@@ -108,22 +108,6 @@ The metadata schema (title, author, document_id, document_class, etc.) and uploa
 
 **UI:** new session parameter in the RAG Config sidebar: "Document actuality" — off / prefer recent / cutoff (with a date picker) / soft penalty (with a decay-strength slider). Source citations show the document date when available.
 
-### Ingestion Pipeline — File-by-File Processing for Crash Recovery
-
-**Current architecture:** `run_ingestion` processes all files in two sequential sweeps — Docling parses every file first (phase 1), then all resulting chunks are embedded and written to the vector store (phase 2). A crash mid-embedding loses all Docling work for the remaining files.
-
-**The fix:** process one file at a time — Docling → embed → store → next file. A crash then costs at most one file; everything already committed is safe and will be skipped by hash-based dedup on the next run.
-
-The main things to untangle:
-
-1. Embedding model initialization — still done once before the loop, not once per file.
-2. `build_vector_store()` already accepts any chunk list — call it with one file's chunks at a time. No API change needed.
-3. The pre-pass stays as-is — still useful to run upfront to identify which files to skip via hash dedup. It just no longer loads chunks.
-4. Image chunks — initialize the image vector store once before the loop too; store each file's image chunks immediately after its text chunks.
-5. Progress reporting — actually gets simpler. Instead of "loading phase / embedding phase" across the whole batch, each file has its own mini-lifecycle.
-
-Roughly 1–2 hours of careful work once the decision to do it is made.
-
 ### Chunking Strategy Investigation — Lessons from Large-Scale Ingestion
 
 **Trigger:** practitioner account of ingesting 20k documents / 600k pages. Key insight: not all pages need to be chunked — the pipeline must first analyze each page and chunk only relevant content. Images and tables require separate handling, not the same path as prose text.
@@ -361,53 +345,6 @@ The backend currently has no rate limiting or concurrency guards beyond the sing
 
 ## Production Installation and Architecture
 
-### Component Map — What Runs Where
-
-| Component | Process | Compute profile | Can run remotely? |
-|---|---|---|---|
-| Frontend | Next.js (Node.js) | Lightweight — serves UI, proxies API calls | Yes — any Node host |
-| Backend | FastAPI (Python) | Medium baseline; heavy during indexing | Yes — needs network access to Ollama and vector store |
-| nomic-embed-text | Inside backend process (SentenceTransformer) | CPU-bound; ~500 MB RAM | No — embedded in backend |
-| Qwen3VL (image embeddings) | Inside backend process (transformers/PyTorch) | GPU-intensive; ~5 GB VRAM or very slow on CPU | No — embedded in backend |
-| Ollama | Separate process / server | GPU-intensive for LLM inference | Yes — `ollama_host` setting |
-| ChromaDB | Embedded in backend process | I/O-bound; scales to ~100k chunks comfortably | No — local filesystem |
-| pgvector | External PostgreSQL + pgvector extension | I/O-bound; scales to millions of chunks | Yes — connection string |
-
-**Key constraint:** the Next.js frontend proxies all API calls server-side (`SERVER_URL` in `frontend/.env`). For a split deployment (frontend and backend on different hosts), `SERVER_URL` must point to the backend from the *frontend server's* perspective — not the browser's. Leave it empty only when both run on the same host.
-
----
-
-### Deployment Profiles
-
-**Profile 1 — Single machine (current dev setup)**
-
-Everything on one machine. Ollama local, ChromaDB local, no GPU required (text-only).
-
-```
-[User browser] → localhost:3000 (Next.js) → localhost:8080 (FastAPI) → localhost:11434 (Ollama)
-```
-
-**Profile 2 — GPU server + thin access machine**
-
-Backend and Ollama on a GPU server. Frontend served from the same server or a lightweight separate host.
-
-```
-[User browser] → frontend-host:3000 (Next.js)
-                      ↓SERVER_URL=http://gpu-server:8080
-                 gpu-server:8080 (FastAPI + nomic + Qwen3VL)
-                      ↓
-                 gpu-server:11434 (Ollama)
-                 gpu-server:5432  (pgvector, optional)
-```
-
-Ollama can alternatively run on a different GPU server than the backend — configure via `ollama_host` in the RAG config panel.
-
-**Profile 3 — Full production split**
-
-Frontend on a web server / reverse proxy (nginx, Caddy), backend on a GPU machine, pgvector on a managed PostgreSQL instance.
-
----
-
 ### Containerisation
 
 Docker Compose is the natural packaging target. Rough service layout:
@@ -428,18 +365,6 @@ services:
 - **HuggingFace cache:** volume-mount `~/.cache/huggingface` so it survives container restarts. For air-gapped deployments, pre-populate the cache and set `HF_HUB_OFFLINE=1`.
 - **`SERVER_URL`:** in a Compose setup, the frontend container reaches the backend via the Compose service name (e.g. `http://backend:8080`). `frontend/.env` must set `SERVER_URL=http://backend:8080`.
 - **The dev server problem:** the current frontend runs `next dev`. A production Compose setup should build with `next build` and serve with `next start`.
-
----
-
-### Using pgvector as Database
-
-Use HNSW indexes on vector columns. Without an index, pgvector does a sequential scan (every row compared to the query), causing CPU spikes.
-
-```sql
-CREATE INDEX ON chunks USING hnsw (embedding vector_cosine_ops);
-```
-
-The index should be created after initial bulk ingestion, not before. Add this to the KB setup documentation when pgvector becomes the primary target.
 
 ---
 

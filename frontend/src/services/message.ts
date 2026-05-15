@@ -134,4 +134,4 @@ class MessageService extends ApiService {
     }
 }
 
-export const messageService = new MessageService(process.env.SERVER_URL! + "/api/v1/messages");
+export const messageService = new MessageService("/api/v1/messages");

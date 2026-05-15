@@ -2,7 +2,7 @@
 # Lancy — Start backend + frontend
 set -e
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$REPO/logs"
 VENV="$REPO/.venv"
 

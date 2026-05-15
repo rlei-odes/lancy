@@ -5,6 +5,39 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.3.4] — 2026-05-15 · rlei-odes
+
+### Changed — File-by-File Ingestion (crash recovery + memory)
+
+- `run_ingestion()` (folder-scan path) now processes files one at a time in a loop instead of a single monolithic load → caption → embed → store pass. Each file's chunks are committed to the vector store immediately after embedding.
+- **Crash recovery**: because the vector store is the progress tracker (file hashes are committed per-file), a mid-run crash or kill leaves all previously indexed files intact. The next run's dedup pre-pass skips them automatically — no separate state file needed.
+- **Peak memory**: reduced from O(all files) to O(one file) of chunk data in flight before embedding. Practically significant for large KBs with many PDFs.
+- Embedding model and caption LLM are initialised once before the loop (not per-file). Caption LLM fails fast on misconfiguration rather than discovering it on the first file that produces images.
+- Image VS existing-hash fetch is done once before the loop, not per-file.
+- `reset=True` (full re-index) is passed to the vector store only for the first file; subsequent files in the same run are always additive.
+- Cancellation now takes effect between files rather than mid-Docling. Files already committed survive a cancel; the next incremental run resumes from the first uncommitted file.
+- Ingest events (`ingest_events` table) are now written per-file immediately after each commit rather than in a bulk post-loop pass.
+- Removed: monolithic `load_chunks()` call across all files, `_on_progress` callback, `Counter` import.
+
+### Changed — Ingestion Progress Display
+
+- Sidebar progress label redesigned for the per-file model: `"3/20 · Chunking files…"` / `"3/20 · Computing embeddings…"` instead of the old `"1/3 Loading"` / `"3/3 Embedding"` phase-count prefix. The phase-count prefix only made sense for the old monolithic three-phase flow.
+- Progress bar now tracks `file_index / total_files` for folder scans (monotonically increasing). The old per-phase progress caused the bar to reset to 0% at the start of each new phase.
+- Sub-counter shows cumulative `N chunks` during chunking, `Batch X/Y` during embedding (per-file), `X/Y images` during captioning (per-file).
+- Single-file uploads show just the phase name without a file counter.
+- Upload path phase name changed from `"loading"` to `"chunking"` for consistency with the folder-scan path.
+
+### Changed — pgvector HNSW Index
+
+- `PGVectorStore.create_table()` now creates an HNSW index (`vector_cosine_ops`) on the embedding column immediately after table creation. The index is built on an empty table (trivial cost) and maintained automatically by Postgres on all subsequent inserts — bulk and incremental alike.
+
+### Fixed — Security
+
+- **Cancel endpoint path mismatch**: middleware was guarding `POST /api/v1/rag/reindex/cancel` (slash) but the frontend called `POST /api/v1/rag/reindex-cancel` (hyphen). The cancel endpoint was effectively unguarded for regular users.
+- **Stop button role gate**: the Stop button in the indexing banner was rendered for all authenticated users. It is now hidden for `role === "user"` — only admins can cancel a reindex, consistent with the trigger being admin-only.
+
+---
+
 ## [Lancy v0.3.3] — 2026-05-09 · rlei-odes
 
 ### Added — Multi-KB Concurrent Retrieval (backend)
@@ -497,13 +530,11 @@ file is encountered more than once, either across runs or within a single batch.
 ## [Lancy v0.2.27] — 2026-04-13 · rlei-odes
 
 ### Added — Project Tooling
-- `CLAUDE.md` — AI assistant briefing: project overview, key files, current config, development guidelines, security principles, commit convention, documentation drift rules
 - `start.sh` / `stop.sh` rewritten — self-contained, path-independent, starts both backend and frontend in the background with PID tracking and log files in `logs/`
 - `start.sh`: Ollama health check on startup; warns if Ollama is unreachable or configured model is not pulled (reads model name from `rag_config.json` dynamically)
 
 ### Added — Documentation
 - `README.md`: Known Issues section added
-- `CHANGELOG.md`: changelog reference added to `CLAUDE.md`
 
 ### Changed — Frontend
 - Temperature hint updated in all four languages (DE/EN/FR/IT) to show `default: 0.2 (recommended for RAG)`
@@ -545,7 +576,7 @@ Resolved leftover upstream merge conflict markers across four files, keeping the
 
 ---
 
-## [Lancy v0.2.25] — 2026-03-26 · Vonlanthen INSIGHT
+## [TRAG v0.2.25] — 2026-03-26 · Vonlanthen INSIGHT
 
 This release represents the full Lancy production stack on top of the SDSC baseline.
 

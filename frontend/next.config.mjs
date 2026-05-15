@@ -28,8 +28,6 @@ const nextConfig = {
         ];
     },
     env: {
-        SERVER_URL: "",
-        NEXT_PUBLIC_SERVER_URL: "",
         USE_MOCK_SERVICES: process.env.NEXT_USE_MOCK_SERVICES,
     },
     webpack(config) {

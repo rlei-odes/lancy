@@ -96,7 +96,7 @@ Accessible from the Retrieval Explorer page (`/explorer → Analytics tab`).
 
 ## Documentation
 
-- [Setup Guide](docs/admin-guides/setup-guide.md) — installation, environment variables, deployment
+- [Deployment Guide](docs/admin-guides/deployment.md) — installation, configuration, deployment profiles
 - [Architecture](docs/ARCHITECTURE.md) — system design, retrieval pipeline, sequence diagrams
 - [Codebase](docs/CODEBASE.md) — repository layout and module overview
 

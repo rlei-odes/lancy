@@ -1,7 +1,7 @@
 #!/bin/bash
 # Lancy — Stop backend + frontend
 
-LOG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logs"
+LOG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/logs"
 
 if [ -f "$LOG_DIR/backend.pid" ]; then
     kill "$(cat $LOG_DIR/backend.pid)" 2>/dev/null && echo "Backend stopped" || echo "Backend was already stopped"

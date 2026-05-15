@@ -66,5 +66,5 @@ If the project requires specific environment variables, add them to a `.env` fil
 
 ```
 # .env
-SERVER_URL=https://your-backend-url.com
+BACKEND_URL=http://localhost:8080
 ```

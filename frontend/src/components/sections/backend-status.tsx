@@ -2,7 +2,7 @@ import React, { FunctionComponent, useEffect, useRef, useState } from "react";
 import { CheckCircle2, WifiOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-const API_BASE = typeof window !== "undefined" ? "" : (process.env.SERVER_URL ?? "");
+const API_BASE = "";
 const POLL_INTERVAL_OK = 8000;
 const POLL_INTERVAL_DOWN = 3000;
 

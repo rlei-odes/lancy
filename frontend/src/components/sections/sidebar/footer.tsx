@@ -4,7 +4,7 @@ import { config } from "@/config";
 import { Trans, useTranslation } from "react-i18next";
 import { cn } from "@/lib/lorem";
 
-const API_BASE = typeof window !== "undefined" ? "" : (process.env.SERVER_URL ?? "");
+const API_BASE = "";
 
 export const Footer: FunctionComponent = () => {
     const { theme } = useTheme();

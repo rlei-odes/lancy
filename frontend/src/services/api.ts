@@ -20,7 +20,7 @@ export class ApiService {
 
         if (!response.ok) {
             if (response.status === 401) {
-                const refreshResponse = await fetch(`${process.env.SERVER_URL}/auth/refresh`, { method: "POST", credentials: "include" });
+                const refreshResponse = await fetch("/auth/refresh", { method: "POST", credentials: "include" });
                 if (refreshResponse.ok) {
                     const authenticatedResponse = await fetch(url, mergedOptions);
                     if (!authenticatedResponse.ok) {
@@ -28,7 +28,7 @@ export class ApiService {
                     }
                     return authenticatedResponse;
                 } else {
-                    window.location.href = `${process.env.SERVER_URL}/auth/login`;
+                    window.location.href = "/auth/login";
                 }
             }
             console.error("response code", response.status);

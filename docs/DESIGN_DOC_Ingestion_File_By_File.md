@@ -1,6 +1,6 @@
 # Technical Design: File-by-File Ingestion for Crash Recovery and Scalability
 
-_Status: ready to implement_
+_Status: design approved, implemented in v0.3.4_
 
 ---
 

@@ -24,7 +24,7 @@ export default function Passcode() {
             } catch (error) {
                 console.error("Error verifying passcode:", error);
             }
-            window.location.href = process.env.SERVER_URL || "/";
+            window.location.href = "/";
         }
     };
 

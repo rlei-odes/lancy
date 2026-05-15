@@ -122,4 +122,4 @@ class ConversationService extends ApiService {
     }
 }
 
-export const conversationService = new ConversationService(process.env.SERVER_URL! + "/api/v1/conversations");
+export const conversationService = new ConversationService("/api/v1/conversations");

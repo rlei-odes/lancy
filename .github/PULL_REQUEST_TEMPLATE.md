@@ -6,5 +6,5 @@
 
 ## Checklist
 - [ ] Follows the commit convention (`feat`, `fix`, `refactor`, `docs`, `chore`)
-- [ ] Documentation updated if needed (README, ARCHITECTURE.md, setup-guide.md)
+- [ ] Documentation updated if needed (README, ARCHITECTURE.md, deployment.md)
 - [ ] Tested against the demo dataset

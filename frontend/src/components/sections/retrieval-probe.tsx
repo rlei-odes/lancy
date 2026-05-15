@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/lorem";
 import { ChunkCard, ChunkData } from "@/components/ui/chunk-card";
 
-const API_BASE = typeof window !== "undefined" ? "" : (process.env.SERVER_URL ?? "");
+const API_BASE = "";
 
 interface SessionConfig {
     retriever_top_k: number;

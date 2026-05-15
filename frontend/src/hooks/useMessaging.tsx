@@ -121,7 +121,7 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
     useEffect(() => {
         // Always call /auth/refresh on startup so the backend can migrate old cookies
         // to the current stable user_id (deterministic hash of APP_PASSWORD).
-        fetch(`${process.env.SERVER_URL}/auth/refresh`, { method: "POST", credentials: "include" })
+        fetch("/auth/refresh", { method: "POST", credentials: "include" })
             .catch(() => {})
             .finally(() => {
                 if (activeConversationId) {

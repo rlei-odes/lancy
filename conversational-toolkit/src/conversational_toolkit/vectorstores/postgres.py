@@ -55,6 +55,10 @@ class PGVectorStore(VectorStore):
     async def create_table(self) -> None:
         async with self.engine.begin() as session:
             await session.run_sync(self.metadata.create_all)
+            await session.execute(text(
+                f"CREATE INDEX IF NOT EXISTS {self.table_name}_embedding_hnsw_idx "
+                f"ON {self.table_name} USING hnsw (embedding vector_cosine_ops)"
+            ))
 
     async def clear(self) -> None:
         """Remove all rows from the table (keeps table structure intact)."""

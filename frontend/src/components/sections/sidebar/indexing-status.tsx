@@ -3,7 +3,7 @@ import { CheckCircle2, Loader2, Square } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useRole } from "@/hooks/useRole";
 
-const API_BASE = typeof window !== "undefined" ? "" : (process.env.SERVER_URL ?? "");
+const API_BASE = "";
 const DONE_VISIBLE_MS = 8000; // How long the "finished" banner stays visible
 
 interface IndexStatus {

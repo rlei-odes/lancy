@@ -13,7 +13,7 @@ import {
 import { BarChart2, Clock, FileText, Library, Loader2, TrendingUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-const API_BASE = typeof window !== "undefined" ? "" : (process.env.SERVER_URL ?? "");
+const API_BASE = "";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

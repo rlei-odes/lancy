@@ -318,8 +318,7 @@ Browser → GET /api/rag/query
   → streams response back to browser
 ```
 
-`SERVER_URL` in `.env` must be empty (or unset) for this to work correctly.
-If set to a hostname, API calls loop out externally and break on NAT/local networks.
+Set `BACKEND_URL` in `frontend/.env` to point at the backend host when running on separate machines.
 
 ### RAG Config Panel
 

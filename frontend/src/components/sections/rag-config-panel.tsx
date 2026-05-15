@@ -342,7 +342,7 @@ function kbInfoToConfig(kb: KBInfo): KBConfig {
 
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 
-const API_BASE = process.env.NEXT_PUBLIC_SERVER_URL || "";
+const API_BASE = "";
 
 interface UserPresets { retrieval: RetrievalPreset[]; kb: KBPreset[]; }
 const EMPTY_USER_PRESETS: UserPresets = { retrieval: [], kb: [] };

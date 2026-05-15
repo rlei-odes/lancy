@@ -55,7 +55,7 @@ const ChunkMarkdown: FunctionComponent<{ content: string }> = ({ content }) => (
     </ReactMarkdown>
 );
 
-const API_BASE = typeof window !== "undefined" ? "" : (process.env.SERVER_URL ?? "");
+const API_BASE = "";
 
 // Fixed baseline columns — not duplicated in dynamic extras
 const BASELINE_META_KEYS = new Set([

@@ -21,4 +21,4 @@ class PasscodeService extends ApiService {
     }
 }
 
-export const passcodeService = new PasscodeService(process.env.SERVER_URL!);
+export const passcodeService = new PasscodeService("");
