@@ -279,7 +279,7 @@ export const app = {
         resetConfirmOk: "Elimina e reindicizza",
         resetConfirmCancel: "Annulla",
         btnReindexTitle: "Elimina il vector store e reindicizza tutti i file.\n\nQuando usarlo:\n  · Modello o backend di embedding modificato\n  · Rimuovere chunk duplicati/obsoleti\n⚠ Richiede più tempo dell'indicizzazione incrementale.",
-        indexingPhaseLoading: "Caricamento file…",
+        indexingPhaseLoading: "Suddivisione file…",
         indexingPhaseCaptioning: "Generazione didascalie…",
         indexingPhaseEmbedding: "Calcolo embeddings…",
         indexingDoneIncremental: "Indicizzazione incrementale{{kb}} completata alle {{time}}",

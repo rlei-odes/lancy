@@ -284,7 +284,7 @@ export const app = {
         resetConfirmOk: "Delete and re-index",
         resetConfirmCancel: "Cancel",
         btnReindexTitle: "Deletes the vector store and re-indexes all files.\n\nWhen to use:\n  · Embedding model or backend changed\n  · Remove duplicate / stale chunks\n⚠ Takes longer than incremental indexing.",
-        indexingPhaseLoading: "Loading files…",
+        indexingPhaseLoading: "Chunking files…",
         indexingPhaseCaptioning: "Captioning images…",
         indexingPhaseEmbedding: "Computing embeddings…",
         indexingDoneIncremental: "Incremental indexing{{kb}} completed at {{time}}",

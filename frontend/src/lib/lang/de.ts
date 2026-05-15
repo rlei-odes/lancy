@@ -279,7 +279,7 @@ export const app = {
         resetConfirmOk: "Löschen und neu indexieren",
         resetConfirmCancel: "Abbrechen",
         btnReindexTitle: "Löscht den Vector Store und indexiert alle Dateien neu.\n\nWann verwenden:\n  · Embedding-Modell oder Backend geändert\n  · Doppelte / veraltete Chunks entfernen\n⚠ Dauert länger als inkrementelle Indexierung.",
-        indexingPhaseLoading: "Dateien laden…",
+        indexingPhaseLoading: "Dateien chunken…",
         indexingPhaseCaptioning: "Bilder beschriften…",
         indexingPhaseEmbedding: "Embeddings berechnen…",
         indexingDoneIncremental: "Inkrementelle Indexierung{{kb}} beendet um {{time}}",

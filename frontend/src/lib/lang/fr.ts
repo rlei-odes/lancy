@@ -279,7 +279,7 @@ export const app = {
         resetConfirmOk: "Supprimer et réindexer",
         resetConfirmCancel: "Annuler",
         btnReindexTitle: "Supprime le vector store et réindexe tous les fichiers.\n\nQuand utiliser :\n  · Modèle ou backend d'embedding modifié\n  · Supprimer les chunks en double / obsolètes\n⚠ Prend plus de temps que l'indexation incrémentielle.",
-        indexingPhaseLoading: "Chargement des fichiers…",
+        indexingPhaseLoading: "Découpage des fichiers…",
         indexingPhaseCaptioning: "Légendage des images…",
         indexingPhaseEmbedding: "Calcul des embeddings…",
         indexingDoneIncremental: "Indexation incrémentielle{{kb}} terminée à {{time}}",

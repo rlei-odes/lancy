@@ -7,7 +7,6 @@ import logging
 import multiprocessing
 import os
 import signal
-from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -28,7 +27,6 @@ from lancy.feature0_baseline_rag import (
     build_llm,
     build_vector_store,
     file_hash,
-    load_chunks,
     make_vector_store,
 )
 from lancy.kb_router import KBInfo
@@ -356,7 +354,7 @@ async def run_ingestion(
     _index_status.update(
         {
             "indexing": True,
-            "phase": "loading",
+            "phase": "chunking",
             "current_file": "",
             "file_index": 0,
             "total_files": 0,
@@ -371,20 +369,6 @@ async def run_ingestion(
             "last_result": None,
         }
     )
-
-    def _on_progress(
-        current_file: str, file_index: int, total_files: int, chunks_so_far: int
-    ) -> None:
-        if _cancel_requested:
-            raise _IndexingCancelled()
-        _index_status.update(
-            {
-                "current_file": current_file,
-                "file_index": file_index,
-                "total_files": total_files,
-                "chunks_so_far": chunks_so_far,
-            }
-        )
 
     loop = asyncio.get_event_loop()
     try:
@@ -486,29 +470,21 @@ async def run_ingestion(
             )
             return 0, 0, n_skipped_store, n_skipped_batch
 
-        # Run blocking load_chunks in thread pool so event loop stays responsive.
-        chunks = await loop.run_in_executor(
-            None,
-            lambda: load_chunks(
-                include_files=filtered_files,
-                file_hashes=file_hashes_map,
-                on_progress=_on_progress,
-                pdf_ocr_enabled=kb.pdf_ocr_enabled,
-                max_chunk_tokens=getattr(kb, "max_chunk_tokens", 0),
-                write_images=kb.image_indexing_enabled or kb.image_captioning_enabled,
-            ),
-        )
-        if not chunks:
-            log.warning(
-                f"No chunks produced for KB '{kb.name}' — vector store unchanged."
-            )
-            return 0, 0, n_skipped_store, n_skipped_batch
+        total_files = len(filtered_files)
+        _index_status["total_files"] = total_files
 
-        text_chunks = [c for c in chunks if c.mime_type.startswith("text")]
-        image_chunks = [c for c in chunks if c.mime_type.startswith("image")]
+        try:
+            emb = _get_cached_embedding_model(kb)
+        except OSError as exc:
+            raise RuntimeError(
+                f"Embedding model '{kb.embedding_model}' is not in the local cache. "
+                "Pre-download it on the server before indexing (HF_HUB_OFFLINE is enabled)."
+            ) from exc
 
-        if kb.image_captioning_enabled and image_chunks and cfg is not None:
-            _index_status["phase"] = "captioning"
+        # Eagerly init caption LLM — fails fast on misconfiguration rather than
+        # discovering the problem mid-run on the first file that has images.
+        caption_llm = None
+        if kb.image_captioning_enabled and cfg is not None:
             caption_llm = build_llm(
                 backend=cfg.llm_backend,
                 model_name=cfg.llm_model or None,
@@ -518,166 +494,230 @@ async def run_ingestion(
                 custom_api_key=cfg.custom_api_key or "",
                 max_tokens=512,
             )
-            await _caption_image_chunks(text_chunks, image_chunks, caption_llm)
-            image_chunks = []  # consumed by captioning; not stored in image VS
-            before = len(text_chunks)
-            text_chunks = [c for c in text_chunks if _content_score(c.content) >= MIN_CONTENT_CHARS]
-            if (dropped := before - len(text_chunks)):
-                log.info(f"Post-captioning quality filter: dropped {dropped} near-empty chunk(s)")
-        elif kb.image_captioning_enabled and image_chunks and cfg is None:
+        elif kb.image_captioning_enabled and cfg is None:
             log.warning(
                 "Image captioning is enabled on this KB but no session config was provided — "
                 "skipping captioning. Re-index via the UI to caption images."
             )
 
-        try:
-            emb = build_embedding_model(
-                kb.embedding_backend,
-                kb.embedding_model,
-                ollama_host=kb.embedding_ollama_host or "",
-                custom_base_url=kb.embedding_custom_base_url or "",
-                custom_api_key=kb.embedding_custom_api_key or "",
+        # Image VS: fetch existing hashes once before the loop.
+        existing_image_hashes: set[str] = set()
+        if kb.image_indexing_enabled and not reset:
+            image_vs_for_query = make_vector_store(
+                vs_type=vs_type,
+                db_path=Path(kb.vs_path + "_images") if vs_type == "chromadb" else None,
+                embedding_model_name=kb.image_embedding_model,
+                vs_connection_string=vs_conn,
+                table_name=f"rag_{kb.id.replace('-', '_')}_images",
             )
-        except OSError as exc:
-            raise RuntimeError(
-                f"Embedding model '{kb.embedding_model}' is not in the local cache. "
-                "Pre-download it on the server before indexing (HF_HUB_OFFLINE is enabled)."
-            ) from exc
-        _index_status["phase"] = "embedding"
+            existing_image_hashes = await image_vs_for_query.get_file_hashes()
 
-        def _on_embed_progress(batch_idx: int, total_batches: int) -> None:
-            if _cancel_requested:
-                raise _IndexingCancelled()
-            _index_status.update(
-                {"embed_batch": batch_idx, "embed_total_batches": total_batches}
-            )
-
-        # build_vector_store is async but calls blocking SentenceTransformer.encode().
-        # Run it in a thread with its own event loop to keep the main loop responsive.
-        # For PGVector, AsyncEngine is loop-bound: create a fresh instance inside
-        # the thread's own loop rather than reusing vs_for_query.
-        def _sync_build_vs():
-            new_loop = asyncio.new_event_loop()
-            try:
-                if vs_type == "pgvector":
-                    vs_instance = make_vector_store(
-                        vs_type=vs_type,
-                        db_path=vs_path,
-                        embedding_model_name=kb.embedding_model,
-                        vs_connection_string=vs_conn,
-                        table_name=f"rag_{kb.id.replace('-', '_')}",
-                    )
-                else:
-                    vs_instance = vs_for_query  # ChromaDB: safe to reuse across threads
-                return new_loop.run_until_complete(
-                    build_vector_store(
-                        chunks=text_chunks,
-                        embedding_model=emb,
-                        db_path=vs_path or VS_PATH,
-                        reset=reset,
-                        on_embed_progress=_on_embed_progress,
-                        batch_size=kb.embedding_batch_size,
-                        vector_store=vs_instance,
-                        existing_hashes=existing_hashes,
-                        use_task_prefix=kb.nomic_prefix,
-                    )
-                )
-            finally:
-                new_loop.close()
-
-        await loop.run_in_executor(None, _sync_build_vs)
-
-        # Image store — only when indexing toggle is on and images were extracted.
-        if kb.image_indexing_enabled and image_chunks:
-            log.info(f"Indexing {len(image_chunks)} image chunk(s) into vs_image …")
-            existing_image_hashes: set[str] = set()
-            if not reset:
-                image_vs_for_query = make_vector_store(
-                    vs_type=vs_type,
-                    db_path=Path(kb.vs_path + "_images")
-                    if vs_type == "chromadb"
-                    else None,
-                    embedding_model_name=kb.image_embedding_model,
-                    vs_connection_string=vs_conn,
-                    table_name=f"rag_{kb.id.replace('-', '_')}_images",
-                )
-                existing_image_hashes = await image_vs_for_query.get_file_hashes()
-
+        image_emb = None
+        if kb.image_indexing_enabled:
             image_emb = build_embedding_model("qwen3vl", kb.image_embedding_model)
 
-            def _sync_build_image_vs():
+        all_text_chunks: list = []
+        chunks_so_far = 0
+        files_processed = 0
+
+        for i, file_path in enumerate(filtered_files):
+            if _cancel_requested:
+                raise _IndexingCancelled()
+
+            h = file_hashes_map[file_path]
+            size_mb = file_path.stat().st_size / 1_048_576
+            _index_status.update({
+                "phase": "chunking",
+                "current_file": file_path.name,
+                "file_index": i + 1,
+                "embed_batch": 0,
+                "embed_total_batches": 0,
+            })
+
+            ram_gb = _available_ram_gb()
+            ram_info = f", {ram_gb:.1f} GB RAM free" if ram_gb is not None else ""
+            log.info(f"Chunking '{file_path.name}': {size_mb:.1f} MB{ram_info} ({i + 1}/{total_files})")
+
+            pool = _get_chunking_pool()
+            future = pool.submit(
+                _chunking_pool_fn,
+                str(file_path), h,
+                kb.pdf_ocr_enabled,
+                getattr(kb, "max_chunk_tokens", 0),
+                kb.image_indexing_enabled or kb.image_captioning_enabled,
+            )
+            chunk_timeout = max(600, int(size_mb * 60))
+            file_start = datetime.now(timezone.utc)
+            try:
+                chunks = await loop.run_in_executor(None, lambda: future.result(timeout=chunk_timeout))
+            except concurrent.futures.TimeoutError:
+                log.error(f"Chunking timed out after {chunk_timeout}s for '{file_path.name}' — skipping")
+                _reset_chunking_pool()
+                if db_engine is not None:
+                    _ms = int((datetime.now(timezone.utc) - file_start).total_seconds() * 1000)
+                    await _write_ingest_event(
+                        db_engine, kb.id, file_path.name, file_path.name, "timeout",
+                        file_size_mb=size_mb, duration_ms=_ms,
+                        error=f"Chunking timed out after {chunk_timeout}s",
+                    )
+                continue
+            except concurrent.futures.BrokenExecutor:
+                log.error(f"Chunking subprocess crashed for '{file_path.name}' — skipping")
+                _reset_chunking_pool()
+                if db_engine is not None:
+                    _ms = int((datetime.now(timezone.utc) - file_start).total_seconds() * 1000)
+                    await _write_ingest_event(
+                        db_engine, kb.id, file_path.name, file_path.name, "crashed",
+                        file_size_mb=size_mb, duration_ms=_ms,
+                        error="Chunking subprocess crashed",
+                    )
+                continue
+
+            _clear_cuda_cache()
+
+            if not chunks:
+                log.warning(f"No chunks produced from '{file_path.name}'")
+                if db_engine is not None:
+                    _ms = int((datetime.now(timezone.utc) - file_start).total_seconds() * 1000)
+                    await _write_ingest_event(
+                        db_engine, kb.id, file_path.name, file_path.name, "no_chunks",
+                        chunks=0, file_size_mb=size_mb, duration_ms=_ms,
+                    )
+                continue
+
+            text_chunks = [c for c in chunks if c.mime_type.startswith("text")]
+            image_chunks = [c for c in chunks if c.mime_type.startswith("image")]
+
+            if caption_llm and image_chunks:
+                _index_status["phase"] = "captioning"
+                await _caption_image_chunks(text_chunks, image_chunks, caption_llm)
+                image_chunks = []
+                before = len(text_chunks)
+                text_chunks = [c for c in text_chunks if _content_score(c.content) >= MIN_CONTENT_CHARS]
+                if (dropped := before - len(text_chunks)):
+                    log.info(f"Post-captioning quality filter: dropped {dropped} near-empty chunk(s)")
+
+            if not text_chunks:
+                log.warning(f"No usable text chunks from '{file_path.name}' after quality filter")
+                continue
+
+            _index_status["phase"] = "embedding"
+
+            def _on_embed_progress(batch_idx: int, total_batches: int) -> None:
+                if _cancel_requested:
+                    raise _IndexingCancelled()
+                _index_status.update({"embed_batch": batch_idx, "embed_total_batches": total_batches})
+
+            # Capture per-iteration values explicitly for the closures below.
+            _file_text_chunks = text_chunks
+            _file_reset = reset and i == 0
+
+            def _sync_build_vs_for_file():
                 new_loop = asyncio.new_event_loop()
                 try:
-                    image_vs = make_vector_store(
-                        vs_type=vs_type,
-                        db_path=Path(kb.vs_path + "_images")
-                        if vs_type == "chromadb"
-                        else None,
-                        embedding_model_name=kb.image_embedding_model,
-                        vs_connection_string=vs_conn,
-                        table_name=f"rag_{kb.id.replace('-', '_')}_images",
-                    )
+                    if vs_type == "pgvector":
+                        vs_instance = make_vector_store(
+                            vs_type=vs_type,
+                            db_path=vs_path,
+                            embedding_model_name=kb.embedding_model,
+                            vs_connection_string=vs_conn,
+                            table_name=f"rag_{kb.id.replace('-', '_')}",
+                        )
+                    else:
+                        vs_instance = vs_for_query  # ChromaDB: safe to reuse across threads
                     return new_loop.run_until_complete(
                         build_vector_store(
-                            chunks=image_chunks,
-                            embedding_model=image_emb,
-                            vector_store=image_vs,
-                            reset=reset,
-                            existing_hashes=existing_image_hashes,
-                            use_task_prefix=False,
+                            chunks=_file_text_chunks,
+                            embedding_model=emb,
+                            db_path=vs_path or VS_PATH,
+                            reset=_file_reset,
+                            on_embed_progress=_on_embed_progress,
+                            batch_size=kb.embedding_batch_size,
+                            vector_store=vs_instance,
+                            existing_hashes=existing_hashes,
+                            use_task_prefix=kb.nomic_prefix,
                         )
                     )
                 finally:
                     new_loop.close()
 
-            await loop.run_in_executor(None, _sync_build_image_vs)
-            log.info(
-                f"Image indexing complete: {len(image_chunks)} chunk(s) processed."
-            )
+            await loop.run_in_executor(None, _sync_build_vs_for_file)
+            _clear_cuda_cache()
 
-        n_files = len(Counter(c.metadata.get("source_file", "?") for c in chunks))
+            if kb.image_indexing_enabled and image_chunks:
+                _file_image_chunks = image_chunks
+                _img_reset = reset and i == 0
+
+                def _sync_build_image_vs_for_file():
+                    new_loop = asyncio.new_event_loop()
+                    try:
+                        image_vs = make_vector_store(
+                            vs_type=vs_type,
+                            db_path=Path(kb.vs_path + "_images") if vs_type == "chromadb" else None,
+                            embedding_model_name=kb.image_embedding_model,
+                            vs_connection_string=vs_conn,
+                            table_name=f"rag_{kb.id.replace('-', '_')}_images",
+                        )
+                        return new_loop.run_until_complete(
+                            build_vector_store(
+                                chunks=_file_image_chunks,
+                                embedding_model=image_emb,
+                                vector_store=image_vs,
+                                reset=_img_reset,
+                                existing_hashes=existing_image_hashes,
+                                use_task_prefix=False,
+                            )
+                        )
+                    finally:
+                        new_loop.close()
+
+                await loop.run_in_executor(None, _sync_build_image_vs_for_file)
+
+            files_processed += 1
+            chunks_so_far += len(text_chunks)
+            _index_status["chunks_so_far"] = chunks_so_far
+            all_text_chunks.extend(text_chunks)
+
+            if db_engine is not None:
+                _ms = int((datetime.now(timezone.utc) - file_start).total_seconds() * 1000)
+                await _write_ingest_event(
+                    db_engine, kb.id, file_path.name, file_path.name, "ok",
+                    chunks=len(text_chunks), file_size_mb=size_mb, duration_ms=_ms,
+                )
+
         log.info(
-            f"Ingestion complete: {n_files} new files embedded, "
+            f"Ingestion complete: {files_processed} new files embedded, "
             f"{n_skipped_store} skipped (already in store), "
             f"{n_skipped_batch} skipped (duplicate in batch)"
         )
 
         if db_engine is not None:
-            chunks_per_file: dict[str, int] = {}
-            for c in chunks:
-                src = c.metadata.get("source_file", "")
-                chunks_per_file[src] = chunks_per_file.get(src, 0) + 1
-            for f in filtered_files:
-                status = "ok" if f.name in chunks_per_file else "no_chunks"
-                size_mb = round(f.stat().st_size / (1024 * 1024), 3)
-                await _write_ingest_event(
-                    db_engine, kb.id, f.name, f.name, status,
-                    chunks=chunks_per_file.get(f.name, 0), file_size_mb=size_mb,
-                )
             for f in skipped_store_files:
-                size_mb = round(f.stat().st_size / (1024 * 1024), 3)
+                size_mb_f = round(f.stat().st_size / (1024 * 1024), 3)
                 await _write_ingest_event(
-                    db_engine, kb.id, f.name, f.name, "skipped", file_size_mb=size_mb,
+                    db_engine, kb.id, f.name, f.name, "skipped", file_size_mb=size_mb_f,
                 )
             for f in skipped_batch_files:
-                size_mb = round(f.stat().st_size / (1024 * 1024), 3)
+                size_mb_f = round(f.stat().st_size / (1024 * 1024), 3)
                 await _write_ingest_event(
-                    db_engine, kb.id, f.name, f.name, "skipped_duplicate", file_size_mb=size_mb,
+                    db_engine, kb.id, f.name, f.name, "skipped_duplicate", file_size_mb=size_mb_f,
                 )
-        if text_chunks:
+
+        if all_text_chunks:
             try:
                 write_kb_stats(
                     db_dir=db_dir,
                     kb_id=kb.id,
-                    chunks=text_chunks,
+                    chunks=all_text_chunks,
                     was_reset=reset,
-                    files_added=n_files,
+                    files_added=files_processed,
                     files_skipped_store=n_skipped_store,
                     files_skipped_batch=n_skipped_batch,
                 )
             except Exception as exc:
                 log.warning(f"Failed to write KB stats for '{kb.id}': {exc}")
-        return len(chunks), n_files, n_skipped_store, n_skipped_batch
+
+        return chunks_so_far, files_processed, n_skipped_store, n_skipped_batch
     except _IndexingCancelled:
         log.info("Indexing cancelled by user request.")
         return 0, 0, 0, 0
@@ -742,9 +782,9 @@ async def ingest_uploaded_file(
     _event_written = False
     _index_status.update({
         "indexing": True,
-        "phase": "loading",
+        "phase": "chunking",
         "current_file": source_name,
-        "file_index": 0,
+        "file_index": 1,
         "total_files": 1,
         "chunks_so_far": 0,
         "embed_batch": 0,

@@ -87,22 +87,22 @@ export const IndexingStatus: FunctionComponent = () => {
     if (status?.indexing) {
         const isEmbedding = status.phase === "embedding";
         const isCaptioning = status.phase === "captioning";
-        const pct = isEmbedding
-            ? (status.embed_total_batches > 0 ? Math.round((status.embed_batch / status.embed_total_batches) * 100) : 0)
-            : isCaptioning
-                ? (status.caption_total > 0 ? Math.round((status.caption_index / status.caption_total) * 100) : 0)
-                : (status.total_files > 0 ? Math.round((status.file_index / status.total_files) * 100) : 0);
-
-        const totalPhases = status.captioning_enabled ? 3 : 2;
-        const currentPhase = isEmbedding ? totalPhases : isCaptioning ? 2 : 1;
-        const phasePrefix = `${currentPhase}/${totalPhases}  `;
+        // Primary progress: file_index/total_files — monotonically increasing for folder scans.
+        // Single-file uploads (total_files === 1) sit at 100% since file_index is already 1.
+        const pct = status.total_files > 0
+            ? Math.round((status.file_index / status.total_files) * 100)
+            : 0;
+        // Show "File i/N · " prefix only when processing multiple files.
+        const filePrefix = status.total_files > 1
+            ? `${status.file_index}/${status.total_files} · `
+            : "";
         const phaseLabel = cancelling
             ? t("rag.indexingCancelling")
-            : isEmbedding
-                ? phasePrefix + t("rag.indexingPhaseEmbedding")
-                : isCaptioning
-                    ? phasePrefix + t("rag.indexingPhaseCaptioning")
-                    : phasePrefix + t("rag.indexingPhaseLoading");
+            : isCaptioning
+                ? filePrefix + t("rag.indexingPhaseCaptioning")
+                : isEmbedding
+                    ? filePrefix + t("rag.indexingPhaseEmbedding")
+                    : filePrefix + t("rag.indexingPhaseLoading");
 
         return (
             <>
@@ -143,7 +143,7 @@ export const IndexingStatus: FunctionComponent = () => {
                                 ? (status.embed_total_batches > 0 ? `Batch ${status.embed_batch}/${status.embed_total_batches}` : "…")
                                 : isCaptioning
                                     ? (status.caption_total > 0 ? `${status.caption_index}/${status.caption_total} images` : "…")
-                                    : `${status.file_index}/${status.total_files} · ${status.chunks_so_far} Chunks`
+                                    : `${status.chunks_so_far} chunks`
                             }
                             {status.queued > 0 && (
                                 <span className="ml-1.5 opacity-60">+{status.queued} queued</span>
