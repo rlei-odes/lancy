@@ -60,6 +60,13 @@ else
     echo ""
 fi
 
+# --- Requirements ---
+echo "Checking Python requirements..."
+if ! (cd "$REPO" && "$VENV/bin/pip" install -r requirements.txt -q 2>&1); then
+    echo "ERROR: Failed to install requirements. Check requirements.txt."
+    exit 1
+fi
+
 # --- Backend ---
 echo "Starting backend (Ollama / mistral-nemo:12b) on port 8080..."
 PYTHONPATH="$REPO/backend/src" \
@@ -74,6 +81,10 @@ echo "  Backend PID: $(cat $LOG_DIR/backend.pid)"
 # --- Frontend ---
 echo "Starting frontend on port 3000..."
 cd "$REPO/frontend"
+if [ package-lock.json -nt node_modules/.package-lock.json ] 2>/dev/null || [ ! -d node_modules ]; then
+    echo "  Running npm install..."
+    npm install -q
+fi
 > "$LOG_DIR/frontend.log"
 FIFO="$LOG_DIR/frontend.fifo"
 rm -f "$FIFO" && mkfifo "$FIFO"

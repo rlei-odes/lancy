@@ -22,6 +22,10 @@ echo "  Backend URL: ${BACKEND_URL:-http://localhost:8080 (default)}"
 
 # --- Frontend ---
 cd "$FRONTEND"
+if [ package-lock.json -nt node_modules/.package-lock.json ] 2>/dev/null || [ ! -d node_modules ]; then
+    echo "  Running npm install..."
+    npm install -q
+fi
 > "$LOG_DIR/frontend.log"
 FIFO="$LOG_DIR/frontend.fifo"
 rm -f "$FIFO" && mkfifo "$FIFO"
