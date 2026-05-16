@@ -7,9 +7,38 @@ import path from "path";
 
 const CONFIG_PATH = path.join(process.cwd(), "auth_config.json");
 
+// ── SSO config types ────────────────────────────────────────────────────────
+
+export interface OIDCConfig {
+    provider: "oidc";
+    client_id: string;
+    issuer_url: string;
+    redirect_uri: string;
+    allowed_groups?: string[];
+    session_ttl_hours?: number;
+}
+
+export interface LDAPConfig {
+    provider: "ldap";
+    server: string;
+    bind_dn_template: string;
+    base_dn: string;
+    user_id_attribute?: string;
+    display_name_attribute?: string;
+    allowed_groups?: string[];
+    session_ttl_hours?: number;
+    search_bind_dn?: string;
+    search_bind_password?: string;
+}
+
+export type SSOConfig = OIDCConfig | LDAPConfig;
+
 interface AuthConfig {
     admin_password?: string;
+    sso?: SSOConfig;
 }
+
+// ── Internal read/write ─────────────────────────────────────────────────────
 
 function read(): AuthConfig {
     try {
@@ -22,6 +51,8 @@ function read(): AuthConfig {
 function write(config: AuthConfig): void {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
 }
+
+// ── Admin password (Mode 2) ─────────────────────────────────────────────────
 
 export function getAdminPassword(): string | null {
     return read().admin_password ?? process.env.ADMIN_PASSWORD ?? null;
@@ -41,4 +72,34 @@ export function clearAdminPassword(): void {
 
 export function isMode2Active(): boolean {
     return getAdminPassword() !== null;
+}
+
+// ── SSO config (Mode 3) ─────────────────────────────────────────────────────
+
+export function getSSOConfig(): SSOConfig | null {
+    return read().sso ?? null;
+}
+
+export function setSSOConfig(sso: SSOConfig | null): void {
+    const config = read();
+    if (sso === null) {
+        delete config.sso;
+    } else {
+        config.sso = sso;
+    }
+    write(config);
+}
+
+export function isMode3Active(): boolean {
+    return getSSOConfig() !== null;
+}
+
+// TTL in seconds for the session_ttl_hours configured in the SSO block.
+// Falls back to 30 days for Modes 1/2.
+export function getSessionTtlSeconds(): number {
+    const sso = getSSOConfig();
+    if (sso?.session_ttl_hours) {
+        return sso.session_ttl_hours * 60 * 60;
+    }
+    return 60 * 60 * 24 * 30;
 }

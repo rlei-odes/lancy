@@ -70,12 +70,14 @@ All `/api/admin/*` endpoints require admin. The table below is the full access m
 | `/api/v1/branding` | GET | - | - | - |
 | `/api/v1/branding` | PUT | 401 | 403 | ✓ |
 | `/api/v1/branding/avatar` | DELETE | 401 | 403 | ✓ |
+| `/api/auth/*` | * | - | - | - |
 | `/api/admin/*` | * | 401 | 403 | ✓ |
 | `/v1/chat/completions` | POST | 401 | ✓ | ✓ |
 | `/v1/models` | GET | 401 | ✓ | ✓ |
 
 Notes:
 - `POST /rag/config` and `POST /rag/presets` are intentionally user-writable — users may adjust session RAG parameters and save presets from the config panel.
+- `/api/auth/*` routes are excluded from middleware auth checks (they implement their own access control internally — see the Authentication section below).
 - The backend itself has no auth layer; it trusts the `x-user-role` header injected by the middleware. Port 8080 must be firewalled in any non-local deployment.
 
 ### Interactive API explorer
@@ -85,6 +87,213 @@ The FastAPI-generated Swagger UI is available at `http://localhost:3000/docs`. I
 - **Admin session** — accessing `/docs` while logged in as admin opens the full interactive explorer. All "Try it out" requests go through the frontend proxy on port 3000, so auth is enforced exactly as it would be for any other client.
 - **User session** — the middleware redirects `/docs` to `/redoc`, a read-only API reference that does not allow test requests.
 - **No session** — redirected to `/login`.
+
+---
+
+## Authentication
+
+All `/api/auth/` routes are served by Next.js and bypassed by the middleware (the entire prefix is public at the middleware layer). Each route enforces its own access control as needed. Most are called before a session exists; `admin-config` checks for admin role internally.
+
+The FastAPI backend has one auth-related endpoint (`/api/v1/auth/ldap-verify`) for internal use by the Next.js login route. It should not be called directly by external clients.
+
+### Auth Mode
+
+```
+GET /api/auth/mode
+```
+
+Public. Returns the active authentication mode and provider. The login page calls this on load to decide which view to render.
+
+**Response:**
+
+```json
+{ "mode": 1, "provider": null }
+{ "mode": 2, "provider": null }
+{ "mode": 3, "provider": "oidc" }
+{ "mode": 3, "provider": "ldap" }
+```
+
+Returns `HTTP 500` with a descriptive error if Mode 3 is configured but `APP_PASSWORD` or `ADMIN_PASSWORD` is absent from the environment.
+
+---
+
+### SSO Config
+
+```
+GET /api/auth/sso-config
+```
+
+Public. Returns only the public OIDC fields needed by the browser to initialise the PKCE flow. No secrets are included.
+
+**Response:**
+
+```json
+{ "client_id": "lancy-app", "issuer_url": "https://idp.example.com/realms/lancy", "redirect_uri": "https://lancy.example.com/auth/callback" }
+```
+
+Returns `404` if the active provider is not OIDC.
+
+---
+
+### Verify OIDC Token
+
+```
+POST /api/auth/verify-token
+```
+
+Called by the `/auth/callback` page after the PKCE code exchange completes in the browser. Validates the ID token against the IdP's JWKS, checks `allowed_groups` if configured, and issues session cookies.
+
+**Body:**
+
+```json
+{ "id_token": "<JWT from IdP>" }
+```
+
+**On success:** sets `rag_auth` and `lancy_display_name` cookies; returns `{ "ok": true, "role": "user" }`.
+
+**Errors:** `401` if the token is invalid, expired, or the user is not in an allowed group · `500` if OIDC is not configured.
+
+---
+
+### Login
+
+```
+POST /api/auth/login
+```
+
+Public. Handles all login modes in a single endpoint; the active mode determines which branch runs.
+
+**Body — Mode 1/2 (password only):**
+
+```json
+{ "password": "..." }
+```
+
+**Body — Mode 3 LDAP:**
+
+```json
+{ "username": "jsmith", "password": "..." }
+```
+
+**On success:** sets `rag_auth` and `session_id` cookies; returns `{ "ok": true, "role": "user" | "admin" }`.
+
+**Errors:** `401` bad credentials · `400` missing fields · `503` LDAP server unreachable · `500` `APP_PASSWORD` not set.
+
+---
+
+### Session Identity
+
+```
+GET /api/auth/me
+```
+
+Returns the current session's role and display name. Reads the `rag_auth` and `lancy_display_name` cookies directly — no session store lookup.
+
+**Response:**
+
+```json
+{ "role": "admin", "display_name": "Jane Smith" }
+```
+
+`display_name` is `null` in Modes 1/2 (no IdP to provide one). Returns `{ "role": null, "display_name": null }` if no valid session exists.
+
+---
+
+### Logout
+
+```
+POST /api/auth/logout
+```
+
+Clears `rag_auth` and `lancy_display_name` by setting `Max-Age=0`. No body required.
+
+---
+
+### Auth / SSO Config (admin)
+
+```
+GET  /api/auth/admin-config
+POST /api/auth/admin-config
+```
+
+**GET** — returns the current mode, SSO config (with `search_bind_password` masked), and whether `SESSION_SECRET` is set in the environment.
+
+```json
+{
+  "mode": "2",
+  "sso": null,
+  "session_secret_set": false
+}
+```
+
+**POST** — admin only (enforced internally). Two mutually exclusive branches selected by which key is present in the body:
+
+**Branch 1 — admin password:**
+
+```json
+{ "admin_password": "new-password" }
+```
+
+Sets `ADMIN_PASSWORD` (min 8 chars, must differ from `APP_PASSWORD`). Activates Mode 2.
+
+```json
+{ "admin_password": null }
+```
+
+Clears `ADMIN_PASSWORD`. Reverts to Mode 1.
+
+**Branch 2 — SSO config:**
+
+```json
+{ "sso": { "provider": "oidc", "client_id": "...", "issuer_url": "...", "redirect_uri": "..." } }
+```
+
+Saves the SSO provider config. Activates Mode 3. If `SESSION_SECRET` is not already in the environment, generates one and appends it to `frontend/.env` — a frontend restart is then required for the new signing key to take effect.
+
+```json
+{ "sso": null }
+```
+
+Removes the SSO config. Reverts to Mode 1 or 2 depending on whether `ADMIN_PASSWORD` is set.
+
+**Response includes** `session_secret_generated: true` when `SESSION_SECRET` was just written to `.env`.
+
+---
+
+### LDAP Verify — FastAPI (internal)
+
+```
+POST /api/v1/auth/ldap-verify
+```
+
+**Internal use only** — called by the Next.js login route when Mode 3 LDAP is active. Should not be called directly by external clients (the FastAPI backend has no auth layer; port 8080 must be firewalled).
+
+Performs the LDAP bind using the supplied credentials and config, checks group membership if `allowed_groups` is set, and returns the stable session identity and display name.
+
+**Body:** full LDAP config + credentials in a single payload (the Next.js layer is the single config store):
+
+```json
+{
+  "username": "jsmith",
+  "password": "...",
+  "server": "ldaps://dc01.corp.example.com:636",
+  "bind_dn_template": "{username}@corp.example.com",
+  "base_dn": "DC=corp,DC=example,DC=com",
+  "user_id_attribute": "userPrincipalName",
+  "display_name_attribute": "displayName",
+  "allowed_groups": ["CN=Lancy-Users,OU=Groups,DC=corp,DC=example,DC=com"],
+  "search_bind_dn": null,
+  "search_bind_password": null
+}
+```
+
+**Response:**
+
+```json
+{ "session_id": "jsmith@corp.example.com", "display_name": "Jane Smith" }
+```
+
+**Errors:** `401` invalid credentials or group restriction · `503` LDAP server unreachable or misconfigured.
 
 ---
 

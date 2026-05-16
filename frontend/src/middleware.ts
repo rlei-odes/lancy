@@ -3,6 +3,7 @@ import { verifyToken } from "@/lib/auth";
 
 const APP_PASSWORD = process.env.APP_PASSWORD || "";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+const SIGNING_KEY = process.env.SESSION_SECRET || APP_PASSWORD;
 
 const CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -16,6 +17,7 @@ const PUBLIC_PREFIXES = [
     "/favicon",
     "/assets/",
     "/login",
+    "/auth/",        // OIDC callback page (/auth/callback)
     "/api/auth/",
     "/api/v1/files/",
     "/api/v1/branding",
@@ -56,7 +58,7 @@ async function getRole(request: NextRequest): Promise<"admin" | "user" | null> {
     const cookie = request.cookies.get("rag_auth");
     if (!cookie?.value) return null;
 
-    return verifyToken(cookie.value, APP_PASSWORD);
+    return verifyToken(cookie.value, SIGNING_KEY);
 }
 
 export async function middleware(request: NextRequest) {

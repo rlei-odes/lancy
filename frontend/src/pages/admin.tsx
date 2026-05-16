@@ -4,7 +4,7 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, BarChart2, Bug, Database, List, Palette } from "lucide-react";
+import { ArrowLeft, BarChart2, Bug, Database, List, Palette, ShieldCheck } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { useRole } from "@/hooks/useRole";
 import { cn } from "@/lib/lorem";
@@ -13,8 +13,9 @@ import { DatabaseStats } from "@/components/sections/admin/database-stats";
 import { BrandingSettings } from "@/components/sections/admin/branding-settings";
 import { IngestionLog } from "@/components/sections/admin/ingestion-log";
 import { LlmDebugPanel } from "@/components/sections/admin/llm-debug-panel";
+import { AuthSettings } from "@/components/sections/admin/auth-settings";
 
-type Tab = "usage" | "database" | "branding" | "ingest-log" | "llm-debug";
+type Tab = "usage" | "database" | "branding" | "ingest-log" | "llm-debug" | "auth";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "usage",      label: "Usage Analytics", icon: <BarChart2 className="h-3.5 w-3.5" /> },
@@ -22,6 +23,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "branding",   label: "Branding",         icon: <Palette className="h-3.5 w-3.5" /> },
     { id: "ingest-log", label: "Ingestion Log",    icon: <List className="h-3.5 w-3.5" /> },
     { id: "llm-debug",  label: "LLM Debug",        icon: <Bug className="h-3.5 w-3.5" /> },
+    { id: "auth",       label: "Auth / SSO",       icon: <ShieldCheck className="h-3.5 w-3.5" /> },
 ];
 
 export default function AdminPage() {
@@ -85,6 +87,7 @@ export default function AdminPage() {
                             {activeTab === "branding"   && <BrandingSettings />}
                             {activeTab === "ingest-log" && <IngestionLog />}
                             {activeTab === "llm-debug"  && <LlmDebugPanel />}
+                            {activeTab === "auth"       && <AuthSettings />}
                         </div>
                     </div>
                 </div>

@@ -3,7 +3,7 @@
 // Works in both Next.js Edge Runtime (middleware) and Node.js API routes.
 
 const ALGO = { name: "HMAC", hash: "SHA-256" };
-const TOKEN_TTL = 60 * 60 * 24 * 30; // 30 days
+const DEFAULT_TOKEN_TTL = 60 * 60 * 24 * 30; // 30 days (Mode 1 / Mode 2 default)
 
 function toHex(buf: ArrayBuffer): string {
     return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
@@ -18,8 +18,8 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
     return crypto.subtle.importKey("raw", new TextEncoder().encode(secret), ALGO, false, ["sign", "verify"]);
 }
 
-export async function signToken(role: "admin" | "user", secret: string): Promise<string> {
-    const exp = Math.floor(Date.now() / 1000) + TOKEN_TTL;
+export async function signToken(role: "admin" | "user", secret: string, ttlSeconds?: number): Promise<string> {
+    const exp = Math.floor(Date.now() / 1000) + (ttlSeconds ?? DEFAULT_TOKEN_TTL);
     const payload = `${role}.${exp}`;
     const key = await hmacKey(secret);
     const sig = await crypto.subtle.sign(ALGO, key, new TextEncoder().encode(payload));
