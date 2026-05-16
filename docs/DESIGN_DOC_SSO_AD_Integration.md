@@ -305,17 +305,22 @@ Keycloak runs in Docker and provides a full OIDC server with a management UI.
 
 ```bash
 docker run -p 8080:8080 \
-  -e KEYCLOAK_ADMIN=admin \
-  -e KEYCLOAK_ADMIN_PASSWORD=admin \
+  -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
+  -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+  -e KC_HOSTNAME_URL=http://<server-ip>:8080 \
+  -e KC_HOSTNAME_ADMIN_URL=http://<server-ip>:8080 \
   quay.io/keycloak/keycloak:latest start-dev
 ```
 
-**Realm and client setup (Keycloak admin UI at http://localhost:8080):**
+Replace `<server-ip>` with the LAN IP of the machine running Docker (e.g. `192.168.1.160`). The `KC_HOSTNAME_URL` is required in Keycloak 26+ — without it the admin console JS hardcodes `localhost` and breaks when accessed from another machine. The old `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD` env vars still work but are deprecated in 26.6+.
+
+**Realm and client setup (Keycloak admin UI at `http://<server-ip>:8080`):**
 
 1. Create a realm named `lancy`
 2. Create a client `lancy-app`:
    - Client type: OpenID Connect
    - **Client authentication: off** (public client — no secret, PKCE only)
+   - **Authentication flow: Standard flow only** (Authorization Code flow — PKCE is automatic for public clients; turn off Direct access grants and everything else)
    - Valid redirect URIs: `http://localhost:3000/auth/callback`
    - **Web Origins: `http://localhost:3000`** — required for CORS on the token endpoint; without this the browser's token exchange fetch is blocked
 3. Create test users

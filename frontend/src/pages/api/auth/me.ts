@@ -10,7 +10,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const token = req.cookies.rag_auth ?? "";
     if (!token) return res.status(401).json({ error: "Not authenticated" });
 
-    const role = await verifyToken(token, appPassword);
+    const signingKey = process.env.SESSION_SECRET || appPassword;
+    const role = await verifyToken(token, signingKey);
     if (!role) return res.status(401).json({ error: "Invalid session" });
 
     const rawName = req.cookies.lancy_display_name ?? "";

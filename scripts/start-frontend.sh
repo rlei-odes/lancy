@@ -27,12 +27,8 @@ if [ package-lock.json -nt node_modules/.package-lock.json ] 2>/dev/null || [ ! 
     npm install -q
 fi
 > "$LOG_DIR/frontend.log"
-FIFO="$LOG_DIR/frontend.fifo"
-rm -f "$FIFO" && mkfifo "$FIFO"
-awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' < "$FIFO" >> "$LOG_DIR/frontend.log" &
-node_modules/.bin/next dev > "$FIFO" 2>&1 &
+node_modules/.bin/next dev > >(awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' >> "$LOG_DIR/frontend.log") 2>&1 &
 echo $! > "$LOG_DIR/frontend.pid"
-rm -f "$FIFO"
 echo "  Frontend PID: $(cat $LOG_DIR/frontend.pid)"
 echo "  Log:          $LOG_DIR/frontend.log"
 echo "  Stop:         scripts/stop-frontend.sh"

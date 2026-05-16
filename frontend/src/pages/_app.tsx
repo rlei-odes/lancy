@@ -24,18 +24,26 @@ export default function App({ Component, pageProps }: AppProps) {
         setRender(true);
     }, [router.isReady]);
 
+    const isAuthPage = router.pathname === "/login" || router.pathname.startsWith("/auth/");
+
     return render ? (
         <BrandingProvider>
             <MediaQueryProvider waitMs={200}>
                 <ThemeProvider>
                     <DisclaimerProvider>
-                        <MessagingProvider>
+                        {isAuthPage ? (
                             <div className={inter.className}>
                                 <Component {...pageProps} />
-                                <DisclaimerDialog />
-                                {router.pathname !== "/login" && <BackendStatus />}
                             </div>
-                        </MessagingProvider>
+                        ) : (
+                            <MessagingProvider>
+                                <div className={inter.className}>
+                                    <Component {...pageProps} />
+                                    <DisclaimerDialog />
+                                    <BackendStatus />
+                                </div>
+                            </MessagingProvider>
+                        )}
                     </DisclaimerProvider>
                 </ThemeProvider>
             </MediaQueryProvider>

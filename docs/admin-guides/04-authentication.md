@@ -109,11 +109,33 @@ Lancy uses the [Authorization Code + PKCE](https://datatracker.ietf.org/doc/html
 
 ### Example — Keycloak
 
-1. Realm → Clients → Create client
+1. Realm → **Clients** → **Create client**
 2. Client type: OpenID Connect; Client ID: `lancy-app`
-3. Turn off "Client authentication" (public client)
+3. Turn off "Client authentication" (public client / standard flow only)
 4. Valid redirect URIs: `https://lancy.example.com/auth/callback`
-5. If restricting by group: Clients → lancy-app → Client scopes → Add a mapper → Group Membership → token claim name `groups`, "Add to ID token" on
+5. Save
+
+**Adding the Group Membership claim** (required if using `allowed_groups`):
+
+6. Clients → `lancy-app` → **Client scopes** tab → click `lancy-app-dedicated`
+7. **Add mapper** → **By configuration** → **Group Membership**
+8. Set:
+   - Name: `groups`
+   - Token Claim Name: `groups`
+   - Full group path: **off** (sends `allowed`, not `/allowed`)
+   - Add to ID token: **on**
+   - Add to access token: **on**
+9. Save
+
+With this mapper in place, create a group (e.g. `allowed`), add users to it, and set `allowed_groups: allowed` in the Lancy SSO config. Users not in the group will be rejected at login.
+
+**Multiple groups** are supported — a user is admitted if they belong to any one of them. Enter them comma-separated in the Allowed Groups field:
+
+```
+allowed, staff, contractors
+```
+
+Access is granted on first match (OR logic). Leave the field empty to admit all authenticated users.
 
 ---
 

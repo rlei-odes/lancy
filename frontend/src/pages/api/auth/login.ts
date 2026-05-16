@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { randomUUID } from "crypto";
 import { signToken } from "@/lib/auth";
 import { getAdminPassword, getSSOConfig, isMode2Active, isMode3Active, getSessionTtlSeconds } from "@/lib/auth-config";
+import { logAuth, clientIp } from "@/lib/log-auth";
 
 const SESSION_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
 
@@ -75,6 +76,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         if (!ldapRes.ok) {
             const data = await ldapRes.json().catch(() => ({}));
+            logAuth("LDAP_LOGIN_FAILED", { ip: clientIp(req), username });
             return res.status(401).json({ error: data.detail ?? "Invalid credentials" });
         }
 
@@ -82,6 +84,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const ttl = getSessionTtlSeconds();
         const token = await signToken("user", signingKey, ttl);
 
+        logAuth("LDAP_LOGIN_SUCCESS", { ip: clientIp(req), user: display_name });
         res.setHeader(
             "Set-Cookie",
             buildCookies(token, ttl, session_id, display_name, req.cookies["session_id"], secure),
@@ -100,6 +103,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } else if (password === appPassword) {
         role = mode2 ? "user" : "admin";
     } else {
+        logAuth("LOGIN_FAILED", { ip: clientIp(req) });
         return res.status(401).json({ error: "Incorrect password" });
     }
 
@@ -107,6 +111,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const token = await signToken(role, signingKey, ttl);
     const sessionId = req.cookies["session_id"] ?? randomUUID();
 
+    logAuth("LOGIN_SUCCESS", { ip: clientIp(req), role, mode: mode2 ? "2" : "1" });
     res.setHeader(
         "Set-Cookie",
         buildCookies(token, ttl, sessionId, null, req.cookies["session_id"], secure),
