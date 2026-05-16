@@ -26,13 +26,65 @@ To call any admin endpoint through the frontend proxy:
 curl -H "Authorization: Bearer <APP_PASSWORD>" http://localhost:3000/api/admin/ingest-events
 ```
 
+Or with parameters:
+
+```bash
+# Put the URL in quotes, otherwise the parameters get silently dropped by bash
+curl -H "Authorization: Bearer <token>" "http://localhost:3000/api/admin/ingest-events?kb_id=default&days=5&limit=200"
+```
+
 Without the header (or with a user-role session), admin endpoints return `{"error":"Unauthorized"}`. Hitting the backend directly on port 8080 bypasses auth entirely — which is why that port must be firewalled in any non-local deployment.
 
 ### Access control
 
-Endpoints marked **admin only** return `403 Forbidden` when called through the frontend proxy with a user-role session. They remain unprotected at the backend port.
+All `/api/admin/*` endpoints require admin. The table below is the full access matrix enforced by the middleware.
 
-Admin-only endpoints: `POST /kb`, `PUT /kb/{id}`, `DELETE /kb/{id}`, `POST /kb/{id}/documents`, `POST /rag/reindex`, `POST /rag/reindex/cancel`.
+`-` = no auth required (public) · `✓` = allowed · `403` = session exists but wrong role · `401` = no session
+
+| Endpoint | Method | anonymous | user | admin |
+|---|---|---|---|---|
+| `/api/v1/kb` | GET | 401 | ✓ | ✓ |
+| `/api/v1/kb` | POST | 401 | 403 | ✓ |
+| `/api/v1/kb/{id}` | PUT | 401 | 403 | ✓ |
+| `/api/v1/kb/{id}` | DELETE | 401 | 403 | ✓ |
+| `/api/v1/kb/{id}/activate` | POST | 401 | 403 | ✓ |
+| `/api/v1/kb/{id}/deactivate` | POST | 401 | 403 | ✓ |
+| `/api/v1/kb/{id}/documents` | POST | 401 | 403 | ✓ |
+| `/api/v1/kb/pool` | GET | 401 | ✓ | ✓ |
+| `/api/v1/kb/{id}/stats` | GET | 401 | ✓ | ✓ |
+| `/api/v1/files/{filename}` | GET | - | - | - |
+| `/api/v1/rag/config` | GET | 401 | ✓ | ✓ |
+| `/api/v1/rag/config` | POST | 401 | ✓ | ✓ |
+| `/api/v1/rag/store-info` | GET | 401 | ✓ | ✓ |
+| `/api/v1/rag/presets/{kb_id}` | GET | 401 | ✓ | ✓ |
+| `/api/v1/rag/presets/{kb_id}` | POST | 401 | ✓ | ✓ |
+| `/api/v1/rag/reindex` | POST | 401 | 403 | ✓ |
+| `/api/v1/rag/reindex-cancel` | POST | 401 | 403 | ✓ |
+| `/api/v1/rag/reindex-status` | GET | 401 | ✓ | ✓ |
+| `/api/v1/rag/query-status` | GET | 401 | ✓ | ✓ |
+| `/api/v1/rag/retrieve` | POST | 401 | ✓ | ✓ |
+| `/api/v1/rag/chunks` | POST | 401 | ✓ | ✓ |
+| `/api/v1/rag/status` | GET | 401 | ✓ | ✓ |
+| `/api/v1/rag/litellm-models` | GET | 401 | ✓ | ✓ |
+| `/api/v1/rag/ollama-models` | GET | 401 | ✓ | ✓ |
+| `/api/v1/branding` | GET | - | - | - |
+| `/api/v1/branding` | PUT | 401 | 403 | ✓ |
+| `/api/v1/branding/avatar` | DELETE | 401 | 403 | ✓ |
+| `/api/admin/*` | * | 401 | 403 | ✓ |
+| `/v1/chat/completions` | POST | 401 | ✓ | ✓ |
+| `/v1/models` | GET | 401 | ✓ | ✓ |
+
+Notes:
+- `POST /rag/config` and `POST /rag/presets` are intentionally user-writable — users may adjust session RAG parameters and save presets from the config panel.
+- The backend itself has no auth layer; it trusts the `x-user-role` header injected by the middleware. Port 8080 must be firewalled in any non-local deployment.
+
+### Interactive API explorer
+
+The FastAPI-generated Swagger UI is available at `http://localhost:3000/docs`. It is proxied through the Next.js frontend and protected by the same middleware:
+
+- **Admin session** — accessing `/docs` while logged in as admin opens the full interactive explorer. All "Try it out" requests go through the frontend proxy on port 3000, so auth is enforced exactly as it would be for any other client.
+- **User session** — the middleware redirects `/docs` to `/redoc`, a read-only API reference that does not allow test requests.
+- **No session** — redirected to `/login`.
 
 ---
 
@@ -142,6 +194,8 @@ Returns `400` if it is the last KB. If the deleted KB was active, the next avail
 POST /kb/{kb_id}/activate[?reset=false]
 ```
 
+**Admin only.**
+
 Adds the KB to the in-memory pool and sets it as the active KB for new conversations.
 Non-destructive — previously loaded KBs remain in the pool and continue serving in-flight streams.
 
@@ -164,6 +218,8 @@ Pass `?reset=true` to clear the entire pool first; this is required when switchi
 ```
 POST /kb/{kb_id}/deactivate
 ```
+
+**Admin only.**
 
 Unloads a KB from the in-memory pool. In-flight streams hold a reference to the `LoadedKB`
 and complete safely. Has no effect if the KB is not currently loaded.
@@ -302,25 +358,34 @@ Path traversal is blocked — the resolved path must remain inside a known data 
 
 ## RAG
 
-### Query (Streaming)
+### RAG Config
 
 ```
-POST /rag/query
+GET  /rag/config
+POST /rag/config
 ```
 
-Runs a RAG query against the active KB and streams the response as SSE.
+Read or write the current RAG session configuration (LLM backend, model, retrieval parameters, system prompt).
 
-**Body:**
+Write semantics differ by role:
 
-```json
-{
-  "query": "string",
-  "session_id": "string",
-  "rag_config": { ... }
-}
+- **Admin** — writes update the shared baseline in `rag_config.json` and the system prompt file, affecting all future sessions.
+- **User** — writes are scoped to the user's session; only retrieval fields (`retriever_top_k`, `bm25_enabled`, etc.) are persisted per-user. LLM fields are ignored.
+
+The GET response includes all fields; use the Swagger UI schema or `GET /rag/config` for the full field list.
+
+---
+
+### RAG Presets
+
+```
+GET  /rag/presets/{kb_id}
+POST /rag/presets/{kb_id}
 ```
 
-**Response:** SSE stream of token chunks, followed by a final `[DONE]` event with metadata.
+Read or save named retrieval and KB configuration presets for a specific KB.
+
+Write semantics mirror the config endpoint: admins write shared presets, users write their own. `POST` body is a `{"retrieval": [...], "kb": [...]}` dict; returns `{"saved": <count>}`.
 
 ---
 
@@ -442,6 +507,195 @@ Returns the current indexing state.
 }
 ```
 
+### Chunk Browser
+
+```
+POST /rag/chunks
+```
+
+Returns a paginated list of raw chunks from the vector store, optionally filtered by metadata. Used by the Chunk Browser UI tab. Accepts a `ChunkBrowseRequest` body (see Swagger for schema).
+
+---
+
+### Utility Endpoints
+
+These are read-only, take no significant parameters, and are self-explanatory in the Swagger UI:
+
+| Endpoint | Description |
+|---|---|
+| `GET /rag/status` | Server readiness and active KB info |
+| `GET /rag/query-status` | Number of in-flight RAG queries |
+| `GET /rag/store-info` | Chunk count and file list for the active vector store |
+| `GET /rag/litellm-models` | Available models from the configured LiteLLM proxy |
+| `GET /rag/ollama-models[?host=]` | Available models from an Ollama instance (`host` defaults to `localhost:11434`) |
+
+---
+
+## Admin
+
+All endpoints in this section require admin role.
+
+### Ingest Events
+
+```
+GET /admin/ingest-events
+```
+
+Paginated log of every document ingested across all KBs. Useful for auditing what was indexed, when, and whether it succeeded.
+
+| Query param | Type | Description |
+|---|---|---|
+| `kb_id` | string | Filter to a specific KB |
+| `status` | string | Filter by status: `ok`, `error`, `skipped` |
+| `days` | int | Limit to events from the last N days |
+| `limit` | int | Page size (default 200) |
+| `offset` | int | Pagination offset (default 0) |
+
+**Response:** `IngestEventPage`
+
+```json
+{
+  "events": [
+    {
+      "id": 1,
+      "ts": "2025-04-20T10:01:23+00:00",
+      "kb_id": "default",
+      "document_id": "doc-42",
+      "filename": "report.pdf",
+      "status": "ok",
+      "chunks": 34,
+      "file_size_mb": 1.2,
+      "duration_ms": 4200,
+      "error": null
+    }
+  ],
+  "total": 142,
+  "limit": 200,
+  "offset": 0
+}
+```
+
+---
+
+### Admin Config
+
+```
+GET /admin/config
+PUT /admin/config
+```
+
+Read or update the admin configuration. Currently controls automatic conversation history cleanup.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `auto_cleanup_enabled` | bool | `true` | Enable automatic deletion of old conversations on startup |
+| `auto_cleanup_months` | int | `12` | Delete conversations older than this many months (1–99) |
+| `auto_cleanup_last_run` | string \| null | `null` | ISO timestamp of the last cleanup run (read-only; ignored on PUT) |
+
+---
+
+### Clear Conversation History
+
+```
+POST /admin/clear
+```
+
+Immediately deletes all conversations older than a given threshold. This is irreversible.
+
+**Body:**
+
+```json
+{ "older_than_months": 6 }
+```
+
+**Response:**
+
+```json
+{
+  "deleted_conversations": 84,
+  "deleted_messages": 1203,
+  "deleted_reactions": 47,
+  "deleted_sources": 3102
+}
+```
+
+---
+
+### Statistics
+
+Three read-only endpoints backed by the conversation database. All accept a `?days=` query param (default 180).
+
+| Endpoint | Description |
+|---|---|
+| `GET /admin/stats/usage` | Daily conversation and message counts |
+| `GET /admin/stats/db` | Row counts and disk sizes for the conversation DB and vector store |
+| `GET /admin/stats/performance` | Per-model token/s and response time stats |
+
+---
+
+### LLM Debug Mode
+
+Captures raw LLM prompts and responses to a log file for debugging. Off by default. In-memory flag — resets on restart.
+
+| Endpoint | Description |
+|---|---|
+| `POST /admin/llm-debug/enable` | Turn on debug logging |
+| `POST /admin/llm-debug/disable` | Turn off debug logging |
+| `GET /admin/llm-debug/status` | Returns `{"enabled": bool}` |
+| `GET /admin/llm-debug/log[?lines=100]` | Returns the last N lines of the debug log |
+
+---
+
+## Branding
+
+### Get Branding
+
+```
+GET /api/v1/branding
+```
+
+Public — no auth required. Returns the current agent name and avatar URL. Called by all clients on load to personalise the UI.
+
+**Response:**
+
+```json
+{
+  "agent_name": "Lancy",
+  "agent_avatar_url": "/uploads/avatar.png"
+}
+```
+
+`agent_avatar_url` is `null` if no custom avatar has been uploaded.
+
+---
+
+### Update Branding
+
+```
+PUT /api/v1/branding
+```
+
+**Admin only.** `multipart/form-data`.
+
+| Part | Type | Description |
+|---|---|---|
+| `agent_name` | string (form field) | New display name; omit or send empty to leave unchanged |
+| `avatar` | file (optional) | PNG, JPEG, WebP, or SVG; max 2 MB. Replaces any existing avatar. |
+
+**Response:** updated `BrandingConfig`
+
+---
+
+### Delete Avatar
+
+```
+DELETE /api/v1/branding/avatar
+```
+
+**Admin only.** Removes the uploaded avatar file and resets `agent_avatar_url` to `null`. Has no effect if no avatar is set.
+
+**Response:** updated `BrandingConfig`
+
 ---
 
 ## OpenAI-Compatible
@@ -452,10 +706,36 @@ Returns the current indexing state.
 POST /v1/chat/completions
 ```
 
-OpenAI-compatible endpoint. Routes to the active KB RAG query.
-Supports both streaming (`stream: true`) and non-streaming responses.
+The primary entrypoint for programmatic RAG queries. This is what Open WebUI, LibreChat, and any OpenAI-compatible client use to query the knowledge base.
 
-Any OpenAI-compatible client can use `base_url=http://localhost:8080/v1` with any non-empty API key.
+Supports both streaming (`stream: true`) and non-streaming responses. The `model` field is accepted but ignored — the active KB is always used.
+
+**Request:**
+
+```json
+{
+  "model": "rag-assistant",
+  "messages": [
+    {"role": "user", "content": "What does the Q1 report say about margins?"}
+  ],
+  "stream": false
+}
+```
+
+Multi-turn conversations are supported: include prior `user`/`assistant` turns in `messages`. System messages are silently ignored — the agent uses its own configured system prompt.
+
+**Quick curl example (through the frontend proxy with auth):**
+
+```bash
+curl -s -X POST "http://localhost:3000/v1/chat/completions" \
+  -H "Authorization: Bearer <APP_PASSWORD>" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"rag-assistant","messages":[{"role":"user","content":"What are the key findings?"}]}'
+```
+
+**Streaming note:** `stream: true` returns SSE in OpenAI chunk format, but the LLM response is fully generated before forwarding — it is not token-by-token streamed. This is transparent to clients.
+
+**Sources:** appended to the response content as a markdown block (`---\n**Quellen:**\n- …`). There is no separate structured sources field in this endpoint; use the native `/rag/retrieve` endpoint if you need structured chunk metadata.
 
 ---
 

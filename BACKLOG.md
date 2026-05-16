@@ -19,20 +19,6 @@ The sources panel occasionally shows no sources even when the answer clearly ref
 
 Note: the existing `_UUID_RE` inline fallback is effectively dead code given the current prompt explicitly says "No UUIDs in the text."
 
-### Bearer Token Auth Ignores Admin Credential in Mode 2
-
-In Mode 2 (APP_PASSWORD + Admin Credential), the frontend middleware only accepts `APP_PASSWORD` as a valid Bearer token (`middleware.ts:48-50`). The Admin Credential stored in `auth_config.json` / `ADMIN_PASSWORD` is never checked against `Authorization: Bearer ...`. This means admins in Mode 2 cannot authenticate via API using their own credential — they must use `APP_PASSWORD`, which was intended as the general-access (user-level) password.
-
-**Partial fix shipped:** `middleware.ts` now also checks `process.env.ADMIN_PASSWORD` as a valid admin Bearer token. This covers the env-var path. The UI-configured admin password (`auth_config.json`) cannot be checked in the middleware — Edge Runtime has no filesystem access — so Bearer auth for that path remains unsupported. Admins who want API access must set `ADMIN_PASSWORD` in `frontend/.env`.
-
-**Related:** the admin-only endpoint list in the middleware was assembled ad-hoc and has never been audited end-to-end. As part of fixing this, do a full pass:
-- Confirm every route served by the `/admin` frontend section is covered by the `/api/admin/` prefix guard
-- Confirm every mutating KB/RAG endpoint (`POST`, `PUT`, `DELETE`) that should require admin is in the enforced list
-- Confirm read-only endpoints accessible to user-role sessions are intentional (e.g. `GET /api/v1/kb`, `GET /api/v1/rag/reindex-status`)
-- Document the intended access matrix (endpoint × role) so future additions have a clear reference
-
-Note: the backend has no auth layer of its own — it trusts `x-user-role` from the middleware unconditionally. The fix above is entirely frontend-side.
-
 ### Low Source Citation Count
 
 Observed that answers sometimes cite only 2 chunks even when retrieval is configured with a higher `k`. Possible causes: the reranker is collapsing similar chunks into fewer sources, the `used_sources_id` field in the LLM JSON response is under-populated (model not citing all chunks it used), or the source deduplication step in `_answer_post_processing` is too aggressive. Needs investigation with logging enabled on retrieved chunk count vs. cited chunk count. It might be good and even intended behaviour — when no fit / similarity is observed above the threshold, no bad fitting chunks should be served.
