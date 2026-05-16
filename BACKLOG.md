@@ -19,6 +19,20 @@ The sources panel occasionally shows no sources even when the answer clearly ref
 
 Note: the existing `_UUID_RE` inline fallback is effectively dead code given the current prompt explicitly says "No UUIDs in the text."
 
+### Bearer Token Auth Ignores Admin Credential in Mode 2
+
+In Mode 2 (APP_PASSWORD + Admin Credential), the frontend middleware only accepts `APP_PASSWORD` as a valid Bearer token (`middleware.ts:48-50`). The Admin Credential stored in `auth_config.json` / `ADMIN_PASSWORD` is never checked against `Authorization: Bearer ...`. This means admins in Mode 2 cannot authenticate via API using their own credential — they must use `APP_PASSWORD`, which was intended as the general-access (user-level) password.
+
+**Partial fix shipped:** `middleware.ts` now also checks `process.env.ADMIN_PASSWORD` as a valid admin Bearer token. This covers the env-var path. The UI-configured admin password (`auth_config.json`) cannot be checked in the middleware — Edge Runtime has no filesystem access — so Bearer auth for that path remains unsupported. Admins who want API access must set `ADMIN_PASSWORD` in `frontend/.env`.
+
+**Related:** the admin-only endpoint list in the middleware was assembled ad-hoc and has never been audited end-to-end. As part of fixing this, do a full pass:
+- Confirm every route served by the `/admin` frontend section is covered by the `/api/admin/` prefix guard
+- Confirm every mutating KB/RAG endpoint (`POST`, `PUT`, `DELETE`) that should require admin is in the enforced list
+- Confirm read-only endpoints accessible to user-role sessions are intentional (e.g. `GET /api/v1/kb`, `GET /api/v1/rag/reindex-status`)
+- Document the intended access matrix (endpoint × role) so future additions have a clear reference
+
+Note: the backend has no auth layer of its own — it trusts `x-user-role` from the middleware unconditionally. The fix above is entirely frontend-side.
+
 ### Low Source Citation Count
 
 Observed that answers sometimes cite only 2 chunks even when retrieval is configured with a higher `k`. Possible causes: the reranker is collapsing similar chunks into fewer sources, the `used_sources_id` field in the LLM JSON response is under-populated (model not citing all chunks it used), or the source deduplication step in `_answer_post_processing` is too aggressive. Needs investigation with logging enabled on retrieved chunk count vs. cited chunk count. It might be good and even intended behaviour — when no fit / similarity is observed above the threshold, no bad fitting chunks should be served.
@@ -42,6 +56,8 @@ Unknown origin. Possibly connected to Query Expansion. Could be related to the L
 - Builds naturally on top of the existing admin/user role separation
 
 **Why:** relevant for enterprise rollout where user management via AD is already in place and individual password distribution is impractical.
+
+**Architecture note:** the Edge Runtime constraint in the middleware is not a blocker. LDAP validation belongs in the `/api/auth/login` Node.js API route — the middleware only verifies the already-issued signed cookie, which stays the same. The one open question is Bearer token auth for API clients in an AD deployment (no browser session available) — a service account password or a separate API key mechanism would be needed for that case.
 
 ---
 
@@ -365,6 +381,34 @@ services:
 - **HuggingFace cache:** volume-mount `~/.cache/huggingface` so it survives container restarts. For air-gapped deployments, pre-populate the cache and set `HF_HUB_OFFLINE=1`.
 - **`SERVER_URL`:** in a Compose setup, the frontend container reaches the backend via the Compose service name (e.g. `http://backend:8080`). `frontend/.env` must set `SERVER_URL=http://backend:8080`.
 - **The dev server problem:** the current frontend runs `next dev`. A production Compose setup should build with `next build` and serve with `next start`.
+
+---
+
+### Systemd Deployment — Frontend and `next start`
+
+The deployment guide documents a `lancy-frontend.service` unit, but two things need follow-up before this is production-ready:
+
+**1. `next start` compatibility**
+
+The current `package.json` build script is `BUILD_MODE=export next build`. The `BUILD_MODE=export` flag likely sets `output: 'export'` in `next.config.js`, which generates a static HTML dump — incompatible with `next start` (which requires a Node.js server build). Verify whether a plain `next build` (without the flag) produces a working server build, and whether `next start` then works correctly with the API proxy routes intact.
+
+If it does, document the build + start flow in the deployment guide and update the systemd unit to use `next start`.
+
+**2. Committed service files**
+
+Deployers currently have to copy a service unit from the docs and fill in paths manually. It would be easier to ship ready-made `.service` files in `scripts/systemd/`:
+
+- `lancy-backend.service`
+- `lancy-frontend.service`
+
+With an install snippet like:
+```bash
+cp scripts/systemd/*.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now lancy-backend lancy-frontend
+```
+
+This would also be the natural place to add an `install-frontend.sh` if needed (Node.js version check, `npm install`, `.env` bootstrap).
 
 ---
 

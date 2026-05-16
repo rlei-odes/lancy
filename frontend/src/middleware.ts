@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth";
 
 const APP_PASSWORD = process.env.APP_PASSWORD || "";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 
 const CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -48,6 +49,7 @@ async function getRole(request: NextRequest): Promise<"admin" | "user" | null> {
     // Bearer token for API clients (Open WebUI, curl, etc.) — always admin
     const authHeader = request.headers.get("authorization") ?? "";
     if (authHeader === `Bearer ${APP_PASSWORD}`) return "admin";
+    if (ADMIN_PASSWORD && authHeader === `Bearer ${ADMIN_PASSWORD}`) return "admin";
 
     const cookie = request.cookies.get("rag_auth");
     if (!cookie?.value) return null;

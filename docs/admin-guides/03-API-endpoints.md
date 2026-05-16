@@ -18,7 +18,15 @@ All endpoints below are available at both addresses. In production, port 8080 sh
 Two methods are accepted:
 
 - **Browser session** — a signed `rag_auth` cookie issued after login, carries the role (`admin` or `user`)
-- **Bearer token** — `Authorization: Bearer <APP_PASSWORD>` in the request header; always grants admin role, intended for API clients and scripts
+- **Bearer token** — `Authorization: Bearer <token>` in the request header; always grants admin role, intended for API clients and scripts. Both `APP_PASSWORD` and `ADMIN_PASSWORD` (if set as an env var in `frontend/.env`) are accepted. The UI-configured admin password (`auth_config.json`) is not available to the Edge Runtime and cannot be used as a Bearer token.
+
+To call any admin endpoint through the frontend proxy:
+
+```bash
+curl -H "Authorization: Bearer <APP_PASSWORD>" http://localhost:3000/api/admin/ingest-events
+```
+
+Without the header (or with a user-role session), admin endpoints return `{"error":"Unauthorized"}`. Hitting the backend directly on port 8080 bypasses auth entirely — which is why that port must be firewalled in any non-local deployment.
 
 ### Access control
 
