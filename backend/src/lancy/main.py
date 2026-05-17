@@ -96,6 +96,7 @@ from lancy.ingestion import (
 )
 from lancy.kb_pool import DispatchingAgent, EmbeddingConflict, KBPool
 from lancy.admin_router import create_admin_router, run_auto_cleanup
+from lancy.auth_router import create_auth_router
 from lancy.branding_router import create_branding_router
 from lancy.kb_router import KBInfo, create_kb_router
 from lancy.kb_stats import write_kb_stats
@@ -850,6 +851,9 @@ def build_server():
         get_active_kb=kb_router.get_active_kb,
     )
     app.include_router(admin_router)
+
+    # ── Auth (LDAP verify for Mode 3 SSO) ─────────────────────────────────
+    app.include_router(create_auth_router())
 
     # ── Branding API + static file serving for uploaded avatars ───────────
     branding_router = create_branding_router(db_dir=_DB_DIR)

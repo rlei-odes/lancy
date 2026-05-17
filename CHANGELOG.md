@@ -36,6 +36,48 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Cancel endpoint path mismatch**: middleware was guarding `POST /api/v1/rag/reindex/cancel` (slash) but the frontend called `POST /api/v1/rag/reindex-cancel` (hyphen). The cancel endpoint was effectively unguarded for regular users.
 - **Stop button role gate**: the Stop button in the indexing banner was rendered for all authenticated users. It is now hidden for `role === "user"` — only admins can cancel a reindex, consistent with the trigger being admin-only.
 
+### Added — Mode 3: SSO / Directory Authentication
+
+New opt-in authentication mode. Modes 1 and 2 are unaffected when no SSO provider is configured.
+
+**OIDC path** (Keycloak, Azure Entra ID, Okta, any OAuth2-compatible IdP):
+- Browser-side PKCE flow via `oidc-client-ts`; the Lancy server never contacts the IdP per login.
+- `/auth/callback` page completes the code exchange, POSTs the `id_token` to `/api/auth/verify-token`.
+- `/api/auth/verify-token`: validates JWT with `jose` using JWKS fetched from the IdP's discovery document (module-level cache, evicted and refetched on key rotation).
+- Optional `allowed_groups` check against `groups` and `roles` claims in the ID token.
+- `session_id` set to the `sub` claim — stable identity across devices.
+
+**LDAP path** (Active Directory, OpenLDAP):
+- Username + password form; credentials are proxied server-side from Next.js to `POST /api/v1/auth/ldap-verify` (FastAPI).
+- FastAPI (`ldap3`) performs the LDAP bind, fetches `memberOf` for group membership, returns `{ session_id, display_name }`.
+- Configurable `bind_dn_template` supports both UPN format (`{username}@corp.example.com`) and DN format (`uid={username},ou=people,…`).
+- Optional `search_bind_dn` / `search_bind_password` for servers requiring a service account for group search.
+- Plain-LDAP warning in admin UI when `ldaps://` is not used.
+- `session_id` set to the value of `user_id_attribute` (default `userPrincipalName` for AD, `uid` for generic LDAP).
+
+**Shared behaviour:**
+- Every SSO-authenticated user receives the `user` role. Admin access is always via `ADMIN_PASSWORD` (escape hatch on the login page) — no role mapping from IdP groups.
+- `lancy_display_name` HttpOnly cookie set at login; `/api/auth/me` extended to return `{ role, display_name }`.
+- `session_ttl_hours` configurable per provider (default 48 h OIDC, 168 h LDAP); drives both the HMAC `exp` field and the cookie `Max-Age`.
+- Mode 3 always shows an "Admin login" escape hatch on the login page so admins can log in if SSO is unavailable.
+- `/api/auth/mode` — new public endpoint returning `{ mode: 1|2|3, provider }`. Fails loudly (HTTP 500) if SSO is configured but `APP_PASSWORD` or `ADMIN_PASSWORD` is absent.
+- `SESSION_SECRET` env var is auto-generated and appended to `frontend/.env` on the first SSO save if not already set; a frontend restart is required for it to take effect. Used as the HMAC signing key for session cookies (`APP_PASSWORD` is the fallback until restart).
+- `signToken` extended with an optional `ttlSeconds` parameter; Modes 1/2 keep the 30-day default.
+- `/auth/` added to middleware `PUBLIC_PREFIXES` for the unauthenticated OIDC callback page.
+- Logout now also clears `lancy_display_name`.
+- `login.tsx` rewritten in English with mode-aware UI.
+
+**Admin UI** (`/admin` → Auth / SSO tab):
+- Provider selector (None / OIDC / LDAP) with full field set per provider.
+- Prerequisites status panel: green/amber/red dot per env var (`APP_PASSWORD`, `ADMIN_PASSWORD`, `SESSION_SECRET`) with inline explanations.
+- Saves to `auth_config.json`; `search_bind_password` is masked in GET responses.
+- Auto-generates `SESSION_SECRET` on first SSO save; shows a restart notice if the key was just written.
+- **Test connection** button probes the provider using current form values (no save required). LDAP: three-step check — TCP + LDAP handshake, service-account or anonymous bind, base DN lookup; base DN shown as a yellow warning (not error) when no service account is configured. OIDC: fetches the discovery document, then the JWKS endpoint. Results shown step-by-step with pass/fail icons. Backend: new `POST /api/v1/auth/ldap-test` endpoint; Next.js: new `/api/auth/sso-test` route.
+- Inline field validation: LDAP server must start with `ldap://` or `ldaps://`; bind DN template must contain `{username}`. Save and Test disabled while errors are present.
+- LDAP allowed groups switched from a comma-separated text field to a textarea with one DN per line — prevents a bug where a single full DN (`cn=group,ou=groups,dc=x,dc=y`) was split on commas into invalid fragments.
+
+**Local testing targets:** Keycloak in Docker (OIDC), lldap in Docker (LDAP) — see `docs/admin-guides/04-authentication.md`.
+
 ---
 
 ## [Lancy v0.3.3] — 2026-05-09 · rlei-odes

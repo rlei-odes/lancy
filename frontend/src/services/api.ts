@@ -19,17 +19,8 @@ export class ApiService {
         const response = await fetch(url, mergedOptions);
 
         if (!response.ok) {
-            if (response.status === 401) {
-                const refreshResponse = await fetch("/auth/refresh", { method: "POST", credentials: "include" });
-                if (refreshResponse.ok) {
-                    const authenticatedResponse = await fetch(url, mergedOptions);
-                    if (!authenticatedResponse.ok) {
-                        throw new Error(`API request failed with status: ${authenticatedResponse.status}`);
-                    }
-                    return authenticatedResponse;
-                } else {
-                    window.location.href = "/auth/login";
-                }
+            if (response.status === 401 && !window.location.pathname.startsWith("/login")) {
+                window.location.href = "/login";
             }
             console.error("response code", response.status);
             throw new Error(`API request failed with status: ${response.status}`);

@@ -20,7 +20,6 @@ const nextConfig = {
             { source: "/redoc",           destination: `${backend}/redoc` },
             { source: "/openapi.json",    destination: `${backend}/openapi.json` },
             { source: "/api/:path*",      destination: `${backend}/api/:path*` },
-            { source: "/auth/:path*",     destination: `${backend}/auth/:path*` },
             { source: "/uploads/:path*",  destination: `${backend}/uploads/:path*` },
             { source: "/v1/:path*",    destination: `${backend}/v1/:path*` },
             { source: "/files/:path*", destination: `${backend}/files/:path*` },

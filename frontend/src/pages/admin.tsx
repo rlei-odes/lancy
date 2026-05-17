@@ -1,10 +1,9 @@
 "use client";
 
 import Head from "next/head";
-import Link from "next/link";
 import { useRouter } from "next/router";
-import React, { useEffect, useState } from "react";
-import { ArrowLeft, BarChart2, Bug, Database, List, Palette } from "lucide-react";
+import React, { useCallback, useEffect, useState } from "react";
+import { ArrowLeft, BarChart2, Bug, Database, List, Palette, ShieldCheck } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { useRole } from "@/hooks/useRole";
 import { cn } from "@/lib/lorem";
@@ -13,8 +12,9 @@ import { DatabaseStats } from "@/components/sections/admin/database-stats";
 import { BrandingSettings } from "@/components/sections/admin/branding-settings";
 import { IngestionLog } from "@/components/sections/admin/ingestion-log";
 import { LlmDebugPanel } from "@/components/sections/admin/llm-debug-panel";
+import { AuthSettings } from "@/components/sections/admin/auth-settings";
 
-type Tab = "usage" | "database" | "branding" | "ingest-log" | "llm-debug";
+type Tab = "usage" | "database" | "branding" | "ingest-log" | "llm-debug" | "auth";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "usage",      label: "Usage Analytics", icon: <BarChart2 className="h-3.5 w-3.5" /> },
@@ -22,6 +22,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "branding",   label: "Branding",         icon: <Palette className="h-3.5 w-3.5" /> },
     { id: "ingest-log", label: "Ingestion Log",    icon: <List className="h-3.5 w-3.5" /> },
     { id: "llm-debug",  label: "LLM Debug",        icon: <Bug className="h-3.5 w-3.5" /> },
+    { id: "auth",       label: "Auth / SSO",       icon: <ShieldCheck className="h-3.5 w-3.5" /> },
 ];
 
 export default function AdminPage() {
@@ -29,6 +30,7 @@ export default function AdminPage() {
     const { role, loading } = useRole();
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>("usage");
+    const [authDirty, setAuthDirty] = useState(false);
 
     // Redirect non-admins away
     useEffect(() => {
@@ -36,6 +38,19 @@ export default function AdminPage() {
             router.replace("/");
         }
     }, [role, loading, router]);
+
+    useEffect(() => {
+        const handler = (e: BeforeUnloadEvent) => {
+            if (authDirty) { e.preventDefault(); e.returnValue = ""; }
+        };
+        window.addEventListener("beforeunload", handler);
+        return () => window.removeEventListener("beforeunload", handler);
+    }, [authDirty]);
+
+    const confirmLeave = useCallback(() => {
+        if (!authDirty) return true;
+        return window.confirm("You have unsaved changes in Auth / SSO. Leave without saving?");
+    }, [authDirty]);
 
     if (loading || role !== "admin") return null;
 
@@ -46,13 +61,13 @@ export default function AdminPage() {
                 <div className="flex flex-col h-full w-full min-w-0">
                     {/* Header */}
                     <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border shrink-0">
-                        <Link
-                            href="/"
+                        <button
+                            onClick={() => { if (confirmLeave()) router.push("/"); }}
                             className="flex items-center justify-center h-7 w-7 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                             title="Back to chat"
                         >
                             <ArrowLeft className="h-4 w-4" />
-                        </Link>
+                        </button>
                         <div className="h-4 w-px bg-border" />
                         <h1 className="text-sm font-semibold tracking-tight">Admin</h1>
                         <span className="text-xs text-muted-foreground/60 font-mono leading-none">system management</span>
@@ -63,7 +78,7 @@ export default function AdminPage() {
                         {TABS.map((tab) => (
                             <button
                                 key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
+                                onClick={() => { if (activeTab === "auth" && tab.id !== "auth" && !confirmLeave()) return; setActiveTab(tab.id); }}
                                 className={cn(
                                     "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
                                     activeTab === tab.id
@@ -85,6 +100,7 @@ export default function AdminPage() {
                             {activeTab === "branding"   && <BrandingSettings />}
                             {activeTab === "ingest-log" && <IngestionLog />}
                             {activeTab === "llm-debug"  && <LlmDebugPanel />}
+                            {activeTab === "auth"       && <AuthSettings onDirtyChange={setAuthDirty} />}
                         </div>
                     </div>
                 </div>

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DisplayLanguages, Languages } from "@/lib/lang/i18n";
 import { Theme, useTheme } from "@/hooks/useTheme";
-import { ArrowLeft, Sun, Moon, ShieldCheck, LogIn } from "lucide-react";
+import { ArrowLeft, Sun, Moon, ShieldCheck, LogIn, LogOut, Monitor } from "lucide-react";
 import { Footer } from "@/components/sections/sidebar/footer";
 import { useDisclaimer } from "@/hooks/useDisclaimer";
 import { useRole } from "@/hooks/useRole";
@@ -12,6 +12,54 @@ import { useRouter } from "next/router";
 
 interface Props {
     onClickBack: () => void;
+}
+
+function SessionSection() {
+    const [displayName, setDisplayName] = useState<string | null>(null);
+    const [isMode3, setIsMode3] = useState(false);
+    const [loggingOut, setLoggingOut] = useState(false);
+
+    useEffect(() => {
+        Promise.all([
+            fetch("/api/auth/mode").then((r) => r.json()),
+            fetch("/api/auth/me").then((r) => r.json()),
+        ])
+            .then(([modeData, meData]) => {
+                setIsMode3(modeData.mode === 3);
+                setDisplayName(meData.display_name ?? null);
+            })
+            .catch(() => {});
+    }, []);
+
+    async function handleLogout() {
+        setLoggingOut(true);
+        await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+        window.location.href = "/login";
+    }
+
+    if (!isMode3) return null;
+
+    return (
+        <div className="pb-10">
+            <div className="flex flex-row items-center gap-2 pb-2">
+                <Monitor className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Session</span>
+            </div>
+            {displayName && (
+                <p className="text-xs text-muted-foreground pb-3">
+                    Signed in as <span className="text-foreground">{displayName}</span>
+                </p>
+            )}
+            <button
+                onClick={handleLogout}
+                disabled={loggingOut}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 disabled:opacity-50 transition-colors"
+            >
+                <LogOut className="h-3.5 w-3.5" />
+                {loggingOut ? "Signing out…" : "Sign out"}
+            </button>
+        </div>
+    );
 }
 
 function RoleSeparationSection() {
@@ -217,6 +265,7 @@ export const Settings: FunctionComponent<Props> = (props: Props) => {
                             "about",
                         )}`}</label>
                     </div>
+                    <SessionSection />
                     <RoleSeparationSection />
                 </div>
             </div>

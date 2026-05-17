@@ -1,6 +1,6 @@
 # Design Doc: SSO / AD Integration (Mode 3)
 
-**Status:** Design phase — not yet implemented
+**Status:** Implemented — v0.3.4
 
 ---
 
@@ -23,18 +23,20 @@ Mode 3 is **opt-in**. Modes 1 and 2 remain the default and are unaffected when n
 - Let users authenticate against a directory or identity provider instead of a shared password, via one of two mutually exclusive paths:
   - **OIDC** — for Keycloak, Azure AD (Entra ID), Okta, Google Workspace, or any OAuth2-compatible IdP
   - **LDAP** — for traditional Active Directory and OpenLDAP environments (AD natively exposes LDAP on port 389/636)
-- Map IdP groups/roles to Lancy's two-tier model (admin / user) via configuration
-- No user provisioning step: a user who authenticates successfully and belongs to an authorised group is admitted lazily on first login
-- Keep the middleware and cookie mechanism unchanged — Mode 3 only changes what happens at the login endpoint
+- Gate access via the IdP — authenticated users get the `user` role; admin access stays via `ADMIN_PASSWORD` (escape hatch on the login page)
+- No user provisioning step: a user who authenticates successfully is admitted lazily; their DB record is created on first message
+- Keep the middleware, cookie mechanism, and FastAPI backend contract unchanged
 - Provide local testing paths for both: Keycloak in Docker (OIDC), lldap in Docker (LDAP)
 
 ---
 
 ## What Does Not Change
 
-The middleware ([frontend/src/middleware.ts](../frontend/src/middleware.ts)) already only verifies the signed cookie — it does not care how the credential was validated. The `signToken` / `verifyToken` HMAC mechanism in [frontend/src/lib/auth.ts](../frontend/src/lib/auth.ts) is unchanged. Every authenticated session ends up with the same `rag_auth` cookie carrying a signed `admin` or `user` role claim, regardless of which mode issued it.
+The middleware ([frontend/src/middleware.ts](../frontend/src/middleware.ts)) already only verifies the signed cookie — it does not care how the credential was validated. Every authenticated session ends up with the same `rag_auth` cookie carrying a signed `admin` or `user` role claim, regardless of which mode issued it.
 
-Mode 3 only replaces the credential-checking logic inside the login API route.
+Mode 3 adds new routes (OIDC callback page, verify-token API, ldap-verify FastAPI endpoint) and modifies the existing login route to branch on provider type. The `x-session-id` → FastAPI header contract is untouched.
+
+**What did change in `auth.ts` / `middleware.ts`:** `signToken` gained an optional `ttlSeconds` parameter (Modes 1/2 keep the 30-day default; Mode 3 uses `session_ttl_hours`). The signing key is now `SESSION_SECRET || APP_PASSWORD` — `SESSION_SECRET` is auto-generated on first SSO save and requires a frontend restart to activate. Both `middleware.ts` and `login.ts` use the same key expression so tokens remain consistent before and after the restart.
 
 ---
 
@@ -84,7 +86,8 @@ User submits username + password to Lancy's login form. The LDAP bind runs in th
 - No new Node.js LDAP dependency needed
 
 **Notes:**
-- For AD: bind uses `username@domain.com` format; `sAMAccountName` is the username attribute
+- For AD: bind uses `username@domain.com` format (`bind_dn_template: "{username}@corp.example.com"`)
+- `session_id` is set to the user's `userPrincipalName` fetched after a successful bind — see Identity section
 - LDAPS (`ldaps://`) or STARTTLS must be used in production — plain LDAP sends passwords in the clear
 - FastAPI needs intranet access to the LDAP port only — not internet exposure
 
@@ -94,7 +97,7 @@ User submits username + password to Lancy's login form. The LDAP bind runs in th
 
 A new `sso` block in `auth_config.json` (already gitignored, writable from the admin UI). Only one provider is active at a time — `provider` selects the path.
 
-**Design decision: SSO only determines access, not role.** Every user who successfully authenticates via SSO receives the `user` role. Admin access is always via the Mode 2 admin password — already implemented. This removes all group-to-role mapping complexity from the IdP integration.
+**Design decision: SSO only determines access, not role.** Every user who successfully authenticates via SSO receives the `user` role. Admin access is always via `ADMIN_PASSWORD` (escape hatch on the login page). This removes all group-to-role mapping complexity from the IdP integration.
 
 `allowed_groups` is optional on both paths. If set, Lancy checks membership after a successful authentication and denies access if the user is not in any listed group. If omitted, Lancy relies entirely on IdP-level access control (app assignment in Entra ID, client policies in Keycloak, etc.) — any valid authentication equals access.
 
@@ -145,6 +148,8 @@ No App Roles configuration needed — Lancy no longer derives role from the toke
     "server": "ldaps://ldap.example.com:636",
     "bind_dn_template": "uid={username},ou=people,dc=example,dc=com",
     "base_dn": "dc=example,dc=com",
+    "user_id_attribute": "uid",
+    "display_name_attribute": "cn",
     "allowed_groups": ["cn=lancy-users,ou=groups,dc=example,dc=com"],
     "session_ttl_hours": 168
   }
@@ -160,13 +165,21 @@ No App Roles configuration needed — Lancy no longer derives role from the toke
     "server": "ldaps://dc.corp.example.com:636",
     "bind_dn_template": "{username}@corp.example.com",
     "base_dn": "DC=corp,DC=example,DC=com",
+    "user_id_attribute": "userPrincipalName",
+    "display_name_attribute": "displayName",
     "allowed_groups": ["CN=Lancy-Users,OU=Groups,DC=corp,DC=example,DC=com"],
     "session_ttl_hours": 168
   }
 }
 ```
 
-`bind_dn_template` substitutes `{username}` with what the user typed. `username@domain` is the standard modern AD format. If `allowed_groups` is set for LDAP, Lancy checks the `memberOf` attribute on the user object after a successful bind — natively supported in AD.
+`bind_dn_template` substitutes `{username}` with what the user typed. `username@domain` is the standard modern AD format.
+
+`user_id_attribute` names the LDAP attribute fetched after a successful bind to use as the stable `session_id`. **For AD: `userPrincipalName`** — globally unique within the forest, human-readable (`jsmith@corp.example.com`), aligns with the UPN login format. For generic LDAP: `uid`. Do not use `sAMAccountName` (not unique across domains) or `objectGUID` (opaque, hard to debug).
+
+`display_name_attribute` names the attribute used as the user's display name in the UI. **For AD: `displayName`**. For generic LDAP: `cn`. Fallback chain: configured attribute → `cn` → the value the user typed at login.
+
+If `allowed_groups` is set, Lancy checks the `memberOf` attribute on the user object after a successful bind — natively supported in AD. Some LDAP servers require a separate search; use the optional `search_bind_dn` / `search_bind_password` config fields for those.
 
 ---
 
@@ -180,7 +193,7 @@ authenticated + allowed_groups set + not a member                     → 401
 unauthenticated / bind failed / token invalid                         → 401
 ```
 
-Admin access is always through the Mode 2 admin password, unchanged from the existing implementation. A user who needs admin access logs in via SSO first, then uses the "Admin Login" escape hatch (already in the UI) to enter the admin password and elevate their session.
+Admin access is always through `ADMIN_PASSWORD`. The "Admin Login" escape hatch is always visible on the login page when Mode 3 is active — deliberately so, since a broken SSO config would otherwise lock out all admins.
 
 Group membership is checked at login only — not cached between requests. Existing sessions live out their `session_ttl_hours` TTL after a group removal, which is the expected trade-off for a stateless cookie-based system.
 
@@ -201,9 +214,19 @@ The app already has a substantial per-user data layer:
 
 In Modes 1 and 2, `session_id` is a per-browser UUID — data is tied to the browser cookie, not the person. Clear cookies or use a new device and you start fresh.
 
-In Mode 3, the SSO callback (OIDC) or LDAP login handler sets `session_id` directly to the IdP subject: the `sub` claim for OIDC, or a normalised identifier (e.g. `sAMAccountName` or DN) for LDAP. This makes the identity stable and portable — the same person logging in from any device gets the same `session_id`, the same conversation history, and the same retrieval config.
+In Mode 3, the login handler sets `session_id` to a stable IdP-issued identity instead of a browser UUID:
 
-No schema changes are needed. The `session_id` column stays a string; the value is just stable across devices instead of per-browser. The middleware and backend are entirely unaffected — they already read and forward `x-session-id` without caring what the value looks like.
+| Path | `session_id` value | Example |
+|---|---|---|
+| OIDC | `sub` claim from the ID token | `f7a2c1d0-...` (Keycloak) or `abc123` (Azure AD) — opaque but stable |
+| LDAP | Value of `user_id_attribute` fetched after bind | `jsmith@corp.example.com` (`userPrincipalName`) |
+
+The same person logging in from any device gets the same value → same conversation history, same retrieval config. No schema changes needed — `session_id` is already a string column everywhere. The middleware and FastAPI backend are entirely unaffected.
+
+**Display name** is stored in a separate HttpOnly cookie `lancy_display_name` set alongside `rag_auth` at login. The existing `/api/auth/me` endpoint (currently returns `{ role }`) is extended to also return `display_name` by reading this cookie. The login page, header, and any "logged in as" UI element reads from `/api/auth/me`.
+
+- OIDC: extract from `name` claim → `preferred_username` → `email` → fallback to `sub`
+- LDAP: fetch `display_name_attribute` (e.g. `displayName`) → `cn` → fallback to typed username
 
 ### No user provisioning step
 
@@ -226,11 +249,24 @@ Browser sessions work via the redirect flow. API clients (curl, Open WebUI) that
 
 ## Implementation Plan
 
+### Key existing files to understand first
+
+| File | Role |
+|---|---|
+| `frontend/src/middleware.ts` | Auth gatekeeper — `getRole()` reads `rag_auth` cookie; `x-session-id` header injection |
+| `frontend/src/lib/auth.ts` | `signToken` / `verifyToken` — HMAC cookie signing, unchanged |
+| `frontend/src/lib/auth-config.ts` | Reads/writes `auth_config.json`; pattern to follow for SSO config extension |
+| `frontend/src/pages/api/auth/login.ts` | Existing login handler — branch here for LDAP mode |
+| `frontend/src/pages/api/auth/me.ts` | Returns `{ role }` — extend to return `{ role, display_name }` |
+| `frontend/src/pages/api/admin/admin-config.ts` | Existing admin config endpoint — extend for SSO config |
+| `frontend/src/pages/login.tsx` | Login page — add SSO button / username field based on mode |
+| `backend/src/lancy/main.py` | FastAPI entry point — add `POST /api/v1/auth/ldap-verify` here |
+
 ### Step 1: Config and mode detection
 
 - Extend `auth-config.ts` with `getSSOConfig()` and `isMode3Active()` (true when `sso` block is present)
-- Extend the admin Settings UI with an "SSO / Directory" section: provider selector, fields per provider type, test-connection button
-- API endpoint `GET/POST /api/admin/auth-config` (already partially exists for admin password) extended to read/write the `sso` block
+- Extend the admin UI with an "Auth / SSO" tab: provider selector, fields per provider type, prerequisites status panel, test-configuration button
+- API endpoint `GET/POST /api/auth/admin-config` (note: lives under `/api/auth/`, not `/api/admin/`) extended to read/write the `sso` block; auto-generates `SESSION_SECRET` into `frontend/.env` on first SSO save
 
 ### Step 2: OIDC path
 
@@ -257,7 +293,7 @@ New FastAPI endpoint + Next.js proxy — no new frontend dependency:
 - `/login` page: detect Mode 3 from a new public `/api/auth/mode` endpoint (returns `{ mode: 1|2|3, provider: "oidc"|"ldap"|null }`)
 - OIDC: replace password form with a single "Log in with SSO" button
 - LDAP: replace password form with username + password fields (password label updated, no hint about shared password)
-- Escape hatch: if `APP_PASSWORD` is still set alongside SSO config, show a small "Admin password login" link so the fallback admin account remains accessible
+- Escape hatch: always shown in Mode 3 — unconditional, not gated on APP_PASSWORD presence. Clicking it shows a password field (labelled "Admin password") that accepts `ADMIN_PASSWORD`
 
 ---
 
@@ -269,17 +305,22 @@ Keycloak runs in Docker and provides a full OIDC server with a management UI.
 
 ```bash
 docker run -p 8080:8080 \
-  -e KEYCLOAK_ADMIN=admin \
-  -e KEYCLOAK_ADMIN_PASSWORD=admin \
+  -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
+  -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+  -e KC_HOSTNAME_URL=http://<server-ip>:8080 \
+  -e KC_HOSTNAME_ADMIN_URL=http://<server-ip>:8080 \
   quay.io/keycloak/keycloak:latest start-dev
 ```
 
-**Realm and client setup (Keycloak admin UI at http://localhost:8080):**
+Replace `<server-ip>` with the LAN IP of the machine running Docker (e.g. `192.168.1.160`). The `KC_HOSTNAME_URL` is required in Keycloak 26+ — without it the admin console JS hardcodes `localhost` and breaks when accessed from another machine. The old `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD` env vars still work but are deprecated in 26.6+.
+
+**Realm and client setup (Keycloak admin UI at `http://<server-ip>:8080`):**
 
 1. Create a realm named `lancy`
 2. Create a client `lancy-app`:
    - Client type: OpenID Connect
    - **Client authentication: off** (public client — no secret, PKCE only)
+   - **Authentication flow: Standard flow only** (Authorization Code flow — PKCE is automatic for public clients; turn off Direct access grants and everything else)
    - Valid redirect URIs: `http://localhost:3000/auth/callback`
    - **Web Origins: `http://localhost:3000`** — required for CORS on the token endpoint; without this the browser's token exchange fetch is blocked
 3. Create test users
@@ -324,7 +365,7 @@ docker run -p 3890:3890 -p 17170:17170 \
   lldap/lldap:stable
 ```
 
-lldap admin UI is at http://localhost:17170 (user: `admin`, password: `adminpassword`). Create groups `lancy-admins` and `lancy-users`, create test users, assign to groups.
+lldap admin UI is at http://localhost:17170 (user: `admin`, password: `adminpassword`). Create a group `lancy-users`, create test users, assign some to the group (leave one out to test denial).
 
 **Lancy config:**
 
@@ -335,7 +376,8 @@ lldap admin UI is at http://localhost:17170 (user: `admin`, password: `adminpass
     "server": "ldap://localhost:3890",
     "bind_dn_template": "uid={username},ou=people,dc=lancy,dc=test",
     "base_dn": "dc=lancy,dc=test",
-    "group_search_base": "ou=groups,dc=lancy,dc=test",
+    "user_id_attribute": "uid",
+    "display_name_attribute": "cn",
     "allowed_groups": ["cn=lancy-users,ou=groups,dc=lancy,dc=test"],
     "session_ttl_hours": 168
   }
@@ -351,7 +393,7 @@ When testing against a real AD later, only the `server`, `bind_dn_template`, and
 - [ ] Authenticated user lands in app with `user` role
 - [ ] If `allowed_groups` set: user in the group → admitted; user not in group → 401
 - [ ] If `allowed_groups` not set: any authenticated user → admitted
-- [ ] Admin Login escape hatch works: enter admin password → admin session
+- [ ] Admin Login escape hatch works: enter `ADMIN_PASSWORD` → admin session
 - [ ] Bearer token with `APP_PASSWORD` still works for API clients
 - [ ] Group removal in IdP reflected on next login (session lives out TTL)
 - [ ] Mode 1 and Mode 2 still work when `sso` block is absent from `auth_config.json`
@@ -381,17 +423,11 @@ This requires a stolen `rag_auth` cookie, so it is not an unauthenticated attack
 
 ### Data continuity at Mode 3 activation
 
-Existing Mode 2 users have history under their browser UUID. When they first log in via SSO, their `session_id` becomes their IdP subject — their old history is unreachable under the old UUID.
-
-Options:
-- **Accept the break** — simplest; communicate to users that history does not carry over when SSO is activated. Reasonable for a first rollout.
-- **One-time migration prompt** — on first SSO login, detect a pre-existing `session_id` UUID cookie and offer to merge old history into the new identity. More work, better UX.
-
-This decision should be made before activating Mode 3 in an environment with existing conversation history.
+Existing Mode 2 users have history under their browser UUID. When they first log in via SSO, their `session_id` becomes their IdP subject — their old history is unreachable under the old UUID. **Decided: accept the break.** Users start fresh under SSO. No migration mechanism needed.
 
 ### Display name in the UI
 
-With individual identities, users expect to see who they are logged in as. The IdP provides `name`, `email`, or `preferred_username` in OIDC tokens; LDAP provides `displayName`, `mail`, `cn`. The SSO callback should extract a display name and pass it to the frontend (either in the cookie payload or a separate short-lived cookie). Not blocking for the first implementation but should be in scope for the same release.
+Specified in the Identity section above. Implement in the same release as the auth flow — the mechanism (separate `lancy_display_name` cookie + `/api/auth/me` extension) is small and should not be deferred.
 
 ### LDAP service account for group search
 
@@ -430,18 +466,39 @@ The `redirect_uri` configured in both the IdP and Lancy's config must be the URL
 
 1. **Session TTL** — configurable via `session_ttl_hours` in the SSO config block. Defaults: OIDC 48 h (IdP re-auth can be silent), LDAP 168 h / 7 days (re-auth requires password entry).
 
-2. **No role mapping from SSO** — SSO only gates access. Every authenticated user gets the `user` role. Admin access is always via the Mode 2 admin password. This eliminates group-claim name differences across IdPs and removes all role-mapping configuration from the SSO setup.
+2. **No role mapping from SSO** — SSO only gates access. Every authenticated user gets the `user` role. Admin access is always via `ADMIN_PASSWORD` (escape hatch on the login page). This eliminates group-claim name differences across IdPs and removes all role-mapping configuration from the SSO setup.
 
-3. **`session_id` as IdP subject in Mode 3** — the existing `session_id` cookie and `x-session-id` header are reused; in Mode 3 the value is set to the IdP `sub` claim (OIDC) or a normalised LDAP identifier instead of a browser UUID. No schema changes. Gives portable identity across devices for free.
+3. **`session_id` as IdP subject in Mode 3** — OIDC: `sub` claim. LDAP: value of `user_id_attribute` (default `userPrincipalName` for AD, `uid` for generic LDAP). No schema changes. Gives portable identity across devices for free.
 
-4. **LDAP TLS** — `ldap://` allowed in config (dev convenience). Admin UI shows a warning when plain LDAP is configured. No hard block.
+4. **Display name** — separate `lancy_display_name` HttpOnly cookie set at login alongside `rag_auth`. `/api/auth/me` extended to return `{ role, display_name }`. OIDC: `name` → `preferred_username` → `email` → `sub`. LDAP: `display_name_attribute` → `cn` → typed username.
 
-5. **Libraries** — `oidc-client-ts` (browser PKCE flow) + `jose` (Next.js JWT validation) for OIDC; `ldap3` (Python) via FastAPI for LDAP. Auth.js and the BFF pattern both rejected: Auth.js conflicts with the session model; BFF requires FastAPI internet exposure.
+5. **LDAP TLS** — `ldap://` allowed in config (dev convenience). Admin UI shows a warning when plain LDAP is configured. No hard block.
+
+6. **Data continuity** — accept the break. Users start fresh under SSO; no migration from Mode 2 UUID history.
+
+7. **Libraries** — `oidc-client-ts` (browser PKCE flow) + `jose` (Next.js JWT validation) for OIDC; `ldap3` (Python) via FastAPI for LDAP. Auth.js and the BFF pattern both rejected: Auth.js conflicts with the session model; BFF requires FastAPI internet exposure.
+
+8. **`ADMIN_PASSWORD` required for Mode 3** — The server refuses to activate Mode 3 if `ADMIN_PASSWORD` is absent (`/api/auth/mode` returns HTTP 500). Without it, the admin escape hatch is inoperable and no one can reach the Admin UI once SSO is active. A server admin can still recover by editing `auth_config.json` directly.
+
+9. **`SESSION_SECRET` as the cookie signing key** — `APP_PASSWORD` is a user-facing credential in Modes 1/2 (users type it to log in). Using it as the HMAC signing key in Mode 2 means users know the key and could forge tokens. The fix: a separate `SESSION_SECRET` env var, auto-generated and appended to `frontend/.env` on the first SSO save. The signing key is `SESSION_SECRET || APP_PASSWORD` in both `middleware.ts` and `login.ts` so behaviour is consistent before and after the required frontend restart. In Mode 3, `APP_PASSWORD` is never typed by regular users, so the fallback is not a security risk during the restart window.
 
 ---
 
 ## To Do (deferred, not blocking initial implementation)
 
 - **OIDC logout** — RP-initiated logout to also invalidate the IdP session. Currently logout just clears the local cookie. Low priority — users who close the browser lose the Lancy cookie anyway.
-- **Display name in UI** — show logged-in user's name/email from IdP claims. Same release as Mode 3, not blocking the auth flow itself.
-- **Data continuity policy** — decide before activating Mode 3 in an environment with existing history whether to accept the break or offer a migration prompt.
+- **OIDC logout** — RP-initiated logout to also invalidate the IdP session. Low priority for initial release.
+
+
+## Test results
+
+## OIDC using a separate Keycloak host
+
+- [x] Authenticated user lands in app with `user` role
+- [x] If `allowed_groups` set: user in the group → admitted; user not in group → 401
+- [x] If `allowed_groups` not set: any authenticated user → admitted
+- [x] Admin Login escape hatch works: enter `ADMIN_PASSWORD` → admin session
+- [ ] Bearer token with `APP_PASSWORD` still works for API clients
+- [x] Group removal in IdP reflected on next login (session lives out TTL)
+- [ ] Mode 1 and Mode 2 still work when `sso` block is absent from `auth_config.json`
+- [ ] Session expires after configured `session_ttl_hours`
