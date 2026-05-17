@@ -78,8 +78,8 @@ class PGVectorStore(VectorStore):
         data_to_insert = [
             {
                 "id": generate_uid(),
-                "title": chunk.title,
-                "content": chunk.content,
+                "title": chunk.title.replace("\x00", ""),
+                "content": chunk.content.replace("\x00", ""),
                 "embedding": emb,
                 "mime_type": chunk.mime_type,
                 "chunk_metadata": chunk.metadata,

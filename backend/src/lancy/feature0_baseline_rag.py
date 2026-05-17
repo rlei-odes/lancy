@@ -631,6 +631,21 @@ def load_chunks(
                         metadata={},
                     )
                 ]
+            elif ext == ".txt":
+                # Plain-text files have no reliable Markdown structure: any
+                # line starting with "#" (e.g. code comments) would be mistaken
+                # for a header and silently drop leading content. Read the whole
+                # file as one chunk; _split_chunk_by_tokens handles sizing.
+                try:
+                    _txt = file_path.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    _txt = file_path.read_text(encoding="latin-1")
+                file_chunks = [Chunk(
+                    title=file_path.name,
+                    content=_txt,
+                    mime_type="text/plain",
+                    metadata={"chapters": []},
+                )]
             else:
                 chunker = _CHUNKERS[ext]
                 kwargs: dict = {}

@@ -2,6 +2,7 @@ import os
 import shutil
 import io
 import base64
+import html
 import re
 import unicodedata
 from enum import StrEnum
@@ -61,7 +62,7 @@ class PDFChunker(Chunker):
                         with open(image_filename, "wb") as fp:
                             element.image.pil_image.save(fp, format="PNG")
 
-            return conv_result.document.export_to_markdown()  # type: ignore[no-any-return]
+            return html.unescape(conv_result.document.export_to_markdown())  # type: ignore[no-any-return]
         else:
             raise NotImplementedError(f"Engine '{engine}' is not supported.")
 

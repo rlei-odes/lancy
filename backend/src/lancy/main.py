@@ -563,6 +563,12 @@ def build_server():
             entry = await pool.load(kb, cfg, _build_components)  # raises EmbeddingConflict if incompatible
         pool.set_active(kb.id)
         log.info(f"KB '{kb.name}' ready in pool")
+        try:
+            count = await entry.vs.count()
+            n_files = len(await entry.vs.get_source_files()) if count > 0 else 0
+            kb_router.update_stats(kb.id, count, n_files)
+        except Exception:
+            pass
 
     async def _upload_cb(file_path: Path, kb: KBInfo, extra_metadata: dict) -> None:
         try:
