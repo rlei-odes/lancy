@@ -31,19 +31,6 @@ Unknown origin. Possibly connected to Query Expansion. Could be related to the L
 
 ## Authentication & Access Control
 
-### Active Directory / SSO Integration
-
-**Goal:** optional AD/SSO login as an alternative to the shared-password model, for organisations that manage users centrally.
-
-**Scope:**
-- LDAP / Active Directory bind for authentication
-- Map AD groups to roles (e.g. domain users → user role, IT group → admin role)
-- Feature should be opt-in and deactivatable — shared-password mode remains the default for simpler deployments
-- Builds naturally on top of the existing admin/user role separation
-
-**Why:** relevant for enterprise rollout where user management via AD is already in place and individual password distribution is impractical.
-
-**Architecture note:** the Edge Runtime constraint in the middleware is not a blocker. LDAP validation belongs in the `/api/auth/login` Node.js API route — the middleware only verifies the already-issued signed cookie, which stays the same. The one open question is Bearer token auth for API clients in an AD deployment (no browser session available) — a service account password or a separate API key mechanism would be needed for that case.
 
 ---
 

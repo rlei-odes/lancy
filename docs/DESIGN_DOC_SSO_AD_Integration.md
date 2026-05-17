@@ -488,3 +488,17 @@ The `redirect_uri` configured in both the IdP and Lancy's config must be the URL
 
 - **OIDC logout** — RP-initiated logout to also invalidate the IdP session. Currently logout just clears the local cookie. Low priority — users who close the browser lose the Lancy cookie anyway.
 - **OIDC logout** — RP-initiated logout to also invalidate the IdP session. Low priority for initial release.
+
+
+## Test results
+
+## OIDC using a separate Keycloak host
+
+- [x] Authenticated user lands in app with `user` role
+- [x] If `allowed_groups` set: user in the group → admitted; user not in group → 401
+- [x] If `allowed_groups` not set: any authenticated user → admitted
+- [x] Admin Login escape hatch works: enter `ADMIN_PASSWORD` → admin session
+- [ ] Bearer token with `APP_PASSWORD` still works for API clients
+- [x] Group removal in IdP reflected on next login (session lives out TTL)
+- [ ] Mode 1 and Mode 2 still work when `sso` block is absent from `auth_config.json`
+- [ ] Session expires after configured `session_ttl_hours`

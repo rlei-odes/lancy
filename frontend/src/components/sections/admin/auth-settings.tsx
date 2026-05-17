@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 
 type Provider = "none" | "oidc" | "ldap";
 
@@ -64,6 +64,22 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
     );
 }
 
+function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+    return (
+        <textarea
+            rows={3}
+            spellCheck={false}
+            {...props}
+            className="w-full rounded-md bg-muted border border-border text-foreground px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none font-mono"
+        />
+    );
+}
+
+function FieldError({ msg }: { msg?: string }) {
+    if (!msg) return null;
+    return <p className="mt-1 text-xs text-red-400">{msg}</p>;
+}
+
 type EnvStatus = "set" | "missing" | "warn" | "loading";
 
 function StatusDot({ status, label, hint }: { status: EnvStatus; label: string; hint: string }) {
@@ -94,7 +110,25 @@ export const AuthSettings: React.FC = () => {
     const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
-    const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+    const [testSteps, setTestSteps] = useState<{ label: string; ok: boolean; detail: string }[] | null>(null);
+    const [ldapErrors, setLdapErrors] = useState<{ server?: string; bind_dn_template?: string }>({});
+
+    function validateLdap(fields: LDAPFields) {
+        const errs: { server?: string; bind_dn_template?: string } = {};
+        if (fields.server && !/^ldaps?:\/\//i.test(fields.server)) {
+            errs.server = "Must start with ldap:// or ldaps://";
+        }
+        if (fields.bind_dn_template && !fields.bind_dn_template.includes("{username}")) {
+            errs.bind_dn_template = "Must contain {username}";
+        }
+        return errs;
+    }
+
+    function setLdapField(patch: Partial<LDAPFields>) {
+        const updated = { ...ldap, ...patch };
+        setLDAP(updated);
+        setLdapErrors(validateLdap(updated));
+    }
     const [restartRequired, setRestartRequired] = useState(false);
     const [appPwStatus, setAppPwStatus] = useState<EnvStatus>("loading");
     const [adminPwStatus, setAdminPwStatus] = useState<EnvStatus>("loading");
@@ -150,7 +184,7 @@ export const AuthSettings: React.FC = () => {
                         base_dn: sso.base_dn ?? "",
                         user_id_attribute: sso.user_id_attribute ?? "uid",
                         display_name_attribute: sso.display_name_attribute ?? "cn",
-                        allowed_groups: (sso.allowed_groups ?? []).join(", "),
+                        allowed_groups: (sso.allowed_groups ?? []).join("\n"),
                         session_ttl_hours: String(sso.session_ttl_hours ?? "168"),
                         search_bind_dn: sso.search_bind_dn ?? "",
                         search_bind_password: sso.search_bind_password ?? "",
@@ -163,6 +197,12 @@ export const AuthSettings: React.FC = () => {
     function parseGroups(raw: string): string[] {
         return raw.split(",").map((g) => g.trim()).filter(Boolean);
     }
+
+    function parseLdapGroups(raw: string): string[] {
+        return raw.split("\n").map((g) => g.trim()).filter(Boolean);
+    }
+
+    const hasLdapErrors = Object.values(ldapErrors).some(Boolean);
 
     function buildPayload() {
         if (provider === "none") return { sso: null };
@@ -186,7 +226,7 @@ export const AuthSettings: React.FC = () => {
                 base_dn: ldap.base_dn.trim(),
                 user_id_attribute: ldap.user_id_attribute.trim() || "uid",
                 display_name_attribute: ldap.display_name_attribute.trim() || "cn",
-                allowed_groups: parseGroups(ldap.allowed_groups),
+                allowed_groups: parseLdapGroups(ldap.allowed_groups),
                 session_ttl_hours: Number(ldap.session_ttl_hours) || 168,
                 search_bind_dn: ldap.search_bind_dn.trim() || undefined,
                 search_bind_password: ldap.search_bind_password || undefined,
@@ -214,18 +254,26 @@ export const AuthSettings: React.FC = () => {
         }
     }
 
-    async function handleTestLDAP() {
+    async function handleTest() {
         setTesting(true);
-        setTestResult(null);
-        // Test by fetching the mode endpoint — real LDAP bind test would require credentials,
-        // so we just verify the config was saved and the mode endpoint is happy.
+        setTestSteps(null);
+        const payload = buildPayload();
+        const sso = (payload as { sso: Record<string, unknown> | null }).sso;
+        if (!sso) return setTesting(false);
         try {
-            const res = await fetch("/api/auth/mode");
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error ?? "Configuration error");
-            setTestResult({ ok: true, msg: `Mode ${data.mode} active — provider: ${data.provider ?? "none"}` });
+            const res = await fetch("/api/auth/sso-test", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(sso),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setTestSteps([{ label: "Test", ok: false, detail: data.error ?? "Request failed" }]);
+            } else {
+                setTestSteps(data.steps ?? []);
+            }
         } catch (e: unknown) {
-            setTestResult({ ok: false, msg: e instanceof Error ? e.message : "Test failed" });
+            setTestSteps([{ label: "Test", ok: false, detail: e instanceof Error ? e.message : "Request failed" }]);
         } finally {
             setTesting(false);
         }
@@ -281,19 +329,19 @@ export const AuthSettings: React.FC = () => {
                 {provider === "oidc" && (
                     <>
                         <FieldRow label="Client ID" hint="Public client — no secret needed.">
-                            <TextInput value={oidc.client_id} onChange={(e) => setOIDC({ ...oidc, client_id: e.target.value })} placeholder="lancy-app" />
+                            <TextInput maxLength={256} value={oidc.client_id} onChange={(e) => setOIDC({ ...oidc, client_id: e.target.value })} placeholder="lancy-app" />
                         </FieldRow>
                         <FieldRow label="Issuer URL" hint="e.g. https://keycloak.example.com/realms/lancy">
-                            <TextInput value={oidc.issuer_url} onChange={(e) => setOIDC({ ...oidc, issuer_url: e.target.value })} placeholder="https://idp.example.com/realms/lancy" />
+                            <TextInput maxLength={512} value={oidc.issuer_url} onChange={(e) => setOIDC({ ...oidc, issuer_url: e.target.value })} placeholder="https://idp.example.com/realms/lancy" />
                         </FieldRow>
                         <FieldRow label="Redirect URI" hint="Must match the URI registered in the IdP.">
-                            <TextInput value={oidc.redirect_uri} onChange={(e) => setOIDC({ ...oidc, redirect_uri: e.target.value })} placeholder="https://lancy.example.com/auth/callback" />
+                            <TextInput maxLength={512} value={oidc.redirect_uri} onChange={(e) => setOIDC({ ...oidc, redirect_uri: e.target.value })} placeholder="https://lancy.example.com/auth/callback" />
                         </FieldRow>
                         <FieldRow label="Allowed groups" hint="Comma-separated. Leave empty to admit any authenticated user.">
-                            <TextInput value={oidc.allowed_groups} onChange={(e) => setOIDC({ ...oidc, allowed_groups: e.target.value })} placeholder="/lancy-users, /staff" />
+                            <TextInput maxLength={1024} value={oidc.allowed_groups} onChange={(e) => setOIDC({ ...oidc, allowed_groups: e.target.value })} placeholder="/lancy-users, /staff" />
                         </FieldRow>
                         <FieldRow label="Session TTL (hours)" hint="Default 48 h — silent re-auth via IdP session if shorter.">
-                            <TextInput type="number" min="1" value={oidc.session_ttl_hours} onChange={(e) => setOIDC({ ...oidc, session_ttl_hours: e.target.value })} />
+                            <TextInput type="number" min="1" max="8760" value={oidc.session_ttl_hours} onChange={(e) => setOIDC({ ...oidc, session_ttl_hours: e.target.value })} />
                         </FieldRow>
                     </>
                 )}
@@ -302,8 +350,9 @@ export const AuthSettings: React.FC = () => {
                 {provider === "ldap" && (
                     <>
                         <FieldRow label="Server" hint="Use ldaps:// in production.">
-                            <TextInput value={ldap.server} onChange={(e) => setLDAP({ ...ldap, server: e.target.value })} placeholder="ldaps://ldap.example.com:636" />
-                            {isPlainLDAP && (
+                            <TextInput maxLength={512} value={ldap.server} onChange={(e) => setLdapField({ server: e.target.value })} placeholder="ldaps://ldap.example.com:636" />
+                            <FieldError msg={ldapErrors.server} />
+                            {isPlainLDAP && !ldapErrors.server && (
                                 <div className="flex items-center gap-1.5 mt-1.5 text-xs text-amber-400">
                                     <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                                     Plain LDAP sends passwords in the clear. Use ldaps:// in production.
@@ -311,29 +360,30 @@ export const AuthSettings: React.FC = () => {
                             )}
                         </FieldRow>
                         <FieldRow label="Bind DN template" hint="{username} is replaced at login. AD: {username}@corp.example.com">
-                            <TextInput value={ldap.bind_dn_template} onChange={(e) => setLDAP({ ...ldap, bind_dn_template: e.target.value })} placeholder="{username}@corp.example.com" />
+                            <TextInput maxLength={512} value={ldap.bind_dn_template} onChange={(e) => setLdapField({ bind_dn_template: e.target.value })} placeholder="{username}@corp.example.com" />
+                            <FieldError msg={ldapErrors.bind_dn_template} />
                         </FieldRow>
                         <FieldRow label="Base DN">
-                            <TextInput value={ldap.base_dn} onChange={(e) => setLDAP({ ...ldap, base_dn: e.target.value })} placeholder="DC=corp,DC=example,DC=com" />
+                            <TextInput maxLength={512} value={ldap.base_dn} onChange={(e) => setLdapField({ base_dn: e.target.value })} placeholder="DC=corp,DC=example,DC=com" />
                         </FieldRow>
                         <FieldRow label="User ID attribute" hint="Stable identifier used as session_id. AD: userPrincipalName">
-                            <TextInput value={ldap.user_id_attribute} onChange={(e) => setLDAP({ ...ldap, user_id_attribute: e.target.value })} placeholder="userPrincipalName" />
+                            <TextInput maxLength={64} value={ldap.user_id_attribute} onChange={(e) => setLdapField({ user_id_attribute: e.target.value })} placeholder="userPrincipalName" />
                         </FieldRow>
                         <FieldRow label="Display name attribute" hint="AD: displayName">
-                            <TextInput value={ldap.display_name_attribute} onChange={(e) => setLDAP({ ...ldap, display_name_attribute: e.target.value })} placeholder="displayName" />
+                            <TextInput maxLength={64} value={ldap.display_name_attribute} onChange={(e) => setLdapField({ display_name_attribute: e.target.value })} placeholder="displayName" />
                         </FieldRow>
-                        <FieldRow label="Allowed groups" hint="Full group DNs, comma-separated. Leave empty to admit any authenticated user.">
-                            <TextInput value={ldap.allowed_groups} onChange={(e) => setLDAP({ ...ldap, allowed_groups: e.target.value })} placeholder="CN=Lancy-Users,OU=Groups,DC=corp,DC=example,DC=com" />
+                        <FieldRow label="Allowed groups" hint="One full group DN per line. Leave empty to admit any authenticated user.">
+                            <Textarea maxLength={4096} value={ldap.allowed_groups} onChange={(e) => setLdapField({ allowed_groups: e.target.value })} placeholder={"cn=lancy-users,ou=groups,dc=example,dc=com\ncn=another-group,ou=groups,dc=example,dc=com"} />
                         </FieldRow>
                         <FieldRow label="Session TTL (hours)" hint="Default 7 days — re-auth requires password entry.">
-                            <TextInput type="number" min="1" value={ldap.session_ttl_hours} onChange={(e) => setLDAP({ ...ldap, session_ttl_hours: e.target.value })} />
+                            <TextInput type="number" min="1" max="8760" value={ldap.session_ttl_hours} onChange={(e) => setLdapField({ session_ttl_hours: e.target.value })} />
                         </FieldRow>
                         <FieldRow label="Service account DN" hint="Optional — for servers requiring a dedicated account for group search.">
-                            <TextInput value={ldap.search_bind_dn} onChange={(e) => setLDAP({ ...ldap, search_bind_dn: e.target.value })} placeholder="CN=svc-lancy,OU=ServiceAccounts,DC=corp,DC=example,DC=com" />
+                            <TextInput maxLength={512} value={ldap.search_bind_dn} onChange={(e) => setLdapField({ search_bind_dn: e.target.value })} placeholder="CN=svc-lancy,OU=ServiceAccounts,DC=corp,DC=example,DC=com" />
                         </FieldRow>
                         {ldap.search_bind_dn && (
                             <FieldRow label="Service account password">
-                                <TextInput type="password" value={ldap.search_bind_password} onChange={(e) => setLDAP({ ...ldap, search_bind_password: e.target.value })} placeholder="••••••••" />
+                                <TextInput maxLength={256} type="password" value={ldap.search_bind_password} onChange={(e) => setLdapField({ search_bind_password: e.target.value })} placeholder="••••••••" />
                             </FieldRow>
                         )}
                     </>
@@ -344,25 +394,38 @@ export const AuthSettings: React.FC = () => {
             <div className="flex items-center gap-3">
                 <button
                     onClick={handleSave}
-                    disabled={saving}
+                    disabled={saving || hasLdapErrors}
                     className="rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium px-4 py-2 text-sm transition-colors"
                 >
                     {saving ? "Saving…" : "Save"}
                 </button>
-                <button
-                    onClick={handleTestLDAP}
-                    disabled={testing}
-                    className="rounded-lg bg-muted hover:bg-muted/80 disabled:opacity-50 text-foreground font-medium px-4 py-2 text-sm border border-border transition-colors"
-                >
-                    {testing ? "Testing…" : "Test configuration"}
-                </button>
+                {provider !== "none" && (
+                    <button
+                        onClick={handleTest}
+                        disabled={testing || hasLdapErrors}
+                        className="rounded-lg bg-muted hover:bg-muted/80 disabled:opacity-50 text-foreground font-medium px-4 py-2 text-sm border border-border transition-colors"
+                    >
+                        {testing ? "Testing…" : "Test connection"}
+                    </button>
+                )}
             </div>
 
             {result && (
                 <p className={`text-sm ${result.ok ? "text-green-400" : "text-red-400"}`}>{result.msg}</p>
             )}
-            {testResult && (
-                <p className={`text-sm ${testResult.ok ? "text-green-400" : "text-red-400"}`}>{testResult.msg}</p>
+            {testSteps && (
+                <div className="rounded-lg border border-border bg-card p-3 space-y-2">
+                    {testSteps.map((step, i) => (
+                        <div key={i} className="flex items-start gap-2 text-sm">
+                            {step.ok
+                                ? <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0 mt-0.5" />
+                                : <XCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+                            }
+                            <span className="font-medium text-foreground w-40 shrink-0">{step.label}</span>
+                            <span className="text-muted-foreground">{step.detail}</span>
+                        </div>
+                    ))}
+                </div>
             )}
             {restartRequired && (
                 <div className="flex items-start gap-2.5 rounded-lg border border-amber-400/30 bg-amber-400/5 px-4 py-3">
