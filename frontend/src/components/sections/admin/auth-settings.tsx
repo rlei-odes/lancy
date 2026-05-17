@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 
 type Provider = "none" | "oidc" | "ldap";
@@ -103,10 +103,11 @@ function StatusDot({ status, label, hint }: { status: EnvStatus; label: string; 
     );
 }
 
-export const AuthSettings: React.FC = () => {
+export const AuthSettings: React.FC<{ onDirtyChange?: (dirty: boolean) => void }> = ({ onDirtyChange }) => {
     const [provider, setProvider] = useState<Provider>("none");
     const [oidc, setOIDC] = useState<OIDCFields>(OIDC_DEFAULTS);
     const [ldap, setLDAP] = useState<LDAPFields>(LDAP_DEFAULTS);
+    const savedRef = useRef<{ provider: Provider; oidc: OIDCFields; ldap: LDAPFields } | null>(null);
     const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
@@ -166,19 +167,24 @@ export const AuthSettings: React.FC = () => {
             .then((data) => {
                 setSessionSecretStatus(data.session_secret_set ? "set" : "missing");
                 const sso = data.sso;
-                if (!sso) { setProvider("none"); return; }
+                if (!sso) {
+                    setProvider("none");
+                    savedRef.current = { provider: "none", oidc: OIDC_DEFAULTS, ldap: LDAP_DEFAULTS };
+                    return;
+                }
                 if (sso.provider === "oidc") {
-                    setProvider("oidc");
-                    setOIDC({
+                    const loaded: OIDCFields = {
                         client_id: sso.client_id ?? "",
                         issuer_url: sso.issuer_url ?? "",
                         redirect_uri: sso.redirect_uri ?? "",
                         allowed_groups: (sso.allowed_groups ?? []).join(", "),
                         session_ttl_hours: String(sso.session_ttl_hours ?? "48"),
-                    });
+                    };
+                    setProvider("oidc");
+                    setOIDC(loaded);
+                    savedRef.current = { provider: "oidc", oidc: loaded, ldap: LDAP_DEFAULTS };
                 } else if (sso.provider === "ldap") {
-                    setProvider("ldap");
-                    setLDAP({
+                    const loaded: LDAPFields = {
                         server: sso.server ?? "",
                         bind_dn_template: sso.bind_dn_template ?? "",
                         base_dn: sso.base_dn ?? "",
@@ -188,11 +194,23 @@ export const AuthSettings: React.FC = () => {
                         session_ttl_hours: String(sso.session_ttl_hours ?? "168"),
                         search_bind_dn: sso.search_bind_dn ?? "",
                         search_bind_password: sso.search_bind_password ?? "",
-                    });
+                    };
+                    setProvider("ldap");
+                    setLDAP(loaded);
+                    savedRef.current = { provider: "ldap", oidc: OIDC_DEFAULTS, ldap: loaded };
                 }
             })
             .catch(() => {});
     }, []);
+
+    useEffect(() => {
+        if (savedRef.current === null) return;
+        const dirty =
+            provider !== savedRef.current.provider ||
+            JSON.stringify(oidc) !== JSON.stringify(savedRef.current.oidc) ||
+            JSON.stringify(ldap) !== JSON.stringify(savedRef.current.ldap);
+        onDirtyChange?.(dirty);
+    }, [provider, oidc, ldap, onDirtyChange]);
 
     function parseGroups(raw: string): string[] {
         return raw.split(",").map((g) => g.trim()).filter(Boolean);
@@ -246,6 +264,8 @@ export const AuthSettings: React.FC = () => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error ?? "Save failed");
             setResult({ ok: true, msg: "SSO configuration saved." });
+            savedRef.current = { provider, oidc, ldap };
+            onDirtyChange?.(false);
             if (data.session_secret_generated) setRestartRequired(true);
         } catch (e: unknown) {
             setResult({ ok: false, msg: e instanceof Error ? e.message : "Save failed." });
@@ -415,16 +435,21 @@ export const AuthSettings: React.FC = () => {
             )}
             {testSteps && (
                 <div className="rounded-lg border border-border bg-card p-3 space-y-2">
-                    {testSteps.map((step, i) => (
+                    {testSteps.map((step, i) => {
+                        const isWarn = !step.ok && step.label === "Base DN" && !ldap.search_bind_dn;
+                        return (
                         <div key={i} className="flex items-start gap-2 text-sm">
                             {step.ok
                                 ? <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0 mt-0.5" />
-                                : <XCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+                                : isWarn
+                                    ? <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                                    : <XCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
                             }
                             <span className="font-medium text-foreground w-40 shrink-0">{step.label}</span>
                             <span className="text-muted-foreground">{step.detail}</span>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
             {restartRequired && (

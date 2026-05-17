@@ -1,9 +1,8 @@
 "use client";
 
 import Head from "next/head";
-import Link from "next/link";
 import { useRouter } from "next/router";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, BarChart2, Bug, Database, List, Palette, ShieldCheck } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { useRole } from "@/hooks/useRole";
@@ -31,6 +30,7 @@ export default function AdminPage() {
     const { role, loading } = useRole();
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>("usage");
+    const [authDirty, setAuthDirty] = useState(false);
 
     // Redirect non-admins away
     useEffect(() => {
@@ -38,6 +38,19 @@ export default function AdminPage() {
             router.replace("/");
         }
     }, [role, loading, router]);
+
+    useEffect(() => {
+        const handler = (e: BeforeUnloadEvent) => {
+            if (authDirty) { e.preventDefault(); e.returnValue = ""; }
+        };
+        window.addEventListener("beforeunload", handler);
+        return () => window.removeEventListener("beforeunload", handler);
+    }, [authDirty]);
+
+    const confirmLeave = useCallback(() => {
+        if (!authDirty) return true;
+        return window.confirm("You have unsaved changes in Auth / SSO. Leave without saving?");
+    }, [authDirty]);
 
     if (loading || role !== "admin") return null;
 
@@ -48,13 +61,13 @@ export default function AdminPage() {
                 <div className="flex flex-col h-full w-full min-w-0">
                     {/* Header */}
                     <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border shrink-0">
-                        <Link
-                            href="/"
+                        <button
+                            onClick={() => { if (confirmLeave()) router.push("/"); }}
                             className="flex items-center justify-center h-7 w-7 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                             title="Back to chat"
                         >
                             <ArrowLeft className="h-4 w-4" />
-                        </Link>
+                        </button>
                         <div className="h-4 w-px bg-border" />
                         <h1 className="text-sm font-semibold tracking-tight">Admin</h1>
                         <span className="text-xs text-muted-foreground/60 font-mono leading-none">system management</span>
@@ -65,7 +78,7 @@ export default function AdminPage() {
                         {TABS.map((tab) => (
                             <button
                                 key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
+                                onClick={() => { if (activeTab === "auth" && tab.id !== "auth" && !confirmLeave()) return; setActiveTab(tab.id); }}
                                 className={cn(
                                     "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
                                     activeTab === tab.id
@@ -87,7 +100,7 @@ export default function AdminPage() {
                             {activeTab === "branding"   && <BrandingSettings />}
                             {activeTab === "ingest-log" && <IngestionLog />}
                             {activeTab === "llm-debug"  && <LlmDebugPanel />}
-                            {activeTab === "auth"       && <AuthSettings />}
+                            {activeTab === "auth"       && <AuthSettings onDirtyChange={setAuthDirty} />}
                         </div>
                     </div>
                 </div>

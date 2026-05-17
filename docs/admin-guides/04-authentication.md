@@ -80,7 +80,7 @@ Authenticated users log in via an external identity provider (OIDC or LDAP/Activ
 3. Select a provider (OIDC or LDAP) and fill in the configuration fields.
 4. Click **Save**. Mode 3 is active immediately. If `SESSION_SECRET` was not already set, it is auto-generated and appended to `frontend/.env`.
 5. If the Admin UI shows a "restart required" notice, restart the frontend process so the new signing key takes effect.
-6. Click **Test configuration** to verify the mode endpoint returns the expected provider.
+6. Click **Test connection** in the Admin UI to verify the provider is reachable before relying on it for real logins.
 
 To revert, set the provider back to **None** and save. The active mode (1 or 2) will depend on whether `ADMIN_PASSWORD` is configured.
 
@@ -137,6 +137,15 @@ allowed, staff, contractors
 
 Access is granted on first match (OR logic). Leave the field empty to admit all authenticated users.
 
+### Testing the connection
+
+The **Test connection** button probes the OIDC provider without requiring a browser login:
+
+1. Fetches `{issuer_url}/.well-known/openid-configuration` — confirms the discovery document is reachable.
+2. Fetches the `jwks_uri` from the discovery document — confirms the token-signing key endpoint is reachable.
+
+Run this before your first SSO login to catch misconfigured issuer URLs or network-level issues.
+
 ---
 
 ## LDAP / Active Directory Configuration
@@ -159,7 +168,7 @@ Authentication flow:
 | **Base DN** | Root of the directory tree to search, e.g. `DC=corp,DC=example,DC=com`. |
 | **User ID attribute** | LDAP attribute used as the stable session identity. AD: `userPrincipalName`. Classic LDAP: `uid`. This value becomes the `session_id` stored in the cookie. |
 | **Display name attribute** | Attribute to read for the user's display name shown in the UI. AD: `displayName`. Classic LDAP: `cn`. |
-| **Allowed groups** | Full group DNs, comma-separated. If non-empty, the user must be a member of at least one listed group (checked via `memberOf`). Leave empty to admit any authenticated user. |
+| **Allowed groups** | Full group DNs, one per line. If non-empty, the user must be a member of at least one listed group (checked via `memberOf`). Leave empty to admit any authenticated user. |
 | **Session TTL (hours)** | How long the Lancy session cookie is valid. Default 168 h (7 days). Re-authentication requires the user to re-enter their LDAP password. |
 | **Service account DN** | Optional. A dedicated account used to search the directory for group membership, if the server requires it. Full DN, e.g. `CN=svc-lancy,OU=ServiceAccounts,DC=corp,DC=example,DC=com`. |
 | **Service account password** | Password for the service account above. Only shown when a service account DN is entered. Stored encrypted in `auth_config.json`. |
@@ -169,6 +178,30 @@ Authentication flow:
 - **Use `ldaps://` (port 636) in production.** Plain `ldap://` sends the user's password in the clear over the network between the backend host and the LDAP server. The Admin UI warns you if you configure a plain LDAP URI.
 - The user's password is transmitted from the browser to the Next.js server over HTTPS (your TLS terminator) and then from Next.js to FastAPI over the loopback/private network (or `BACKEND_URL`). It is never logged or stored.
 - `search_bind_password` is stored in `auth_config.json` on the frontend host. Protect that file's permissions accordingly (`chmod 600`).
+
+### Testing the connection
+
+The **Test connection** button probes the LDAP server using the current form values — you can fill, test, and save without multiple round trips:
+
+1. **Server connection** — opens a TCP connection and completes the LDAP protocol handshake.
+2. **Service account bind** (if a service account DN is configured) or **Anonymous bind** — verifies bind credentials, or confirms whether the server allows anonymous bind.
+3. **Base DN** — searches for the base DN entry. Shown as a yellow warning (not an error) if no service account is configured, because anonymous directory reads are typically restricted.
+
+### lldap example
+
+The following configuration was tested against [lldap](https://github.com/lldap/lldap) with base DN `dc=lancy,dc=test`:
+
+```
+Server:                  ldap://<server>:3890   (use ldaps:// in production)
+Bind DN template:        uid={username},ou=people,dc=lancy,dc=test
+Base DN:                 dc=lancy,dc=test
+User ID attribute:       uid
+Display name attribute:  cn
+Allowed groups:          cn=lancy-users,ou=groups,dc=lancy,dc=test
+Session TTL (hours):     168
+```
+
+lldap allows anonymous bind by default, so the service account fields can be left empty. The Base DN connectivity test will show a yellow warning in that case — this is expected and not an error.
 
 ### Active Directory quick-start
 

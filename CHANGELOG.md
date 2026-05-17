@@ -72,9 +72,11 @@ New opt-in authentication mode. Modes 1 and 2 are unaffected when no SSO provide
 - Prerequisites status panel: green/amber/red dot per env var (`APP_PASSWORD`, `ADMIN_PASSWORD`, `SESSION_SECRET`) with inline explanations.
 - Saves to `auth_config.json`; `search_bind_password` is masked in GET responses.
 - Auto-generates `SESSION_SECRET` on first SSO save; shows a restart notice if the key was just written.
-- Test-configuration button validates the saved config via `/api/auth/mode`.
+- **Test connection** button probes the provider using current form values (no save required). LDAP: three-step check — TCP + LDAP handshake, service-account or anonymous bind, base DN lookup; base DN shown as a yellow warning (not error) when no service account is configured. OIDC: fetches the discovery document, then the JWKS endpoint. Results shown step-by-step with pass/fail icons. Backend: new `POST /api/v1/auth/ldap-test` endpoint; Next.js: new `/api/auth/sso-test` route.
+- Inline field validation: LDAP server must start with `ldap://` or `ldaps://`; bind DN template must contain `{username}`. Save and Test disabled while errors are present.
+- LDAP allowed groups switched from a comma-separated text field to a textarea with one DN per line — prevents a bug where a single full DN (`cn=group,ou=groups,dc=x,dc=y`) was split on commas into invalid fragments.
 
-**Local testing targets:** Keycloak in Docker (OIDC), lldap in Docker (LDAP) — see `docs/DESIGN_DOC_SSO_AD_Integration.md`.
+**Local testing targets:** Keycloak in Docker (OIDC), lldap in Docker (LDAP) — see `docs/admin-guides/04-authentication.md`.
 
 ---
 

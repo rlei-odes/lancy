@@ -94,7 +94,7 @@ The FastAPI-generated Swagger UI is available at `http://localhost:3000/docs`. I
 
 All `/api/auth/` routes are served by Next.js and bypassed by the middleware (the entire prefix is public at the middleware layer). Each route enforces its own access control as needed. Most are called before a session exists; `admin-config` checks for admin role internally.
 
-The FastAPI backend has one auth-related endpoint (`/api/v1/auth/ldap-verify`) for internal use by the Next.js login route. It should not be called directly by external clients.
+The FastAPI backend has two auth-related endpoints (`/api/v1/auth/ldap-verify`, `/api/v1/auth/ldap-test`) for internal use by the Next.js login and SSO test routes. They should not be called directly by external clients.
 
 ### Auth Mode
 
