@@ -109,12 +109,7 @@ export const IndexingStatus: FunctionComponent = () => {
                 <div className="mx-2 mb-1 px-3 py-2 rounded-md bg-blue-950/60 border border-blue-800/50 text-xs text-blue-200 space-y-1">
                     <div className="flex items-center gap-1.5 font-medium">
                         <Loader2 className="h-3 w-3 animate-spin shrink-0" />
-                        <span className="flex-1 truncate">
-                            {phaseLabel}
-                            {!cancelling && status.kb_name && (
-                                <span className="opacity-60 font-normal"> · {status.kb_name}</span>
-                            )}
-                        </span>
+                        <span className="flex-1 truncate">{phaseLabel}</span>
                         {!cancelling && isAdmin && (
                             <button
                                 onClick={() => setConfirmStop(true)}
@@ -126,6 +121,9 @@ export const IndexingStatus: FunctionComponent = () => {
                             </button>
                         )}
                     </div>
+                    {!cancelling && status.kb_name && (
+                        <div className="truncate opacity-60 font-normal">{status.kb_name}</div>
+                    )}
                     {!isEmbedding && !isCaptioning && status.current_file && (
                         <div className="truncate opacity-70" title={status.current_file}>
                             {status.current_file}

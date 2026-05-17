@@ -279,7 +279,7 @@ The `custom` backend accepts any OpenAI-compatible endpoint — use it for OpenA
 
 ### Backend → Vector Store (pgvector)
 
-Configured per KB in the **RAG Parameters panel**: select `pgvector` as the vector store type and enter the connection string. The backend creates the table and index automatically on first use.
+Configured per KB in the **RAG Parameters panel**: select `pgvector` as the vector store type and enter the connection string. Prerequisite: create a database and enable pgvector for it. The backend creates the table and index automatically on first use.
 
 ```
 postgresql://user:password@<db-host>:5432/lancy

@@ -36,7 +36,7 @@ retrieval settings, and generation stats — no black box. Investigate your docu
 | **Multiple embedding backends** | `local` (SentenceTransformer, fully offline), `ollama`, `litellm`, `custom` |
 | **Multiple vector stores** | ChromaDB (local, zero-config) or pgvector (PostgreSQL) — selectable per KB |
 | **Document formats** | PDF, Markdown, XLSX, EPUB, DOCX |
-| **Auth** | Password-protected login via session cookie (`APP_PASSWORD` in `.env`) |
+| **Auth** | Three modes: shared password (Mode 1), role-separated passwords (Mode 2), or SSO via OIDC / LDAP / Active Directory (Mode 3) — switchable without code changes |
 | **i18n** | DE / EN / FR / IT |
 
 
@@ -132,7 +132,7 @@ Lancy is designed for **on-premises deployment** — all data and LLM inference 
 
 This system is intended for **trusted internal networks** (corporate LAN, VPN, private server):
 
-- Authentication is a single shared password — no individual user accounts
+- Mode 3 (SSO) supports individual user accounts via an external IdP; Modes 1 and 2 use a shared password with no individual accounts
 - No rate limiting or abuse protection on the API
 - All indexed documents are accessible to anyone with the password
 

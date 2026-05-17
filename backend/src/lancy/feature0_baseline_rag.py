@@ -468,6 +468,11 @@ def _merge_low_quality_chunks(chunks: list) -> list:
     n_merged = 0
 
     for chunk in chunks:
+        if not chunk.mime_type.startswith("text"):
+            # Non-text chunks (images) pass through unmodified; never merge
+            # binary content with pending text or vice-versa.
+            result.append(chunk)
+            continue
         if _content_score(chunk.content) < MIN_CONTENT_CHARS:
             pending = (pending + "\n\n" + chunk.content).strip() if pending else chunk.content.strip()
             n_merged += 1
