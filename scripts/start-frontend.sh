@@ -15,9 +15,12 @@ if [ -f "$LOG_DIR/frontend.pid" ] && kill -0 "$(cat $LOG_DIR/frontend.pid)" 2>/d
     exit 1
 fi
 
+# --- Mode: DEV arg → dev server, default → production build+start ---
+MODE="${1:-prod}"
+
 # --- Show which backend URL is in use ---
 BACKEND_URL=$(grep -E '^BACKEND_URL=' "$FRONTEND/.env" 2>/dev/null | cut -d= -f2-)
-echo "Starting frontend on port 3000..."
+echo "Starting frontend on port 3000 (mode: $MODE)..."
 echo "  Backend URL: ${BACKEND_URL:-http://localhost:8080 (default)}"
 
 # --- Frontend ---
@@ -27,7 +30,13 @@ if [ package-lock.json -nt node_modules/.package-lock.json ] 2>/dev/null || [ ! 
     npm install -q
 fi
 > "$LOG_DIR/frontend.log"
-node_modules/.bin/next dev > >(awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' >> "$LOG_DIR/frontend.log") 2>&1 &
+if [ "$MODE" = "DEV" ]; then
+    node_modules/.bin/next dev > >(awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' >> "$LOG_DIR/frontend.log") 2>&1 &
+else
+    echo "  Building for production..."
+    node_modules/.bin/next build >> "$LOG_DIR/frontend.log" 2>&1
+    node_modules/.bin/next start > >(awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' >> "$LOG_DIR/frontend.log") 2>&1 &
+fi
 echo $! > "$LOG_DIR/frontend.pid"
 echo "  Frontend PID: $(cat $LOG_DIR/frontend.pid)"
 echo "  Log:          $LOG_DIR/frontend.log"

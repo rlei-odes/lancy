@@ -397,6 +397,8 @@ No example nginx config exists in the repo yet. Needed for any real deployment: 
 
 ### Agentic RAG — RAG as a Tool
 
+> In the toolkit (`conversational_toolkit.agents.tool_agent.ToolAgent`), not used in Lancy.
+
 The current architecture uses a fixed pipeline: every query always triggers retrieval first (`CustomRAG`). The notebook prototypes (feature4b/d) explored a `ToolAgent` using the ReAct pattern, where retrieval is an *optional* tool call — the model decides whether to search the vector store or answer from its own knowledge.
 
 **What exists in the codebase:**
@@ -410,6 +412,18 @@ The current architecture uses a fixed pipeline: every query always triggers retr
 3. **Multi-agent / subagent pattern** — wrap the RAG pipeline as a tool for a coordinator agent. Enables routing across multiple KBs by domain.
 
 **Recommended first step:** implement the Agentic Mode toggle (level 1) — highest-value change with the smallest footprint, and the existing `ToolAgent` makes it straightforward.
+
+---
+
+### Router — Multi-Agent Query Routing
+
+> In the toolkit (`conversational_toolkit.agents.router.Router`), not used in Lancy.
+
+`Router` is a thin classification layer in front of multiple agents. It sends the query to a fast LLM with a prompt that lists each registered sub-agent's `description`, receives back a JSON category index, and delegates to the matching agent — one extra LLM call, then the selected agent runs normally.
+
+**Practical use case for Lancy:** route general conversational queries (greetings, meta-questions) to a plain `LLM` agent (no retrieval) and document questions to the `RAG` agent. Currently every query goes through RAG regardless of type, spending a retrieval pass even when it adds nothing.
+
+**Prerequisite:** `ToolAgent` (Agentic Mode, see above) should be in place first — `Router` is most useful when there are meaningfully different agent types to route between.
 
 ---
 

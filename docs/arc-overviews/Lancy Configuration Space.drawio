@@ -13,7 +13,7 @@
         <mxCell id="c-ing" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0c0800;strokeColor=#f5a623;strokeWidth=2;arcSize=12;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;absoluteArcSize=1;" value="" vertex="1">
           <mxGeometry height="220" width="1100" x="22" y="80" as="geometry" />
         </mxCell>
-        <mxCell id="c-ret" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0d0518;strokeColor=#bf00ff;strokeWidth=1.5;arcSize=12;absoluteArcSize=1;" value="" vertex="1">
+        <mxCell id="c-ret" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0d0518;strokeColor=#808080;strokeWidth=1.5;arcSize=12;absoluteArcSize=1;" value="" vertex="1">
           <mxGeometry height="116" width="1100" x="22" y="313" as="geometry" />
         </mxCell>
         <mxCell id="c-gen" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0d0518;strokeColor=#bf00ff;strokeWidth=1.5;arcSize=12;absoluteArcSize=1;" value="" vertex="1">
@@ -133,7 +133,7 @@
         <mxCell id="MrXFof0WKz1mfphcE5b_-37" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0d00;strokeColor=#f5a623;fontColor=#f5a623;fontSize=11;fontFamily=Courier New;fontStyle=1;arcSize=12;align=center;verticalAlign=middle;absoluteArcSize=1;" value="INGESTION" vertex="1">
           <mxGeometry height="204" width="126" x="30" y="86" as="geometry" />
         </mxCell>
-        <mxCell id="MrXFof0WKz1mfphcE5b_-38" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0530;strokeColor=#bf00ff;fontColor=#bf00ff;fontSize=11;fontFamily=Courier New;fontStyle=1;arcSize=12;absoluteArcSize=1;" value="RETRIEVAL" vertex="1">
+        <mxCell id="MrXFof0WKz1mfphcE5b_-38" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1A1A1A;strokeColor=#808080;fontColor=#bf00ff;fontSize=11;fontFamily=Courier New;fontStyle=1;arcSize=12;absoluteArcSize=1;" value="&lt;font style=&quot;color: rgb(153, 153, 153);&quot;&gt;RETRIEVAL&lt;/font&gt;" vertex="1">
           <mxGeometry height="100" width="126" x="30" y="319" as="geometry" />
         </mxCell>
         <mxCell id="MrXFof0WKz1mfphcE5b_-39" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a0530;strokeColor=#bf00ff;fontColor=#bf00ff;fontSize=11;fontFamily=Courier New;fontStyle=1;arcSize=12;absoluteArcSize=1;" value="GENERATION" vertex="1">

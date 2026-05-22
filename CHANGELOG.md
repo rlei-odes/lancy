@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.3.5] — 2026-05-18 · rlei-odes
+
+### Fixed — pgvector ingestion
+
+- Fixed image chunk corruption, `.txt` header misparse, HTML entities in PDF text, null bytes rejected by PostgreSQL, and stale KB chunk/file stats on activation.
+
+### Changed — Frontend start scripts
+
+- `start.sh` and `start-frontend.sh` now default to a production build (`next build` + `next start`); pass `DEV` as the first argument to use the dev server with hot reload.
+
+---
+
 ## [Lancy v0.3.4] — 2026-05-15 · rlei-odes
 
 ### Changed — File-by-File Ingestion (crash recovery + memory)

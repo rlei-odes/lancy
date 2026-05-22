@@ -1,10 +1,11 @@
 #!/bin/bash
-# Lancy — Start backend + frontend
+# Lancy — Start backend + frontend (both services). Pass DEV as first arg for frontend dev mode.
 set -e
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$REPO/logs"
 VENV="$REPO/.venv"
+MODE="${1:-prod}"
 
 mkdir -p "$LOG_DIR"
 
@@ -79,19 +80,26 @@ echo $! > "$LOG_DIR/backend.pid"
 echo "  Backend PID: $(cat $LOG_DIR/backend.pid)"
 
 # --- Frontend ---
-echo "Starting frontend on port 3000..."
+echo "Starting frontend on port 3000 (mode: $MODE)..."
 cd "$REPO/frontend"
 if [ package-lock.json -nt node_modules/.package-lock.json ] 2>/dev/null || [ ! -d node_modules ]; then
     echo "  Running npm install..."
     npm install -q
 fi
 > "$LOG_DIR/frontend.log"
-FIFO="$LOG_DIR/frontend.fifo"
-rm -f "$FIFO" && mkfifo "$FIFO"
-awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' < "$FIFO" >> "$LOG_DIR/frontend.log" &
-node_modules/.bin/next dev > "$FIFO" 2>&1 &
-echo $! > "$LOG_DIR/frontend.pid"
-rm -f "$FIFO"
+if [ "$MODE" = "DEV" ]; then
+    FIFO="$LOG_DIR/frontend.fifo"
+    rm -f "$FIFO" && mkfifo "$FIFO"
+    awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' < "$FIFO" >> "$LOG_DIR/frontend.log" &
+    node_modules/.bin/next dev > "$FIFO" 2>&1 &
+    echo $! > "$LOG_DIR/frontend.pid"
+    rm -f "$FIFO"
+else
+    echo "  Building for production..."
+    node_modules/.bin/next build >> "$LOG_DIR/frontend.log" 2>&1
+    node_modules/.bin/next start > >(awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' >> "$LOG_DIR/frontend.log") 2>&1 &
+    echo $! > "$LOG_DIR/frontend.pid"
+fi
 echo "  Frontend PID: $(cat $LOG_DIR/frontend.pid)"
 
 echo ""
