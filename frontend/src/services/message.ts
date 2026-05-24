@@ -38,7 +38,7 @@ export interface Source {
         url?: string;
         header?: string;
         mime_type?: string;
-        [key: string]: string | number | boolean | null | undefined;
+        [key: string]: string | number | boolean | string[] | null | undefined;
     };
 }
 

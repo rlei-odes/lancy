@@ -86,8 +86,18 @@ interface KBPreset {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+const EMBEDDING_MODEL_CONTEXT: Record<string, number> = {
+    "all-MiniLM-L6-v2": 256,
+    "nomic-ai/nomic-embed-text-v1": 8192,
+    "intfloat/multilingual-e5-large": 512,
+    "BAAI/bge-m3": 8192,
+    "all-minilm": 256,
+    "nomic-embed-text": 8192,
+    "mxbai-embed-large": 512,
+};
+
 const EMBEDDING_MODELS: Record<string, string[]> = {
-    local: ["nomic-ai/nomic-embed-text-v1", "all-MiniLM-L6-v2", "BAAI/bge-m3", "intfloat/multilingual-e5-large"],
+    local: ["all-MiniLM-L6-v2", "nomic-ai/nomic-embed-text-v1", "intfloat/multilingual-e5-large", "BAAI/bge-m3"],
     custom: ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"],
     ollama: ["nomic-embed-text", "mxbai-embed-large", "all-minilm"],
     litellm: [],  // loaded dynamically from /api/v1/rag/litellm-models
@@ -184,15 +194,15 @@ const FieldRow: FunctionComponent<{ label: string; hint?: string; children: Reac
 );
 
 const NumberInput: FunctionComponent<{
-    value: number; min: number; max: number; step?: number; onChange: (v: number) => void;
-}> = ({ value, min, max, step = 1, onChange }) => (
+    value: number; min: number; max: number; step?: number; onChange: (v: number) => void; warn?: boolean;
+}> = ({ value, min, max, step = 1, onChange, warn }) => (
     <div className="flex items-center gap-2">
         <input
             type="range" min={min} max={max} step={step} value={value}
             onChange={(e) => onChange(Number(e.target.value))}
-            className="w-24 accent-blue-400 disabled:opacity-50 disabled:cursor-default"
+            className={`w-24 disabled:opacity-50 disabled:cursor-default ${warn ? "accent-red-400" : "accent-blue-400"}`}
         />
-        <span className="text-xs text-blue-400 font-mono w-10 text-right">{value}</span>
+        <span className={`text-xs font-mono w-10 text-right ${warn ? "text-red-400" : "text-blue-400"}`}>{value}</span>
     </div>
 );
 
@@ -225,6 +235,12 @@ const SelectInput: FunctionComponent<{
 
 // ─── Presets (per-KB) ─────────────────────────────────────────────────────────
 
+
+function presetLabel(p: { name: string; protected?: number }): string {
+    if (p.protected === 2) return `◆ ${p.name}`;
+    if (p.protected === 1) return `· ${p.name}`;
+    return `★ ${p.name}`;
+}
 
 function findMatchingRetrievalPreset(session: SessionConfig, presets: RetrievalPreset[]): string {
     return presets.find((p) =>
@@ -655,11 +671,19 @@ export const RagConfigPanel: FunctionComponent = () => {
                 const loaded = await fetchUserPresets(kb.id);
                 setUserRetrievalPresets(loaded.retrieval);
                 setUserKbPresets(loaded.kb);
-                // Apply the Standard preset as the baseline for the new KB
-                const standard = loaded.retrieval.find((p) => p.name === "Standard");
-                if (standard) {
-                    setSession((prev) => ({ ...prev, ...standard.data }));
-                    setSelectedRetrievalPreset("Standard");
+                // Apply the Default preset as the baseline for the new KB and persist immediately
+                const defaultPreset = loaded.retrieval.find((p) => p.name === "Default");
+                if (defaultPreset) {
+                    const mergedSession = { ...session, ...defaultPreset.data };
+                    setSession(mergedSession);
+                    savedSession.current = mergedSession;
+                    fetch(`${API_BASE}/api/v1/rag/config`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(mergedSession),
+                        credentials: "include",
+                    }).catch(() => {});
+                    setSelectedRetrievalPreset("Default");
                 }
                 setKbRegistry((prev) => prev ? { ...prev, active: id } : prev);
                 setStatus({ type: "success", text: t("rag.statusKbActive", { name: kb.name }) });
@@ -880,6 +904,12 @@ export const RagConfigPanel: FunctionComponent = () => {
 
     const kbLoading = poolStatus.loading.length > 0;
 
+    // ── Derived: chunk size vs embedding model context window ─────────────────
+    const modelContextTokens = EMBEDDING_MODEL_CONTEXT[kbConfig.embedding_model];
+    const chunkOverLimit = modelContextTokens !== undefined
+        && kbConfig.max_chunk_tokens > 0
+        && kbConfig.max_chunk_tokens > modelContextTokens;
+
     // ── Per-section dirty flags (compared against last applied server state) ──
 
     const promptDirty =
@@ -1062,7 +1092,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                             className="flex-1 bg-muted border border-border text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
                         >
                             {selectedRetrievalPreset === "" && <option value="" disabled hidden>— modified · unsaved preset —</option>}
-                            {allRetrievalPresets.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                            {allRetrievalPresets.map((p) => <option key={p.name} value={p.name}>{presetLabel(p)}</option>)}
                         </select>
                         <button
                             onClick={() => { setShowSaveAs(showSaveAs === "retrieval" ? null : "retrieval"); setSaveAsName(""); }}
@@ -1108,7 +1138,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                             className="flex-1 bg-muted border border-border text-foreground text-xs [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
                         >
                             {selectedKbPreset === "" && <option value="" disabled hidden>— modified · unsaved preset —</option>}
-                            {allKbPresets.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                            {allKbPresets.map((p) => <option key={p.name} value={p.name}>{presetLabel(p)}</option>)}
                         </select>
                         <button
                             onClick={() => { setShowSaveAs(showSaveAs === "kb" ? null : "kb"); setSaveAsName(""); }}
@@ -1435,7 +1465,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                                 <NumberInput value={kbConfig.embedding_batch_size} min={5} max={1000} step={5} onChange={(v) => updateKbConfig("embedding_batch_size", v)} />
                             </FieldRow>
                             <FieldRow label={t("rag.fieldMaxChunkTokens")} hint={t("rag.fieldMaxChunkTokensHint")}>
-                                <NumberInput value={kbConfig.max_chunk_tokens} min={0} max={2000} step={1} onChange={(v) => updateKbConfig("max_chunk_tokens", v)} />
+                                <NumberInput value={kbConfig.max_chunk_tokens} min={0} max={2000} step={1} onChange={(v) => updateKbConfig("max_chunk_tokens", v)} warn={chunkOverLimit} />
                             </FieldRow>
                             <FieldRow label={t("rag.fieldPdfOcr")} hint={t("rag.fieldPdfOcrHint")}>
                                 <Toggle checked={kbConfig.pdf_ocr_enabled} onChange={(v) => updateKbConfig("pdf_ocr_enabled", v)} />

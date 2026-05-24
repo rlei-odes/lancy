@@ -1,7 +1,7 @@
 {
   "retrieval": [
     {
-      "name": "Standard",
+      "name": "Default",
       "protected": 2,
       "data": {
         "retriever_top_k": 5,
@@ -15,35 +15,21 @@
       }
     },
     {
-      "name": "Angebots-Analyse",
+      "name": "Fast",
       "protected": 1,
       "data": {
-        "retriever_top_k": 8,
+        "retriever_top_k": 4,
         "rrf_k": 60,
         "bm25_enabled": true,
         "query_expansion": 0,
         "hyde_enabled": false,
         "reranking_enabled": false,
-        "reranking_candidate_pool": 20,
+        "reranking_candidate_pool": 10,
         "image_retriever_top_k": 1
       }
     },
     {
-      "name": "Technische Fakten",
-      "protected": 1,
-      "data": {
-        "retriever_top_k": 6,
-        "rrf_k": 60,
-        "bm25_enabled": true,
-        "query_expansion": 0,
-        "hyde_enabled": false,
-        "reranking_enabled": false,
-        "reranking_candidate_pool": 15,
-        "image_retriever_top_k": 1
-      }
-    },
-    {
-      "name": "Multi-Dok Vergleich",
+      "name": "Multi-Document",
       "protected": 1,
       "data": {
         "retriever_top_k": 10,
@@ -57,7 +43,7 @@
       }
     },
     {
-      "name": "Qualität (langsam)",
+      "name": "Quality",
       "protected": 1,
       "data": {
         "retriever_top_k": 8,
@@ -65,43 +51,55 @@
         "bm25_enabled": true,
         "query_expansion": 2,
         "hyde_enabled": true,
-        "reranking_enabled": false,
+        "reranking_enabled": true,
         "reranking_candidate_pool": 20,
-        "image_retriever_top_k": 1
-      }
-    },
-    {
-      "name": "Schnell",
-      "protected": 1,
-      "data": {
-        "retriever_top_k": 4,
-        "rrf_k": 60,
-        "bm25_enabled": true,
-        "query_expansion": 0,
-        "hyde_enabled": false,
-        "reranking_enabled": false,
-        "reranking_candidate_pool": 10,
         "image_retriever_top_k": 1
       }
     }
   ],
   "kb": [
     {
-      "name": "Lancy Default",
+      "name": "Nano",
       "protected": 1,
       "data": {
-        "embedding_model": "nomic-ai/nomic-embed-text-v1",
-        "nomic_prefix": true,
-        "embedding_batch_size": 50
+        "embedding_backend": "local",
+        "embedding_model": "all-MiniLM-L6-v2",
+        "nomic_prefix": false,
+        "embedding_batch_size": 100,
+        "max_chunk_tokens": 256
       }
     },
     {
-      "name": "bge-m3 Präzision",
+      "name": "Mini",
       "protected": 1,
       "data": {
+        "embedding_backend": "local",
+        "embedding_model": "nomic-ai/nomic-embed-text-v1",
+        "nomic_prefix": true,
+        "embedding_batch_size": 50,
+        "max_chunk_tokens": 512
+      }
+    },
+    {
+      "name": "Medium",
+      "protected": 1,
+      "data": {
+        "embedding_backend": "local",
+        "embedding_model": "intfloat/multilingual-e5-large",
+        "nomic_prefix": true,
+        "embedding_batch_size": 20,
+        "max_chunk_tokens": 480
+      }
+    },
+    {
+      "name": "Large",
+      "protected": 1,
+      "data": {
+        "embedding_backend": "local",
         "embedding_model": "BAAI/bge-m3",
         "nomic_prefix": false,
-        "embedding_batch_size": 10
+        "embedding_batch_size": 10,
+        "max_chunk_tokens": 1024
       }
     }
   ]

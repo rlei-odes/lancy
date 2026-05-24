@@ -9,6 +9,7 @@ Concrete implementations: 'InMemorySourceDatabase', 'PostgreSQLSourceDatabase'.
 """
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -19,7 +20,7 @@ class Source(BaseModel):
     id: str
     message_id: str
     content: str
-    metadata: dict[str, float | int | str | None]
+    metadata: dict[str, Any]
 
 
 class SourceDatabase(ABC):

@@ -645,20 +645,23 @@ def build_server():
                     error        TEXT
                 )
             """))
-        entry = await pool.load(active_kb, session_cfg, _build_components)
-        pool.set_active(active_kb.id)
-        count = await entry.vs.count()
-        if count > 0:
-            try:
-                indexed_files = await entry.vs.get_source_files()
-                n_files = len(indexed_files)
-            except Exception:
-                indexed_files = []
-                n_files = 0
-            kb_router.update_stats(active_kb.id, count, n_files)
-            log.info(f"Vector store loaded: {count} chunks from {n_files} files.")
-        else:
-            log.info("Vector store empty — use the UI to index a knowledge base.")
+        try:
+            entry = await pool.load(active_kb, session_cfg, _build_components)
+            pool.set_active(active_kb.id)
+            count = await entry.vs.count()
+            if count > 0:
+                try:
+                    indexed_files = await entry.vs.get_source_files()
+                    n_files = len(indexed_files)
+                except Exception:
+                    indexed_files = []
+                    n_files = 0
+                kb_router.update_stats(active_kb.id, count, n_files)
+                log.info(f"Vector store loaded: {count} chunks from {n_files} files.")
+            else:
+                log.info("Vector store empty — use the UI to index a knowledge base.")
+        except Exception as _vs_err:
+            log.warning(f"KB '{active_kb.id}' unavailable at startup (vector store unreachable): {_vs_err}")
 
     app.add_event_handler("startup", _startup)
 

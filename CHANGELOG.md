@@ -15,6 +15,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - `start.sh` and `start-frontend.sh` now default to a production build (`next build` + `next start`); pass `DEV` as the first argument to use the dev server with hot reload.
 
+### Fixed — Source citations and stuck stop button
+
+- Source citations were missing and the stop button stayed active after every response: `Source.metadata` rejected `list` values (Pydantic typed it as `dict[str, float | int | str | None]`), crashing the stream after the LLM finished but before the final chunk with sources was sent. Fixed by widening to `dict[str, Any]`.
+- KB switch now immediately persists the Default preset to the server — no manual Save step required.
+
+### Added — Preset UX
+
+- Preset dropdown prefixes: ◆ immutable system presets, · admin seeds, ★ user-created — shown in both the retrieval config and KB config dropdowns.
+- KB preset tier seeds: Nano / Mini / Medium / Large, with chunk limits (256 / 512 / 480 / 1024 tokens) aligned to each embedding model's actual context window.
+
+### Changed — Chunk size warnings
+
+- Chunk size slider turns red when the configured value exceeds the active embedding model's context window.
+- Chunk size distribution chart (KB analytics) colours bars orange for buckets that exceed the model's context window.
+
 ---
 
 ## [Lancy v0.3.4] — 2026-05-15 · rlei-odes

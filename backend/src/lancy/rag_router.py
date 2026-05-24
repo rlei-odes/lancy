@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field, model_validator
 from lancy.database import (
     USER_RETRIEVAL_FIELDS,
     get_presets,
-    get_standard_preset,
+    get_default_preset,
     get_user_retrieval,
     init_db,
     migrate_json_presets,
@@ -248,10 +248,10 @@ def create_rag_router(
                 overlay = {k: v for k, v in user_data.items() if k in USER_RETRIEVAL_FIELDS}
                 cfg = cfg.model_copy(update=overlay)
             else:
-                # First visit — seed the user's session from the Standard preset
-                standard = get_standard_preset(sqlite_path)
-                if standard:
-                    overlay = {k: v for k, v in standard.items() if k in USER_RETRIEVAL_FIELDS}
+                # First visit — seed the user's session from the Default preset
+                default_preset = get_default_preset(sqlite_path)
+                if default_preset:
+                    overlay = {k: v for k, v in default_preset.items() if k in USER_RETRIEVAL_FIELDS}
                     cfg = cfg.model_copy(update=overlay)
         return cfg
 

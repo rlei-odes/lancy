@@ -15,9 +15,30 @@ import { useTranslation } from "react-i18next";
 
 const API_BASE = "";
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const EMBEDDING_MODEL_CONTEXT: Record<string, number> = {
+    "nomic-ai/nomic-embed-text-v1": 8192,
+    "all-MiniLM-L6-v2": 256,
+    "BAAI/bge-m3": 8192,
+    "intfloat/multilingual-e5-large": 512,
+    "nomic-embed-text": 8192,
+    "mxbai-embed-large": 512,
+    "all-minilm": 256,
+};
+
+// rough approximation; used only for the visual threshold
+const CHARS_PER_TOKEN = 4;
+
+function bucketExceedsContext(range: string, contextChars: number): boolean {
+    if (range.endsWith("+")) return true;
+    const end = parseInt(range.split("-")[1], 10);
+    return end > contextChars;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface KBBase { id: string; name: string; }
+interface KBBase { id: string; name: string; embedding_model?: string; }
 interface KBRegistry { active: string; bases: Record<string, KBBase>; }
 
 interface IngestionEntry {
@@ -75,7 +96,7 @@ function ChartCard({ title, icon, children }: {
 
 // ─── Chart: Chunk size distribution ──────────────────────────────────────────
 
-function ChunkSizeChart({ data }: { data: Record<string, number> }) {
+function ChunkSizeChart({ data, contextChars }: { data: Record<string, number>; contextChars?: number }) {
     const { t } = useTranslation("app");
     const chartData = Object.entries(data).map(([range, count]) => ({ range, count }));
     const primary = cssVar("--primary");
@@ -97,7 +118,15 @@ function ChunkSizeChart({ data }: { data: Record<string, number> }) {
                         labelFormatter={(label) => `${t("explorer.analyticsChunkSizeX")}: ${label}`}
                         formatter={(value) => [formatNum(value as number), t("explorer.analyticsChunkSizeY")]}
                     />
-                    <Bar dataKey="count" fill={primary} radius={[3, 3, 0, 0]} />
+                    <Bar
+                        dataKey="count"
+                        shape={(props: any) => {
+                            const { x, y, width, height, range } = props;
+                            if (!width || height <= 0) return <g />;
+                            const over = contextChars !== undefined && bucketExceedsContext(range, contextChars);
+                            return <rect x={x} y={y} width={width} height={height} fill={over ? "#f97316" : primary} rx={3} />;
+                        }}
+                    />
                 </BarChart>
             </ResponsiveContainer>
         </ChartCard>
@@ -335,7 +364,14 @@ export const KbAnalytics: FunctionComponent<{ active: boolean }> = ({ active }) 
             {!loading && stats && (
                 <>
                     <SummaryPanel stats={stats} />
-                    <ChunkSizeChart data={stats.chunk_size_distribution} />
+                    <ChunkSizeChart
+                        data={stats.chunk_size_distribution}
+                        contextChars={(() => {
+                            const model = kbRegistry?.bases[selectedKb]?.embedding_model;
+                            const tokens = model ? EMBEDDING_MODEL_CONTEXT[model] : undefined;
+                            return tokens !== undefined ? tokens * CHARS_PER_TOKEN : undefined;
+                        })()}
+                    />
                     <ChunksPerDocChart data={stats.chunks_per_document_distribution} />
                     <IngestionChart data={stats.ingestion_history} />
                 </>

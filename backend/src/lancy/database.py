@@ -318,13 +318,13 @@ def seed_presets(db_path: Path, seeds_path: Path) -> None:
         log.info(f"Seeded {inserted} preset(s) from {seeds_path.name}")
 
 
-def get_standard_preset(db_path: Path) -> dict | None:
-    """Return the data dict of the immutable Standard retrieval preset, or None."""
+def get_default_preset(db_path: Path) -> dict | None:
+    """Return the data dict of the immutable Default retrieval preset, or None."""
     with sqlite3.connect(db_path) as conn:
         _configure_conn(conn)
         row = conn.execute(
             "SELECT data_json FROM presets "
-            "WHERE type='retrieval' AND name='Standard' AND protected=2 AND user_id IS NULL",
+            "WHERE type='retrieval' AND name='Default' AND protected=2 AND user_id IS NULL",
         ).fetchone()
     return json.loads(row[0]) if row else None
 
