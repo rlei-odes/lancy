@@ -159,15 +159,6 @@ BACKEND_URL=http://<backend-machine-ip>:8080
 APP_PASSWORD=...
 ```
 
-**Backend environment on the GPU machine** — set this before starting the backend:
-```env
-ALLOW_ORIGINS=http://frontend-host:3000
-```
-
-`ALLOW_ORIGINS` controls which hosts the backend accepts cross-origin requests from (CORS). Set it to the URL of your frontend machine. Without it, the backend only allows `localhost` — requests from any other host will be blocked. Multiple origins can be comma-separated: `http://host-a:3000,http://host-b:3000`.
-
-To set it, either export it in your shell before running `scripts/start-backend.sh`, or add it to the backend machine's environment (e.g. in the systemd service file under `[Service]` as an additional `Environment=` line).
-
 ```bash
 # On the backend machine:
 scripts/start-backend.sh
@@ -175,6 +166,8 @@ scripts/start-backend.sh
 # On the frontend machine:
 scripts/start-frontend.sh
 ```
+
+> **CORS / `ALLOW_ORIGINS`** — in the standard setup, the frontend proxies all backend calls server-side, so the browser only ever talks to the frontend host. **You do not need to set `ALLOW_ORIGINS`** for this case. Only set it if a browser will hit the backend directly (e.g. exposing `/v1/chat/completions` to web tools like Open WebUI, n8n in browser context, or a separate web app). Then set it on the backend machine to the originating URL(s), comma-separated: `ALLOW_ORIGINS=http://host-a:3000,http://host-b:3000`. Either export it before `scripts/start-backend.sh` or add it as an `Environment=` line in the systemd service.
 
 On first start, `rag_config.json` is not present on a fresh clone — the backend defaults to Ollama. Open the **RAG Parameters** panel to configure the LLM backend (provider, host/URL, model). Settings are saved automatically.
 
@@ -223,7 +216,7 @@ Three dedicated tiers. Suitable for teams, higher load, or managed infrastructur
 | Host | What to set |
 |---|---|
 | Frontend | `BACKEND_URL=http://backend-host:8080`, `APP_PASSWORD` |
-| Backend | `ALLOW_ORIGINS=https://your-domain`, LLM credentials or host, `DATABASE_URL` (if using Postgres) |
+| Backend | LLM credentials or host, `DATABASE_URL` (if using Postgres). `ALLOW_ORIGINS` only if a browser hits the backend directly (not via the frontend proxy) |
 | KB definitions | `vs_connection_string=postgresql://...` (if using pgvector; set in RAG Parameters panel) |
 | Reverse proxy | TLS termination, proxy to frontend port 3000 |
 

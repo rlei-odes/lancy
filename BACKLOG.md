@@ -27,6 +27,12 @@ Observed that answers sometimes cite only 2 chunks even when retrieval is config
 
 Unknown origin. Possibly connected to Query Expansion. Could be related to the LLM expanding the query in other languages. Observed: Korean, Thai. Possibly an LLM internal bug.
 
+### Duplicate KB Name Allowed at Creation
+
+The KB create form does not check for name collisions. Submitting a name that already exists is accepted; the backend slugifies the name to an id and, if the slug collides, silently appends a numeric suffix (or overwrites — needs verification). Either way the user ends up with two KBs that look the same in the dropdown but are distinct on disk.
+
+**Fix:** validate uniqueness on the frontend (compare against `kbRegistry.bases` keys / names) before submitting, and have the backend return a 409 on collision instead of disambiguating silently.
+
 ---
 
 ## Authentication & Access Control
@@ -112,6 +118,15 @@ The metadata schema (title, author, document_id, document_class, etc.) and uploa
 ---
 
 ## UI & Settings
+
+### KB Form — Remaining Pool-Sync Gaps
+
+The Edit/Apply path now refreshes the pool when the embedding changes (2026-05). Two smaller gaps remain — both are likely no longer user-visible since the Edit/Apply fix covers the main flow, but worth keeping on the list:
+
+- **Mount-time session restore** ([rag-config-panel.tsx:476-480](frontend/src/components/sections/rag-config-panel.tsx#L476-L480)) fires `activate` without `?reset=true` and swallows the 409, so the active KB and the pool entry can disagree silently. Fix: mirror `switchKb`'s compatibility check, or always pass `?reset=true` on session restore.
+- **Reindex post-step** ([main.py:706+](backend/src/lancy/main.py#L706)) currently logs a neutral warning on `EmbeddingConflict` instead of crashing, but doesn't reset the pool to load the just-ingested KB. Fix: fall back to `pool.reset(...)` on conflict.
+
+Also: the word "reset" is overloaded — `activate?reset=true` is an in-memory pool swap (no data loss), while reindex `reset=true` is a destructive re-embed. UI labelling should distinguish these.
 
 ### Align Design of Left and Right Sidebar, Main Chat Page
 
@@ -454,6 +469,15 @@ No urgent updates. The following are worth revisiting when there is a concrete r
 - **Tailwind CSS v3 → v4** — v4 replaces `tailwind.config.js` with a CSS-first config. Real migration effort, not a version bump. Only worth doing if a v4-specific feature is needed.
 - **React 18 → 19** — React 19 is stable. Low urgency.
 - **`@types/node: ^20` → `^22`** — trivial bump.
+
+Observed on a clean `npm install` (2026-05): 2 moderate severity vulnerabilities reported; deprecated `glob@10.5.0` pulled in as a transitive dep. Both originate from indirect dependencies, not anything in `package.json` directly — they resolve by bumping the direct deps that pull them in.
+
+Further candidates noticed during a package.json audit:
+
+- **`next: ^15.5.18` → 16.x** — Next 16 is current. Note that `eslint-config-next` is already at `^16.1.6` while `next` itself is on 15, which is a mismatch worth fixing during the bump.
+- **`lucide-react: ^0.321.0`** — far behind; current is in the 0.4xx range.
+- **`i18next: ^24.x`** — newer major available.
+- **`mini-css-extract-plugin` + explicit `webpack: ^5.99.5` in devDeps** — Next 15/16 manages its own webpack. These look like leftovers that can probably be removed entirely. Verify before deleting.
 
 Minor/patch updates within existing major versions (`^` ranges in `package.json`) are picked up automatically by `npm update` and can be run periodically without concern.
 

@@ -56,7 +56,7 @@ class RagConfig(BaseModel):
     # LLM
     llm_backend: Literal["ollama", "litellm", "custom"] = "ollama"
     llm_model: str = Field("mistral-nemo:12b", max_length=200)
-    llm_temperature: float = Field(0.3, ge=0.0, le=2.0)
+    llm_temperature: float = Field(0.2, ge=0.0, le=2.0)
     ollama_host: str = Field("", max_length=253)  # empty = localhost:11434
     utility_llm_model: str = Field(
         "", max_length=200

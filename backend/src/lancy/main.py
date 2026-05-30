@@ -221,12 +221,30 @@ class CustomRAG(RAG):
             # Yield the error as a visible message so the frontend doesn't spin forever.
             # Common cases: model not pulled, Ollama not running, pgvector unreachable.
             error_text = str(exc)
-            exc_module = type(exc).__module__ or ""
-            if "sqlalchemy" in exc_module or "asyncpg" in exc_module:
-                msg = "Cannot reach the vector database. Is PostgreSQL running?"
-            elif "not found" in error_text and "404" in error_text:
+            error_lower = error_text.lower()
+
+            # Walk the exception chain — pgvector/asyncpg errors are often re-raised
+            # through llama-index, leaving the outer module unrelated to the DB driver.
+            def _chain_modules(e: BaseException) -> str:
+                mods, cur, seen = [], e, set()
+                while cur is not None and id(cur) not in seen:
+                    seen.add(id(cur))
+                    mods.append(type(cur).__module__ or "")
+                    cur = cur.__cause__ or cur.__context__
+                return " ".join(mods)
+
+            chain_mods = _chain_modules(exc)
+            db_module_hit = any(s in chain_mods for s in ("sqlalchemy", "asyncpg", "psycopg"))
+            db_text_hit = any(s in error_lower for s in (
+                "asyncpg", "psycopg", "pgvector", "postgres",
+                "could not connect", "could not translate host name", "connect call failed",
+            ))
+
+            if db_module_hit or db_text_hit:
+                msg = "Retrieval failed. Is the vector database (PostgreSQL) running?"
+            elif "not found" in error_lower and "404" in error_text:
                 msg = f"LLM model not found. Run: ollama pull {self.llm.model}"
-            elif "connection" in error_text.lower() or "refused" in error_text.lower():
+            elif "connection" in error_lower or "refused" in error_lower:
                 msg = "Cannot reach the LLM. Is it running?"
             else:
                 msg = f"LLM error: {error_text}"
@@ -618,7 +636,6 @@ def build_server():
 
     async def _startup() -> None:
         asyncio.create_task(upload_worker())  # noqa: RUF006
-        asyncio.create_task(_auto_cleanup_loop())  # noqa: RUF006
         configure_loguru()
         if not _database_url:
             from lancy.database import _maybe_backup
@@ -628,6 +645,7 @@ def build_server():
         await _react_db.create_table()
         await _src_db.create_table()
         await _user_db.create_table()
+        asyncio.create_task(_auto_cleanup_loop())  # noqa: RUF006
         from sqlalchemy import text as _sa_text
         _pk = "id BIGSERIAL PRIMARY KEY" if _database_url else "id INTEGER PRIMARY KEY"
         async with _db_engine.begin() as _conn:
@@ -685,21 +703,33 @@ def build_server():
                 reset=reset,
             )
 
-        # Rebuild pool entry so BM25 and source-file list are fresh
+        # Rebuild pool entry so BM25 and source-file list are fresh.
+        # If the pool can't host this KB right now (e.g. embedding model differs
+        # from the currently-locked pool), the on-disk vectors are still intact;
+        # report success and let the user trigger a pool switch separately.
+        entry = None
         pool.unload(kb.id)
-        entry = await pool.load(kb, cfg, _build_components)
-        pool.set_active(kb.id)
+        try:
+            entry = await pool.load(kb, cfg, _build_components)
+            pool.set_active(kb.id)
+        except EmbeddingConflict as exc:
+            log.warning(
+                f"KB '{kb.name}' indexed but not loaded into active pool: {exc}"
+            )
 
         # Use the actual VS total, not just the delta from this run.
         # When all files are already indexed (incremental run, nothing new),
         # chunks_n == 0, which would overwrite the correct count with 0.
-        try:
-            total_count = await entry.vs.count()
-            total_files = len(await entry.vs.get_source_files())
-        except Exception:
-            total_count = chunks_n
-            total_files = files_n
-        kb_router.update_stats(kb.id, total_count, total_files)
+        if entry is not None:
+            try:
+                total_count = await entry.vs.count()
+                total_files = len(await entry.vs.get_source_files())
+            except Exception:
+                total_count = chunks_n
+                total_files = files_n
+            kb_router.update_stats(kb.id, total_count, total_files)
+        else:
+            kb_router.update_stats(kb.id, chunks_n, files_n)
 
         from datetime import datetime, timezone
 

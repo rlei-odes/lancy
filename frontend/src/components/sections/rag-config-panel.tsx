@@ -728,9 +728,32 @@ export const RagConfigPanel: FunctionComponent = () => {
         setTimeout(() => setStatus({ type: "idle", text: "" }), 4000);
     };
 
+    // After a KB config PUT, if the embedding model changed, ensure the pool
+    // tracks the new embedding — with ?reset=true if it differs from the lock.
+    const refreshPoolForEmbeddingChange = async (
+        prev: KBConfig,
+        next: KBConfig,
+        kbId: string,
+    ) => {
+        const embChanged =
+            prev.embedding_backend !== next.embedding_backend ||
+            prev.embedding_model !== next.embedding_model;
+        if (!embChanged) return;
+        const compatible = !poolStatus.emb_key ||
+            (next.embedding_backend === poolStatus.emb_key.backend &&
+                next.embedding_model === poolStatus.emb_key.model);
+        const qs = compatible ? "" : "?reset=true";
+        try {
+            await fetch(`${API_BASE}/api/v1/kb/${kbId}/activate${qs}`, {
+                method: "POST", credentials: "include",
+            });
+        } catch { /* best-effort */ }
+    };
+
     const updateKb = async (name: string, data_dirs: string[]) => {
         if (!activeKb) return;
         setKbForm(null);
+        const prevKbConfig = savedKbConfig.current;
         try {
             const r = await fetch(`${API_BASE}/api/v1/kb/${activeKb.id}`, {
                 method: "PUT", credentials: "include",
@@ -744,6 +767,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                     ? { ...prev, bases: { ...prev.bases, [kb.id]: kb } }
                     : prev);
                 setStatus({ type: "success", text: t("rag.statusKbUpdated") });
+                await refreshPoolForEmbeddingChange(prevKbConfig, kbConfig, kb.id);
             }
         } catch { /* ignore */ }
         setTimeout(() => setStatus({ type: "idle", text: "" }), 3000);
@@ -811,12 +835,16 @@ export const RagConfigPanel: FunctionComponent = () => {
 
     const applyKbConfig = async (): Promise<boolean> => {
         if (!activeKb) return true;
+        const prevKbConfig = savedKbConfig.current;
         const r = await fetch(`${API_BASE}/api/v1/kb/${activeKb.id}`, {
             method: "PUT", credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name: activeKb.name, data_dirs: activeKb.data_dirs, ...kbConfig }),
         });
-        if (r.ok) savedKbConfig.current = { ...kbConfig };
+        if (r.ok) {
+            savedKbConfig.current = { ...kbConfig };
+            await refreshPoolForEmbeddingChange(prevKbConfig, kbConfig, activeKb.id);
+        }
         return r.ok;
     };
 

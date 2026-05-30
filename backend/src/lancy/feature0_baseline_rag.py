@@ -278,7 +278,7 @@ def build_embedding_model(
 def build_llm(
     backend: str,
     model_name: str | None = None,
-    temperature: float = 0.3,
+    temperature: float = 0.2,
     response_format=None,
     ollama_host: str | None = None,
     num_ctx: int = 8192,
