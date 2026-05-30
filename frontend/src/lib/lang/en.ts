@@ -1,6 +1,7 @@
 export const app = {
     notFound: "Page not found",
     messagePlaceholder: "Ask a question or type a message...",
+    kbIncompatibleWarning: "The selected knowledge base no longer matches the active embedding configuration (another admin reset the pool). Switch to a compatible KB or activate this one with reset to query.",
     tagPlaceholder: "Enter tag or select a previously used tag below",
     clearAllTags: "clear all",
     disclaimer: "{{name}} can make mistakes and miss relevant sources. Consider checking important information.",

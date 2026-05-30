@@ -14,7 +14,7 @@ import {
     getCoreRowModel,
     useReactTable,
 } from "@tanstack/react-table";
-import { ChevronDown, ChevronRight, Loader2, Plus, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Plus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/lorem";
 import ReactMarkdown from "react-markdown";
@@ -153,6 +153,19 @@ export const ChunkBrowser: FunctionComponent<{ active: boolean }> = ({ active })
 
     // Expanded row IDs
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+    // KB pool compatibility — block browsing when the selected KB no longer matches
+    // the pool's embedding key (e.g. another admin reset the pool to a different KB).
+    const [kbIncompatible, setKbIncompatible] = useState<boolean>(() =>
+        typeof window !== "undefined" && sessionStorage.getItem("lancy_kb_incompatible") === "1"
+    );
+    useEffect(() => {
+        const handler = (e: Event) => {
+            setKbIncompatible(!(e as CustomEvent).detail?.compatible);
+        };
+        window.addEventListener("lancy-kb-pool-state", handler);
+        return () => window.removeEventListener("lancy-kb-pool-state", handler);
+    }, []);
 
     // Refresh file list whenever this tab becomes active
     useEffect(() => {
@@ -338,6 +351,12 @@ export const ChunkBrowser: FunctionComponent<{ active: boolean }> = ({ active })
 
     return (
         <div className="flex flex-col gap-4 w-full">
+            {kbIncompatible && (
+                <div className="max-w-2xl px-3 py-2 flex items-start gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded">
+                    <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                    <span>{t("kbIncompatibleWarning")}</span>
+                </div>
+            )}
             {/* Filter controls */}
             <div className="max-w-2xl rounded-xl border border-border bg-card shadow-sm p-4 flex flex-col gap-3">
                 <div className="flex flex-wrap items-center gap-3">
@@ -390,7 +409,7 @@ export const ChunkBrowser: FunctionComponent<{ active: boolean }> = ({ active })
 
                     <button
                         onClick={handleBrowse}
-                        disabled={loading}
+                        disabled={loading || kbIncompatible}
                         className={cn(
                             "ml-auto flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all",
                             "bg-primary text-primary-foreground hover:bg-primary/90",

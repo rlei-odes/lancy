@@ -1,6 +1,7 @@
 export const app = {
     notFound: "Seite nicht gefunden",
     messagePlaceholder: "Stellen Sie eine Frage oder geben Sie eine Nachricht ein...",
+    kbIncompatibleWarning: "Die ausgewählte Wissensdatenbank passt nicht mehr zur aktiven Embedding-Konfiguration (ein anderer Administrator hat den Pool zurückgesetzt). Wechseln Sie zu einer kompatiblen KB oder aktivieren Sie diese mit Reset, um Anfragen zu stellen.",
     tagPlaceholder: "Tag eingeben oder unten einen früheren Tag auswählen",
     clearAllTags: "Alle löschen",
     disclaimer: "{{name}} kann Fehler machen und relevante Quellen übersehen. Überprüfen Sie wichtige Informationen.",

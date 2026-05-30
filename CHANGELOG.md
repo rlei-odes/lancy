@@ -30,6 +30,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Chunk size slider turns red when the configured value exceeds the active embedding model's context window.
 - Chunk size distribution chart (KB analytics) colours bars orange for buckets that exceed the model's context window.
 
+### Fixed — Cross-session KB pool guard (frontend)
+
+- When one admin browser triggers a pool reset to a KB with a different embedding config, other open sessions still showing the now-evicted KB no longer silently query the new active KB. The send button and the chunk-browser Browse button are disabled while the selected KB's embedding key does not match the pool's, and an inline warning is shown. State is broadcast from the RAG config panel via a `lancy-kb-pool-state` window event and mirrored to `sessionStorage` for late mounts.
+
 ---
 
 ## [Lancy v0.3.4] — 2026-05-15 · rlei-odes

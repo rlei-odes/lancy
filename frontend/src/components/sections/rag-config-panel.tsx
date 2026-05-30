@@ -645,6 +645,19 @@ export const RagConfigPanel: FunctionComponent = () => {
         return () => { active = false; clearInterval(id); };
     }, []);
 
+    // Broadcast selected-KB pool compatibility so other surfaces (send-bar, chunk-browser)
+    // can block queries when the selected KB no longer matches the pool's embedding key.
+    useEffect(() => {
+        if (!activeKb) return;
+        const compatible = !poolStatus.emb_key ||
+            (activeKb.embedding_backend === poolStatus.emb_key.backend &&
+                activeKb.embedding_model === poolStatus.emb_key.model);
+        sessionStorage.setItem("lancy_kb_incompatible", compatible ? "0" : "1");
+        window.dispatchEvent(new CustomEvent("lancy-kb-pool-state", {
+            detail: { kbId: activeKb.id, compatible },
+        }));
+    }, [activeKb, poolStatus.emb_key]);
+
     useEffect(() => { if (showSaveAs) saveAsRef.current?.focus(); }, [showSaveAs]);
 
     // ── KB actions ────────────────────────────────────────────────────────────

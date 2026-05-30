@@ -3,7 +3,7 @@ import { NewMessageInput } from "@/components/ui/new-message-input";
 import { useTranslation } from "react-i18next";
 import { Suggestion, Suggestions } from "@/components/ui/suggestion";
 import { Disclaimer } from "@/components/ui/disclaimer";
-import { SendHorizonal, Square, Tag, X } from "lucide-react";
+import { AlertTriangle, SendHorizonal, Square, Tag, X } from "lucide-react";
 import { cn } from "@/lib/lorem";
 import { useMessaging } from "@/hooks/useMessaging";
 import { MessageTypes } from "@/services/message";
@@ -47,10 +47,21 @@ export const SendBar: FunctionComponent = () => {
         return () => window.removeEventListener("lancy-kb-changed", handler);
     }, []);
 
+    const [kbIncompatible, setKbIncompatible] = useState<boolean>(() =>
+        typeof window !== "undefined" && sessionStorage.getItem("lancy_kb_incompatible") === "1"
+    );
+    useEffect(() => {
+        const handler = (e: Event) => {
+            setKbIncompatible(!(e as CustomEvent).detail?.compatible);
+        };
+        window.addEventListener("lancy-kb-pool-state", handler);
+        return () => window.removeEventListener("lancy-kb-pool-state", handler);
+    }, []);
+
     const showSuggestions = !loading && !thread.length;
 
     const handleSendMessage = (message: string) => {
-        if (!sending) {
+        if (!sending && !kbIncompatible) {
             sendMessageStream(message, MessageTypes.NEXT, cursor);
             setMessage("");
         }
@@ -76,7 +87,7 @@ export const SendBar: FunctionComponent = () => {
 
     const suggestions = buildSuggestions();
 
-    const disabled = message.length === 0 || sending;
+    const disabled = message.length === 0 || sending || kbIncompatible;
 
     return (
         <div className="w-full flex justify-center">
@@ -113,6 +124,12 @@ export const SendBar: FunctionComponent = () => {
                             />
                         )}
                     </div>
+                    {kbIncompatible && (
+                        <div className="mt-1.5 px-2 py-1.5 flex items-start gap-1.5 text-[11px] text-red-400 bg-red-500/10 border border-red-500/30 rounded">
+                            <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                            <span>{t("kbIncompatibleWarning")}</span>
+                        </div>
+                    )}
                                     {/* Session label — only show when starting a new conversation */}
                     {!activeConversationId && (
                         <div className="flex flex-col gap-1 mt-1.5 px-1">
