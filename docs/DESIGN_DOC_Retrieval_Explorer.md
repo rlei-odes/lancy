@@ -378,7 +378,7 @@ The filter bar sits above the table in a controls card. Users build filter condi
 
 ```
 document_id, title, author, document_class, document_type,
-document_created_at, document_released_at, source_url, tags,
+document_created_at, document_released_at, external_url, tags,
 source_file, file_hash, chunk_index, mime_type
 ```
 

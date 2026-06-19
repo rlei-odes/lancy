@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.3.6] — 2026-06-19 · rlei-odes
+
+### Added — `external_url` metadata field on source citations
+
+Documents ingested via the upload API can now carry an optional `external_url` metadata field. When set, source-file links in the citation popover ("Öffnen") and inline filename citations in the answer text point to that URL instead of the backend-served local copy at `/api/v1/files/...`. Intended for KBs whose source-of-truth lives in a DMS or other system the user should be redirected to.
+
+- Any URL scheme is accepted as-is — `https://` plus any custom handler the user's machine has registered. The resolver does no validation, and the rendered `<a href>` bypasses `rehype-sanitize` because it is constructed by the React handler rather than emitted by ReactMarkdown.
+- Single resolver `resolveSourceUrl(filename, sources)` in `markdown.tsx` covers both link sites (the popover button and the LLM-emitted relative-file-link rewrite).
+- Backend pipeline unchanged — the field rides on the existing `extra_metadata.update()` merge in `ingestion.py`, so it persists onto every chunk and survives retrieval into `source.metadata`.
+
+### Changed — Documentation alignment
+
+- Renamed previously aspirational `source_url` references to `external_url` across the metadata-schema enumeration: `docs/admin-guides/03-API-endpoints.md`, `docs/DESIGN_DOC_Retrieval_Explorer.md`, the `KNOWN_META_KEYS` list in `chunk-browser.tsx`, and the v0.2.32 changelog entry that originally reserved it. The earlier docs listed the name but the field was never wired up to the frontend.
+
+---
+
 ## [Lancy v0.3.5] — 2026-05-18 · rlei-odes
 
 ### Fixed — pgvector ingestion
@@ -440,7 +456,7 @@ New endpoint for pushing documents into a KB over HTTP without requiring shared 
 - `POST /api/v1/kb/{id}/documents` — accepts multipart file + JSON metadata, ingests the document into the target KB via the existing ingestion pipeline, then discards the temp file
 - `document_id` (required) enables versioning: re-uploading the same `document_id` deletes existing chunks before inserting new ones
 - `source_file` defaults to the uploaded filename so citations show the real name rather than the temp path
-- Full DMS metadata schema supported: `title`, `author`, `document_class`, `document_type`, `document_created_at`, `document_released_at`, `source_url`, `tags` — all fields are optional and stored verbatim on every chunk
+- Full DMS metadata schema supported: `title`, `author`, `document_class`, `document_type`, `document_created_at`, `document_released_at`, `external_url`, `tags` — all fields are optional and stored verbatim on every chunk
 - KB analytics sidecar (`kb_stats_{kb_id}.json`) is now updated after upload ingestion, keeping the Analytics tab in sync with incrementally uploaded documents
 - `VectorStore.delete_chunks_by_document_id()` abstract method added; implemented for both ChromaDB and pgvector backends
 

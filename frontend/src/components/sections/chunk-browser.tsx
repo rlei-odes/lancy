@@ -66,7 +66,7 @@ const BASELINE_META_KEYS = new Set([
 // Suggestions for the add-filter datalist (tags and file_hash excluded)
 const KNOWN_META_KEYS = [
     "document_id", "author", "document_class", "document_type",
-    "document_created_at", "document_released_at", "source_url",
+    "document_created_at", "document_released_at", "external_url",
     "source_file", "chunk_index", "mime_type",
 ];
 

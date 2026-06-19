@@ -508,7 +508,7 @@ The file is written to a temporary path, ingested, then deleted — it is never 
 | `document_type` | no | Sub-category below `document_class`: e.g. `Specification`, `Report`, `Plan`. |
 | `document_created_at` | no | Original creation date (`YYYY-MM-DD`). |
 | `document_released_at` | no | Release / approval date (`YYYY-MM-DD`). Used as the version timestamp for stale-version detection. |
-| `source_url` | no | Deep link back to the document in the originating DMS or file system. When present, source citations link to this URL instead of opening the local content popup. |
+| `external_url` | no | Deep link back to the document in the originating DMS or file system. Any URL scheme is accepted (`https://…` or any custom handler registered on the user's machine). When present, "Öffnen" in the source citation popup and inline file-name links in the answer text point to this URL instead of the backend-served local copy. |
 | `tags` | no | List of free-form tags, e.g. `["project-x", "team-z"]`. Stored as JSON on each chunk. |
 | Any other field | no | Merged into every chunk's metadata verbatim. |
 
