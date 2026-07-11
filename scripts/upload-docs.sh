@@ -18,6 +18,7 @@
 #   legal-memo.pdf.meta.json:
 #   {"external_url": "https://dms.corp/docs/47a9-b3f2-11ee", "author": "Jane Doe"}
 #
+# Adding external_url is recommended, since the file itself won't be saved on the backend host after ingestion through the API.
 # This script is a reference implementation. For programmatic ingestion, calling
 # the /api/v1/kb/<kb-id>/documents endpoint directly may be simpler than generating
 # sidecar files.

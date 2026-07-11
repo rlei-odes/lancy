@@ -4,8 +4,8 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { QuoteItem } from "@/components/ui/quote-item";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { Markdown } from "@/components/ui/markdown";
 import { ExternalLink } from "lucide-react";
+import { resolveSourceUrl } from "@/lib/sources";
 
 const DOC_EXT = /\.(pdf|xlsx|xls|docx|doc|md|txt|csv)$/i;
 
@@ -27,11 +27,13 @@ export const SourceItem: FunctionComponent<SourceItemProps> = (props: SourceItem
     const filename = sourceFile || (origin && DOC_EXT.test(String(origin)) ? String(origin) : null);
     const mimeType = metadata.mime_type || "";
 
-    const fileUrl = sourceFile
-        ? `/api/v1/files/${encodeURIComponent(sourceFile)}`
+    const linkTarget = sourceFile
+        ? resolveSourceUrl(sourceFile, metadata)
         : origin && DOC_EXT.test(String(origin)) && !String(origin).startsWith("http")
-            ? `/api/v1/files/${encodeURIComponent(String(origin))}`
+            ? resolveSourceUrl(String(origin), metadata)
             : null;
+
+    const captionLabel = filename ?? origin;
 
     const renderContent = () => {
         if (mimeType === "image/png") {
@@ -40,7 +42,16 @@ export const SourceItem: FunctionComponent<SourceItemProps> = (props: SourceItem
                     <img src={`data:image/png;base64,${content}`} alt={filename || sectionTitle || ""} className="max-w-full h-auto" />
                     {!!origin && (
                         <div className="pt-1 flex flex-row justify-end italic">
-                            <Markdown content={`- (${origin})`} />
+                            {linkTarget ? (
+                                <span>- (<a
+                                    href={linkTarget}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline decoration-blue-600/30 hover:decoration-blue-600 transition-colors underline-offset-2"
+                                >{captionLabel}</a>)</span>
+                            ) : (
+                                <span>- ({captionLabel})</span>
+                            )}
                         </div>
                     )}
                 </div>
@@ -48,10 +59,10 @@ export const SourceItem: FunctionComponent<SourceItemProps> = (props: SourceItem
         }
 
         if (mimeType === "text/markdown") {
-            return <QuoteItem content={content} origin={origin} />;
+            return <QuoteItem content={content} origin={captionLabel} originHref={linkTarget} />;
         }
 
-        return <QuoteItem content={content} origin={origin} />;
+        return <QuoteItem content={content} origin={captionLabel} originHref={linkTarget} />;
     };
 
     return (
@@ -69,6 +80,19 @@ export const SourceItem: FunctionComponent<SourceItemProps> = (props: SourceItem
                         </span>
                     )}
                 </div>
+                {linkTarget && (
+                    <a
+                        href={linkTarget}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        title="Öffnen"
+                        aria-label="Öffnen"
+                        className="px-1.5 py-1 bg-muted text-muted-foreground hover:text-foreground rounded-r-md flex items-center border-l"
+                    >
+                        <ExternalLink className="w-3 h-3" />
+                    </a>
+                )}
             </div>
             <Sheet open={isSourceOpen} onOpenChange={(value) => setIsSourceOpen(value)}>
                 <SheetContent className="w-full h-full overflow-scroll py-3 px-8" side={"bottom"}>

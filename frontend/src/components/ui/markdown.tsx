@@ -12,6 +12,7 @@ import { cn } from "@/lib/lorem";
 import { Source } from "@/services/message";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ExternalLink } from "lucide-react";
+import { resolveSourceUrl } from "@/lib/sources";
 
 const DOC_EXT = /\.(pdf|xlsx|xls|docx|doc|md|txt|csv)$/i;
 
@@ -37,20 +38,11 @@ function linkifyDocRefs(content: string, sources?: Source[]): string {
     });
 }
 
-// Resolve the click-target URL for a cited source file:
-// if the source carries an `external_url` (DMS link, custom scheme, etc.) use it as-is,
-// otherwise fall back to the backend file-serving endpoint.
-function resolveSourceUrl(filename: string, sources?: Source[]): string {
-    const source = sources?.find((s) => (s.metadata?.source_file as string) === filename);
-    const external = source?.metadata?.external_url as string | undefined;
-    return external || `/api/v1/files/${encodeURIComponent(filename)}`;
-}
-
 // Inline citation link that shows a source-content popup on click
 const SourceCitationLink: FunctionComponent<{ filename: string; sources?: Source[] }> = ({ filename, sources }) => {
     const [open, setOpen] = useState(false);
     const source = sources?.find((s) => (s.metadata?.source_file as string) === filename);
-    const fileUrl = resolveSourceUrl(filename, sources);
+    const fileUrl = resolveSourceUrl(filename, source?.metadata);
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -122,7 +114,8 @@ export const Markdown: FunctionComponent<{ content: string; sources?: Source[] }
                 // LLM sometimes embeds filenames as relative links → rewrite to backend file endpoint
                 // (or to the source's external_url if one was supplied at ingestion)
                 if (!isHttp && !isInternal && isDocFile && href !== "") {
-                    const fileUrl = resolveSourceUrl(href, sources);
+                    const source = sources?.find((s) => (s.metadata?.source_file as string) === href);
+                    const fileUrl = resolveSourceUrl(href, source?.metadata);
                     return (
                         <a
                             href={fileUrl}

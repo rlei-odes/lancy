@@ -136,24 +136,6 @@ All three look nice now but they are not really aligned with each other. Not nec
 
 Definitely does not look nice now but is hard to design as just raw markdown is shown. We can still improve this visually and align more with our design.
 
-### Source Citation Row — External Link Affordance
-
-The citation row in the sources panel (`source-item.tsx`) currently has no "open source" link. Clicking the row only opens a content-preview `Sheet`. The only way for a user to actually open the underlying file is via the inline `[filename.pdf]` button inside the rendered answer text (the popover in `markdown.tsx` with the "Öffnen" link). Users who want to jump to the source from the sidebar have to round-trip through the answer.
-
-**What's already there (and dead):** `source-item.tsx` lines 30–34 compute a `fileUrl` (defaulting to `/api/v1/files/...`) and import `ExternalLink` from `lucide-react`. Neither is rendered — both are leftovers from an earlier UI iteration.
-
-**Idea:**
-- Render a small external-link icon button on each citation row, separate from the row-click (which keeps opening the content `Sheet`).
-- Use the shared `resolveSourceUrl(filename, sources)` helper introduced in `markdown.tsx` so the link honours `metadata.external_url` automatically (DMS deep links or any custom URL scheme registered on the user's machine).
-- Once both citation paths (sidebar row + inline answer text) share the same resolver, lift `resolveSourceUrl` to a shared module (e.g. `frontend/src/lib/sources.ts`).
-
-**Visual marker question (postponed in v0.3.6):** should rows whose source has an `external_url` look visibly different from rows that link to the locally-served file? Options: different icon (`ExternalLink` vs. `FileText`), a small leader badge, or a tooltip-only distinction. Decide at implementation time based on whether mixed KBs (some files with `external_url`, some without) are common in practice.
-
-**Test cases:**
-- `external_url: "https://dms.internal/doc/42"` → opens in new tab.
-- `external_url` with a custom scheme (any registered OS-level handler) → browser hands off to the handler.
-- No `external_url` → falls back to `/api/v1/files/...`.
-
 ---
 
 ### Neighbour Chunk Expansion

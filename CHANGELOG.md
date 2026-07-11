@@ -19,6 +19,16 @@ Documents ingested via the upload API can now carry an optional `external_url` m
 
 - Renamed previously aspirational `source_url` references to `external_url` across the metadata-schema enumeration: `docs/admin-guides/03-API-endpoints.md`, `docs/DESIGN_DOC_Retrieval_Explorer.md`, the `KNOWN_META_KEYS` list in `chunk-browser.tsx`, and the v0.2.32 changelog entry that originally reserved it. The earlier docs listed the name but the field was never wired up to the frontend.
 
+### Added — External-link icon on source citation pills
+
+Each source citation pill in the answer sidebar now has a third segment on the right holding an external-link icon. Clicking it opens the resolved source URL in a new tab; the row-click still opens the content preview `Sheet`. The icon uses the same `resolveSourceUrl` helper so it honours `external_url` transparently.
+
+- `resolveSourceUrl(filename, metadata)` was lifted out of `markdown.tsx` into `frontend/src/lib/sources.ts` and simplified to take metadata directly (caller does the source lookup). Three call sites now share it: the popover "Öffnen" button, the LLM-emitted relative-file-link rewrite, and the new pill icon.
+
+### Fixed — Fullscreen citation view ignored `external_url`
+
+The content preview `Sheet` opened by clicking a citation pill contains an origin caption (`- (source.pdf)`). Previously it was rendered via `Markdown`, which relied on `linkifyDocRefs` to turn the filename into a link and on the `a`-handler to rewrite it to `/api/v1/files/...` — with no path for `external_url` to win. The caption now renders as a direct `<a>` whose `href` comes from `resolveSourceUrl(...)`, the same helper used by the pill icon. Applied to both `QuoteItem` (text and markdown chunks) and the image caption in `source-item.tsx`.
+
 ### Changed — Python dependency sweep (2026-07-11)
 
 - Broad refresh of pinned Python deps in `requirements.txt` and `backend/pyproject.toml`. Highlights: `chromadb` 1.4.1 → 1.5.9, `docling` 2.75.0 → 2.112.0, `fastapi` 0.115.14 → 0.139.0, `pydantic` 2.10.6 → 2.13.4, `numpy` 2.3.3 → 2.5.1, `sentence-transformers` 5.1.1 → 5.6.0, `openai` 2.21.0 → 2.45.0, `uvicorn` 0.35.0 → 0.51.0, `loguru` 0.6.0 → 0.7.3, `pgvector` 0.4.2 → 0.5.0. Plus patches to `ollama`, `markitdown`, `python-multipart`, `python-jose`, `asyncpg`, `SQLAlchemy`, `pytest`.
