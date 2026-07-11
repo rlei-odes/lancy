@@ -10,6 +10,17 @@
 # Uploads all supported files (.pdf .md .txt .png .jpg .jpeg .gif .tiff .bmp .webp)
 # from <directory> (recursive up to 5 levels deep). document_id is set to the filename stem.
 # Waits for each file to finish ingesting before uploading the next.
+#
+# Metadata: for each <file>, if a sidecar <file>.meta.json exists in the same
+# directory, its contents are merged into the built-in metadata. Sidecar keys
+# override built-in keys (document_id, source_file). Example — for legal-memo.pdf:
+#
+#   legal-memo.pdf.meta.json:
+#   {"external_url": "https://dms.corp/docs/47a9-b3f2-11ee", "author": "Jane Doe"}
+#
+# This script is a reference implementation. For programmatic ingestion, calling
+# the /api/v1/kb/<kb-id>/documents endpoint directly may be simpler than generating
+# sidecar files.
 
 set -e
 
@@ -105,7 +116,19 @@ for file in "${files[@]}"; do
 
     printf "  [%d/%d] %s ... " "$((success + failed + 1))" "$total" "$relpath"
 
-    metadata=$(python3 -c "import json,sys; print(json.dumps({'document_id': sys.argv[1], 'source_file': sys.argv[2]}))" "$doc_id" "$filename")
+    sidecar="${file}.meta.json"
+    metadata=$(python3 -c "
+import json, os, sys
+doc_id, filename, sidecar = sys.argv[1:4]
+meta = {'document_id': doc_id, 'source_file': filename}
+if os.path.isfile(sidecar):
+    try:
+        with open(sidecar) as f:
+            meta.update(json.load(f))
+    except (json.JSONDecodeError, OSError) as e:
+        print(f'WARN: skipping sidecar {sidecar}: {e}', file=sys.stderr)
+print(json.dumps(meta))
+" "$doc_id" "$filename" "$sidecar")
     http_code=$(curl -s -o /dev/null -w "%{http_code}" \
         -X POST "$ENDPOINT" \
         -F "file=@\"${file}\";filename=\"${filename}\"" \
