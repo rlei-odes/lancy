@@ -38,6 +38,7 @@ import math
 import os
 import pathlib
 import re
+from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import quote
 from typing import Any
@@ -558,11 +559,17 @@ def build_server():
             log.error(f"_conversation_metadata failed: {_e!r}")
             return {}
 
+    @asynccontextmanager
+    async def _lifespan(_app):
+        await _startup()
+        yield
+
     app = create_app(
         controller=controller,
         allow_origins=ALLOW_ORIGINS,
         conversation_metadata_provider=_conversation_metadata,
         secret_key=_secret_key,
+        lifespan=_lifespan,
     )
 
     # ── KB Router ─────────────────────────────────────────────────────────
@@ -680,8 +687,6 @@ def build_server():
                 log.info("Vector store empty — use the UI to index a knowledge base.")
         except Exception as _vs_err:
             log.warning(f"KB '{active_kb.id}' unavailable at startup (vector store unreachable): {_vs_err}")
-
-    app.add_event_handler("startup", _startup)
 
     # ── RAG Config / Reindex router ───────────────────────────────────────
     async def rebuild_callback(cfg: RagConfig, reset: bool) -> ReindexResult:

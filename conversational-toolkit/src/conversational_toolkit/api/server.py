@@ -23,6 +23,7 @@ def create_app(
     env: str = os.getenv("ENV", "local"),
     conversation_metadata_provider=None,  # () -> dict
     secret_key: Optional[str] = None,
+    lifespan=None,
 ) -> FastAPI:
     if auth_provider is None:
         auth_provider = SessionCookieProvider(
@@ -35,7 +36,7 @@ def create_app(
     if allow_origins is None:
         allow_origins = ["http://localhost:3000", "http://localhost:8080"]
 
-    app = FastAPI(docs_url="/docs", redoc_url="/redoc")
+    app = FastAPI(docs_url="/docs", redoc_url="/redoc", lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,  # type: ignore
