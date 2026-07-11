@@ -904,9 +904,25 @@ async def ingest_uploaded_file(
         def _on_embed_progress(batch_idx: int, total_batches: int) -> None:
             _index_status.update({"embed_batch": batch_idx, "embed_total_batches": total_batches})
 
+        vs_type = getattr(kb, "vs_type", "chromadb") or "chromadb"
+        vs_conn = getattr(kb, "vs_connection_string", "") or ""
+
         def _sync_embed_insert():
             new_loop = asyncio.new_event_loop()
             try:
+                if vs_type == "pgvector":
+                    # Fresh instance: the shared `vs`'s asyncpg pool is bound to the main
+                    # FastAPI loop from the delete_chunks_by_document_id call above, and
+                    # cannot be reused inside this thread's new_loop.
+                    vs_instance = make_vector_store(
+                        vs_type=vs_type,
+                        db_path=Path(kb.vs_path) if kb.vs_path else None,
+                        embedding_model_name=kb.embedding_model,
+                        vs_connection_string=vs_conn,
+                        table_name=f"rag_{kb.id.replace('-', '_')}",
+                    )
+                else:
+                    vs_instance = vs  # ChromaDB: safe to reuse across threads
                 return new_loop.run_until_complete(
                     build_vector_store(
                         chunks=text_chunks,
@@ -915,7 +931,7 @@ async def ingest_uploaded_file(
                         reset=False,
                         on_embed_progress=_on_embed_progress,
                         batch_size=kb.embedding_batch_size,
-                        vector_store=vs,
+                        vector_store=vs_instance,
                         existing_hashes=set(),  # replacement already handled above
                         use_task_prefix=kb.nomic_prefix,
                     )
@@ -927,8 +943,6 @@ async def ingest_uploaded_file(
         _clear_cuda_cache()  # release GPU memory held by embedding between documents
 
         if kb.image_indexing_enabled and image_chunks:
-            vs_type = getattr(kb, "vs_type", "chromadb") or "chromadb"
-            vs_conn = getattr(kb, "vs_connection_string", "") or ""
             image_vs_path = Path(kb.vs_path + "_images") if vs_type == "chromadb" else None
             image_vs_for_delete = make_vector_store(
                 vs_type=vs_type,
