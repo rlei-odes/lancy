@@ -178,60 +178,6 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
         });
     };
 
-    const sendMessage = (content: string, type: MessageTypes, parentId?: Message["id"]) => {
-        const userMessage: Message = {
-            id: String(messages.length),
-            content,
-            role: "user",
-            create_timestamp: new Date().getTime(),
-            conversation_id: activeConversationId ? activeConversationId : "",
-            parent_id: parentId,
-        };
-
-        const kbId = !activeConversationId ? (sessionStorage.getItem("lancy_selected_kb_id") ?? undefined) : undefined;
-        const kbName = !activeConversationId ? (sessionStorage.getItem("lancy_selected_kb_name") ?? undefined) : undefined;
-        const userInput = {
-            content,
-            type,
-            ...(activeConversationId ? { conversation_id: activeConversationId } : {}),
-            ...(activeConversationId && parentId ? { parent_id: parentId } : {}),
-            ...(!activeConversationId && sessionLabel ? { session_label: sessionLabel } : {}),
-            ...(kbId ? { kb_id: kbId, ...(kbName ? { kb_name: kbName } : {}) } : {}),
-        };
-
-        if (type === MessageTypes.REDO) {
-            setThread((prev) => [...getMessageThread(prev, parentId), makeLoadingMessage(activeConversationId, "")]);
-        } else {
-            setThread((prev) => [...getMessageThread(prev, parentId), userMessage, makeLoadingMessage(activeConversationId, "")]);
-        }
-        setSending(true);
-        messageService
-            .create(userInput)
-            .then((response) => {
-                if (response) {
-                    if (!activeConversationId && response.conversation_id) {
-                        setConversationId(response.conversation_id);
-                        conversationService.get(response.conversation_id).then((conversation) => {
-                            if (conversation) {
-                                _updateConversation(response.conversation_id, conversation);
-                            }
-                        });
-                    }
-                    setThread((prev) => [...prev.slice(0, prev.length - 1), response]);
-                    setCursor(response.id);
-                    setSending(false);
-                } else {
-                    setThread((prev) => [...prev.slice(0, prev.length - 1), makeErrorMessage(activeConversationId, t("error"))]);
-                    setSending(false);
-                }
-            })
-            .catch(() => {
-                // TODO: Add error message
-                setThread((prev) => [...prev.slice(0, prev.length - 1), makeErrorMessage(activeConversationId, t("error"))]);
-                setSending(false);
-            });
-    };
-
     const sendMessageStream = (content: string, type: MessageTypes, parentId?: Message["id"]) => {
         const userMessage: Message = {
             id: String(thread.length),
@@ -269,6 +215,7 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
             userInput,
             (streamedMessage) => {
                 // Update the last message (which is a loading message) with the new streamed message
+                console.debug("[stream] chunk id=%s contentLen=%d sources=%d", streamedMessage.id, streamedMessage.content?.length ?? 0, streamedMessage.sources?.length ?? 0);
                 setThread((prev) => [...prev.slice(0, -1), streamedMessage]);
 
                 if (cursor !== streamedMessage.id) {
@@ -290,15 +237,21 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
                     });
                 }
             },
-            () => {
-                console.log("error");
+            (err) => {
+                console.error("[stream] error callback fired:", err);
                 setThread((prev) => [...prev.slice(0, prev.length - 1), makeErrorMessage(activeConversationId, t("error"))]);
                 setSending(false);
             },
             () => {
                 abortControllerRef.current = null;
                 // Remove loading placeholder immediately — don't wait for async refresh
-                setThread((prev) => prev.filter((m) => m.id !== LOADING_ID));
+                setThread((prev) => {
+                    const filtered = prev.filter((m) => m.id !== LOADING_ID);
+                    if (filtered.length !== prev.length) {
+                        console.debug("[stream] end: removed %d loading placeholder(s), thread %d→%d", prev.length - filtered.length, prev.length, filtered.length);
+                    }
+                    return filtered;
+                });
                 setSending(false);
                 if (!activeConversationId) {
                     const titleFromContent = content.substring(0, 60);
@@ -307,7 +260,10 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
                             _updateConversation(loadedConversation, { ...conversation, title: titleFromContent });
                             conversationService.rename(loadedConversation, titleFromContent);
                             setMessages(conversation?.messages || []);
-                            setThread(conversation?.messages || []);
+                            // Do NOT setThread here — the streamed content is already correct in the
+                            // thread. Refetching and overwriting caused messages to visibly "vanish"
+                            // when the backend hadn't finished persisting yet (race), or when the
+                            // fetched conversation was missing the just-streamed message.
                         }
                     });
                 } else {

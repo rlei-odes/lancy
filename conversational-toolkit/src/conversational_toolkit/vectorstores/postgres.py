@@ -9,7 +9,8 @@ from conversational_toolkit.vectorstores.base import VectorStore, ChunkMatch, Ch
 
 from sqlalchemy import text, and_, func
 from sqlalchemy import MetaData
-from sqlalchemy import Table, Column, String, JSON
+from sqlalchemy import Table, Column, String
+from sqlalchemy.dialects.postgresql import JSONB
 from pgvector.sqlalchemy import Vector  # type: ignore[import-untyped]
 from numpy.typing import NDArray
 
@@ -38,7 +39,7 @@ class PGVectorStore(VectorStore):
             Column("content", String, index=False),
             Column("mime_type", String, index=False),
             Column("embedding", Vector(self.embeddings_size)),
-            Column("chunk_metadata", JSON, nullable=True),
+            Column("chunk_metadata", JSONB, nullable=True),
         )
 
     async def _ensure_initialized(self) -> None:

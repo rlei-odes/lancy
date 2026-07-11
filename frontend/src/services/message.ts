@@ -70,22 +70,7 @@ class MessageService extends ApiService {
         super(apiUrl);
     }
 
-    async create(input: UserInput): Promise<Message | null> {
-        try {
-            const postUrl = `${this.apiUrl}/`;
-            const response = await this.fetchApi(postUrl, {
-                method: "POST",
-                body: JSON.stringify(input),
-            });
-
-            return response.json();
-        } catch (e) {
-            console.log("error", e);
-            return null;
-        }
-    }
-
-    async createStream(input: UserInput, onMessage: (message: Message) => void, onError: () => void, onEnd: () => void, signal?: AbortSignal) {
+    async createStream(input: UserInput, onMessage: (message: Message) => void, onError: (error?: unknown) => void, onEnd: () => void, signal?: AbortSignal) {
         try {
             const postUrl = `${this.apiUrl}/stream`;
             const response = await this.fetchApi(postUrl, {
@@ -111,14 +96,18 @@ class MessageService extends ApiService {
                             if (!line.trim()) continue;
                             try {
                                 onMessage(JSON.parse(line) as Message);
-                            } catch {}
+                            } catch (e) {
+                                console.warn("[stream] JSON parse failed on line (len=%d):", line.length, e, line.slice(0, 200));
+                            }
                         }
                     }
                 }
                 if (buffer.trim()) {
                     try {
                         onMessage(JSON.parse(buffer) as Message);
-                    } catch {}
+                    } catch (e) {
+                        console.warn("[stream] JSON parse failed on trailing buffer (len=%d):", buffer.length, e, buffer.slice(0, 200));
+                    }
                 }
                 onEnd();
             }
@@ -126,8 +115,8 @@ class MessageService extends ApiService {
             if (e?.name === "AbortError") {
                 onEnd();  // user stopped — keep partial message, don't show error
             } else {
-                console.log("error", e);
-                onError();
+                console.error("[stream] fetch/read failed:", e);
+                onError(e);
             }
             return null;
         }
