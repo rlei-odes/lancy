@@ -501,13 +501,33 @@ Minor/patch updates within existing major versions (`^` ranges in `package.json`
 
 #### Python
 
-The pinned versions in `requirements.txt` are the higher-priority concern — they don't auto-update. Packages to watch:
+Last swept: **2026-07-11** — full refresh of top-level pins in `requirements.txt` and `backend/pyproject.toml`. See CHANGELOG for the version-by-version list.
 
-- **`docling`** — updates frequently, has had breaking changes between minor versions
-- **`chromadb`** — actively developed, API surface has shifted across releases
-- **`ollama`** — Python client tracks new Ollama features; worth updating alongside Ollama server upgrades
+**Routine for the next sweep:**
 
-Run `pip list --outdated` periodically and update these selectively. Test retrieval and ingestion after any chromadb or docling bump.
+1. Rebuild the venv: `rm -rf .venv && python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt`
+2. `pip list --outdated`
+3. Bump top-level pins within their current major. Ignore transitive deps — they ride with their parents.
+4. Ingestion + retrieval smoke test after install.
+
+**Held on purpose (don't bump on sight):**
+
+- **`ruff`** — dev-only, but each 0.x "major" ships new lint rules that fire and produce a noisy diff. Bump as a dedicated hygiene commit, then clean up whatever new rules trigger. Do NOT bundle with a dep sweep.
+- **`torch` / `nvidia-*` / `cuda-toolkit`** — the CUDA runtime stack ships with torch as pip wheels. Do NOT upgrade individual `nvidia-*` wheels — pip's resolver will refuse, or worse, silently mismatch CUDA symbols. To get newer CUDA: bump `torch` itself, which is a bigger project (torch version → CUDA compute capability → GPU driver requirements → sentence-transformers / docling compat). Only do this with a concrete motivator (newer GPU, specific CUDA feature).
+
+**Waiting on parents to bless a major (do not touch as transitive):**
+
+- `huggingface_hub 0.x → 1.x` and `transformers 4.x → 5.x` — pinned by `sentence-transformers` (currently on 4.x line). Will move when st releases a 1.x-compatible version.
+- `starlette 0.x → 1.x` — pinned by `fastapi`.
+- `semchunk 3.x → 4.x` — pinned by `docling`.
+- `magika 0.x → 1.x` — pinned by `markitdown`.
+- `rich 14.x → 15.x` — pinned by `typer` / `pydantic`.
+
+**Local guard rails to keep in sync:**
+
+`conversational-toolkit/pyproject.toml` has explicit upper caps on `fastapi`, `httpx`, `python-jose`, `loguru`, `numpy`. When bumping a top-level pin above one of these caps, loosen the toolkit cap in the same commit. As of 2026-07-11 only `fastapi` had needed loosening.
+
+**Historical footnote:** `docling`, `chromadb`, and `ollama` were previously called out as "packages to watch". `docling` and `chromadb` were bumped through many minors in one round (2.75 → 2.112 and 1.4.1 → 1.5.9) without incident on this codebase's narrow API surface (`PdfPipelineOptions.do_ocr` / `.generate_picture_images`; the `ChromaDBVectorStore` wrapper). `ollama` client is a thin HTTP wrapper — bump alongside Ollama server upgrades.
 
 ### Refactor: Reduce Size of main.py
 

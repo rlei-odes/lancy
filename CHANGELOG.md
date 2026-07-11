@@ -19,6 +19,12 @@ Documents ingested via the upload API can now carry an optional `external_url` m
 
 - Renamed previously aspirational `source_url` references to `external_url` across the metadata-schema enumeration: `docs/admin-guides/03-API-endpoints.md`, `docs/DESIGN_DOC_Retrieval_Explorer.md`, the `KNOWN_META_KEYS` list in `chunk-browser.tsx`, and the v0.2.32 changelog entry that originally reserved it. The earlier docs listed the name but the field was never wired up to the frontend.
 
+### Changed — Python dependency sweep (2026-07-11)
+
+- Broad refresh of pinned Python deps in `requirements.txt` and `backend/pyproject.toml`. Highlights: `chromadb` 1.4.1 → 1.5.9, `docling` 2.75.0 → 2.112.0, `fastapi` 0.115.14 → 0.139.0, `pydantic` 2.10.6 → 2.13.4, `numpy` 2.3.3 → 2.5.1, `sentence-transformers` 5.1.1 → 5.6.0, `openai` 2.21.0 → 2.45.0, `uvicorn` 0.35.0 → 0.51.0, `loguru` 0.6.0 → 0.7.3, `pgvector` 0.4.2 → 0.5.0. Plus patches to `ollama`, `markitdown`, `python-multipart`, `python-jose`, `asyncpg`, `SQLAlchemy`, `pytest`.
+- `conversational-toolkit/pyproject.toml`: internal `fastapi` upper cap raised from `<0.116.0` to `<0.140.0` to match.
+- No code changes; all pins stay within their current major.
+
 ---
 
 ## [Lancy v0.3.5] — 2026-05-18 · rlei-odes
