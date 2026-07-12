@@ -79,9 +79,9 @@ export const SourceItem: FunctionComponent<SourceItemProps> = (props: SourceItem
             >
                 <div className="w-5 h-full py-1 bg-muted text-center rounded-l-md">{index + 1}</div>
                 <div className="px-1.5 h-full py-1 overflow-hidden text-ellipsis whitespace-nowrap flex-1 min-w-0 flex items-center gap-1">
-                    <span className="truncate">{filename ?? content}</span>
+                    <span className="truncate max-w-xs">{filename ?? content}</span>
                     {sectionTitle && (
-                        <span className="ml-1 text-xs text-muted-foreground truncate hidden sm:inline">
+                        <span className="ml-1 text-xs text-muted-foreground truncate max-w-[9rem] hidden sm:inline">
                             · {sectionTitle.replace(/^#+\s*/, "")}
                         </span>
                     )}

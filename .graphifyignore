@@ -3,3 +3,5 @@ data/
 
 # Exclude screenshot images
 docs/screenshots/
+
+#Remark: Graphiphy Graph is not fully kept up do date, and not git-commited.
