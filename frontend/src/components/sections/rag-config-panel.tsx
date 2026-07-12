@@ -273,7 +273,15 @@ function findMatchingRetrievalPreset(session: SessionConfig, presets: RetrievalP
 
 function findMatchingKbPreset(cfg: KBConfig, presets: KBPreset[]): string {
     return presets.find((p) =>
-        (Object.keys(p.data) as (keyof KBConfig)[]).every((k) => p.data[k] === cfg[k])
+        (Object.keys(p.data) as (keyof KBConfig)[]).every((k) => {
+            const pv = p.data[k];
+            const cv = cfg[k];
+            // Nested objects (e.g. chat_filters) need a content compare, not a reference compare.
+            if (pv !== null && typeof pv === "object") {
+                return JSON.stringify(pv) === JSON.stringify(cv);
+            }
+            return pv === cv;
+        })
     )?.name ?? "";
 }
 
@@ -1068,7 +1076,8 @@ export const RagConfigPanel: FunctionComponent = () => {
         session.reranking_enabled !== savedSession.current.reranking_enabled ||
         session.reranking_candidate_pool !== savedSession.current.reranking_candidate_pool ||
         session.image_retriever_top_k !== savedSession.current.image_retriever_top_k ||
-        kbConfig.image_retrieval_enabled !== savedKbConfig.current.image_retrieval_enabled;
+        kbConfig.image_retrieval_enabled !== savedKbConfig.current.image_retrieval_enabled ||
+        JSON.stringify(kbConfig.chat_filters) !== JSON.stringify(savedKbConfig.current.chat_filters);
 
     const embeddingDirty =
         kbConfig.embedding_backend !== savedKbConfig.current.embedding_backend ||

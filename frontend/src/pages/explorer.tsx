@@ -1,8 +1,8 @@
 "use client";
 
 import Head from "next/head";
-import Link from "next/link";
 import React, { useState } from "react";
+import { useRouter } from "next/router";
 import { ArrowLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useTheme } from "@/hooks/useTheme";
@@ -19,6 +19,7 @@ export default function ExplorerPage() {
     const { cssClass } = useTheme();
     const { isMobile } = useMediaQuery();
     const { t } = useTranslation("app");
+    const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>("probe");
     const tabLabels: Record<Tab, string> = {
         probe: t("explorer.tabProbe"),
@@ -37,13 +38,13 @@ export default function ExplorerPage() {
                 <div className="flex flex-col h-full w-full min-w-0">
                     {/* Header */}
                     <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border shrink-0">
-                        <Link
-                            href="/"
+                        <button
+                            onClick={() => router.back()}
                             className="flex items-center justify-center h-7 w-7 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                             title={t("explorer.backToChat")}
                         >
                             <ArrowLeft className="h-4 w-4" />
-                        </Link>
+                        </button>
                         <div className="h-4 w-px bg-border" />
                         <h1 className="text-sm font-semibold tracking-tight">{t("explorer.pageTitle")}</h1>
                         <span className="text-xs text-muted-foreground/60 font-mono leading-none">

@@ -27,6 +27,19 @@ Observed that answers sometimes cite only 2 chunks even when retrieval is config
 
 Unknown origin. Possibly connected to Query Expansion. Could be related to the LLM expanding the query in other languages. Observed: Korean, Thai. Possibly an LLM internal bug.
 
+### Stale Thread Displayed at Root URL After Navigation
+
+When the browser URL is `/` (new-chat surface) but the user just came from `/c/{id}`, the previous conversation's messages remain visible because `home.tsx` renders `<MessageList />` whenever `thread.length > 0` — it doesn't check that `activeConversationId` matches. `frozenChatFilters`, `chatFilters` and other conversation-scoped state hang around similarly. This creates a mixed state: user sees the old conversation's messages but sending a new message would create a brand-new conversation (because `activeConversationId` is empty).
+
+Surfaced by the chat pre-filter feature (v0.3.7) — the empty filter pill at `/` while the messages still show made the mismatch obvious.
+
+**Fix candidates:**
+
+- Clear `thread` (and `frozenChatFilters`, `sessionLabel`, etc.) in `useMessaging.tsx` whenever `activeConversationId` becomes empty. Small risk during the "first message sent → URL updates" window; needs a careful check that we don't clear the fresh conversation as it's being created.
+- Or: home.tsx should treat empty `activeConversationId` as "show `<Welcome />`" regardless of `thread` content — simpler, but you lose the visual continuity if the user briefly hits `/` en route to a new conversation.
+
+Note: the Explorer back arrow was changed to `router.back()` in v0.3.7 as a surgical mitigation for the main navigation path that surfaced this.
+
 ### Duplicate KB Name Allowed at Creation
 
 The KB create form does not check for name collisions. Submitting a name that already exists is accepted; the backend slugifies the name to an id and, if the slug collides, silently appends a numeric suffix (or overwrites — needs verification). Either way the user ends up with two KBs that look the same in the dropdown but are distinct on disk.
