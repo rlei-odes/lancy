@@ -11,6 +11,7 @@ If a chunk lacks the required metadata fields, it is returned unchanged.
 """
 
 import asyncio
+from typing import Any
 
 from conversational_toolkit.retriever.base import Retriever
 from conversational_toolkit.vectorstores.base import ChunkMatch, VectorStore
@@ -38,9 +39,13 @@ class ContextWindowRetriever(Retriever[ChunkMatch]):
         self.vector_store = vector_store
         self.window_size = window_size
 
-    async def retrieve(self, query: str) -> list[ChunkMatch]:
-        """Retrieve then expand: fetch base results, then widen each with neighbours."""
-        base_chunks = await self.retriever.retrieve(query)
+    async def retrieve(self, query: str, filters: dict[str, Any] | None = None) -> list[ChunkMatch]:
+        """Retrieve then expand: fetch base results, then widen each with neighbours.
+
+        Neighbours share source_file with the retrieved chunk, so they inherit any
+        document-level metadata used for filtering — no extra filtering applied here.
+        """
+        base_chunks = await self.retriever.retrieve(query, filters=filters)
         expanded = await asyncio.gather(*[self._expand(c) for c in base_chunks])
         return list(expanded)[: self.top_k]
 

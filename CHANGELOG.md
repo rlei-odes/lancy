@@ -5,6 +5,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.3.7] — 2026-07-12 · rlei-odes
+
+### Added — Chat pre-filters (admin-configured metadata scoping)
+
+Users can now scope a new chat to matching metadata (e.g. `document_type = Technical`, `author = Jane`) before sending a query. Retrieval — both semantic search and BM25 — is restricted to chunks whose metadata matches, and the filter is frozen onto the conversation so continuation messages and reopened conversations honour the original scope.
+
+**Admin configuration** — RAG Parameters sidebar → Retrieval section → new "Chat pre-filters" area at the bottom (admin-gated). Admin toggles the feature on per KB and adds the metadata keys they want to expose. On add, the backend reports the key's cardinality:
+
+- **Below 120 distinct values** → dropdown widget recommended
+- **Above 120** → text-input widget recommended
+- **Zero matches** → key rejected (not present in this KB's chunks)
+
+The recommendation is auto-selected; admin can override the widget per key. Config persists per KB in `knowledge_bases.json` under a new `chat_filters: { enabled, keys: [{ key, widget }] }` block. Existing configs load with the field defaulted to disabled — no migration needed.
+
+**End-user flow** — new `ChatActionBar` renders between the suggestion tiles and the chat input. Empty state shows a single "Filter documents" pill. Clicking it opens an upward popover with one widget per admin-configured key: dropdown widgets fetch their values from the new facets endpoint; text widgets accept an exact-match string. Apply commits; Cancel discards. Active filters render as blue chips with an × to clear each; picking a new value for the same key replaces (single-value semantics for now).
+
+Once the first message is sent, the filters freeze: the chips render read-only with a lock icon, and the popover is no longer offered. Reopening the conversation later shows the same read-only chips.
+
+**Backend enforcement** — filters travel through the whole retrieval chain (`VectorStore.get_chunks_by_embedding(filters=...)` at the DB level for semantic search; BM25 post-filters scored results to keep its index cache warm; hybrid/reranking/context-window retrievers pass filters through). Filters are stored in `Conversation.rag_config_snapshot.filters` on first message; continuation messages ignore client-supplied filters and re-load the snapshot — backend-authoritative, so a buggy or manual client can't drift a conversation's scope mid-thread.
+
+**New endpoints**
+
+- `GET /api/v1/rag/metadata-facets?key=X&kb_id=Y&threshold=N` → `{ key, distinct_count, threshold, values | null }`. Powers the admin cardinality preview and the user-side dropdown values. Requires the requested KB to be loaded in the pool (clean 404 otherwise instead of silently falling back to the active KB).
+
+**Files**
+
+- Backend: `rag_router.py` (facets endpoint + response model), `kb_router.py` (`ChatFilterKey`/`ChatFiltersConfig` on `KBCreate`), `feature0_baseline_rag.py` (`TaskPrefixRetriever` signature), and the conversational-toolkit retrievers (`base`, `vectorstore_retriever`, `bm25_retriever`, `hybrid_retriever`, `reranking_retriever`, `context_window_retriever`), `agents/base.py` + `agents/rag.py` (`QueryWithContext.filters`), `conversation_database/controller.py` (`MessageFilter`, first-vs-continuation resolution), plus `vectorstores/base.py`/`chromadb.py`/`postgres.py` (new abstract `get_metadata_values(key)`).
+- Frontend: new `chat-action-bar.tsx`; extended `rag-config-panel.tsx`, `send-bar.tsx`, `useMessaging.tsx`, `services/message.ts`, `services/conversation.ts`. Translations in all four locales (`en`, `de`, `fr`, `it`).
+
+**Limitations (scoped for later)**
+
+- Only `eq` operators supported. Range filters (e.g. `year >= 2020`) and multi-value / OR semantics on the same key are deferred to the backlog.
+
+---
+
 ## [Lancy v0.3.6] — 2026-06-19 and 2026-07-12· rlei-odes
 
 ### Added — `external_url` metadata field on source citations

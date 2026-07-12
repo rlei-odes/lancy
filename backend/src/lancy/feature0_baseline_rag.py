@@ -44,6 +44,7 @@ import os
 import re
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -142,8 +143,8 @@ class TaskPrefixRetriever(VectorStoreRetriever):
         super().__init__(embedding_model, vector_store, top_k=top_k)
         self._query_prefix = query_prefix
 
-    async def retrieve(self, query: str) -> list[ChunkMatch]:
-        return await super().retrieve(f"{self._query_prefix}{query}")
+    async def retrieve(self, query: str, filters: dict[str, Any] | None = None) -> list[ChunkMatch]:
+        return await super().retrieve(f"{self._query_prefix}{query}", filters=filters)
 
 
 # Paths and defaults

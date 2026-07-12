@@ -8,7 +8,7 @@ Concrete implementations: 'VectorStoreRetriever', 'BM25Retriever', 'HybridRetrie
 """
 
 from abc import ABC, abstractmethod
-from typing import TypeVar, Generic
+from typing import Any, TypeVar, Generic
 
 from conversational_toolkit.chunking.base import Chunk
 
@@ -29,6 +29,11 @@ class Retriever(ABC, Generic[T_co]):
         self.top_k = top_k
 
     @abstractmethod
-    async def retrieve(self, query: str) -> list[T_co]:
-        """Return up to 'top_k' chunks most relevant to 'query'."""
+    async def retrieve(self, query: str, filters: dict[str, Any] | None = None) -> list[T_co]:
+        """Return up to 'top_k' chunks most relevant to 'query'.
+
+        'filters' is a neutral flat {field: value} dict passed to the underlying
+        vector store to restrict the searched corpus (metadata pre-filtering).
+        None or empty means no restriction.
+        """
         pass

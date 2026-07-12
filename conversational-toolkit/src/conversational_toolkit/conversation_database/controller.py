@@ -15,7 +15,7 @@ import asyncio
 import json
 import time
 from collections.abc import AsyncGenerator, Sequence
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -31,6 +31,14 @@ from conversational_toolkit.utils.metadata_provider import MetadataProvider
 from conversational_toolkit.utils.time import get_current_timestamp
 
 
+class MessageFilter(BaseModel):
+    """A single metadata pre-filter condition attached to a chat message."""
+
+    key: str = Field(..., min_length=1, max_length=100)
+    op: Literal["eq"] = "eq"
+    value: str = Field(..., max_length=500)
+
+
 class MessageInput(BaseModel):
     content: str = Field(..., min_length=1, max_length=32_000)
     parent_id: str | None = None
@@ -39,6 +47,22 @@ class MessageInput(BaseModel):
     session_label: str | None = Field(None, max_length=200)
     kb_id: str | None = None
     kb_name: str | None = None
+    filters: list[MessageFilter] | None = None  # applied only on the first message of a conversation
+
+
+def _filters_to_dict(filters: list[MessageFilter] | list[dict] | None) -> dict[str, Any] | None:
+    """Convert a list of [{key, op, value}] filter conditions to a neutral {key: value} dict.
+
+    Non-eq operators are ignored (only 'eq' is currently supported end-to-end).
+    """
+    if not filters:
+        return None
+    result: dict[str, Any] = {}
+    for f in filters:
+        d = f.model_dump() if isinstance(f, BaseModel) else f
+        if d.get("op", "eq") == "eq" and d.get("key"):
+            result[d["key"]] = d.get("value", "")
+    return result or None
 
 
 class ConversationInput(BaseModel):
@@ -112,6 +136,10 @@ class ConversationalToolkitController:
         if user_input.conversation_id is None:
             create_time = get_current_timestamp()
             meta = extra_meta or {}
+            raw_snapshot = meta.get("rag_config_snapshot")
+            snapshot: dict | None = dict(raw_snapshot) if raw_snapshot else None
+            if user_input.filters:
+                snapshot = {**(snapshot or {}), "filters": [f.model_dump() for f in user_input.filters]}
             conversation = await self.conversation_db.create_conversation(
                 Conversation(
                     id=generate_uid(),
@@ -121,7 +149,7 @@ class ConversationalToolkitController:
                     title=DEFAULT_CONVERSATION_TITLE,
                     kb_id=user_input.kb_id or meta.get("kb_id"),
                     kb_name=user_input.kb_name or meta.get("kb_name"),
-                    rag_config_snapshot=meta.get("rag_config_snapshot"),
+                    rag_config_snapshot=snapshot,
                     session_label=user_input.session_label or meta.get("session_label"),
                 )
             )
@@ -191,6 +219,15 @@ class ConversationalToolkitController:
                     )
                 )
 
+            # Resolve effective filters: first message uses request payload;
+            # continuation messages always re-use the snapshot persisted on the conversation
+            # (client-supplied filters are ignored to keep the conversation-level state authoritative).
+            if user_input.conversation_id is None:
+                effective_filters = _filters_to_dict(user_input.filters)
+            else:
+                stored = conversation.rag_config_snapshot or {}
+                effective_filters = _filters_to_dict(stored.get("filters"))
+
             t_start = time.monotonic()
             stream = self.agent.answer_stream(
                 QueryWithContext(
@@ -200,6 +237,7 @@ class ConversationalToolkitController:
                         for message in sorted(thread, key=lambda m: m.create_timestamp)
                     ],
                     conversation_id=conversation.id,
+                    filters=effective_filters,
                 )
             )
 

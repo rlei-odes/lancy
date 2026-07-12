@@ -1,6 +1,12 @@
 import { ApiService } from "./api";
 import { Message, Reaction } from "@/services/message";
 
+export interface MessageFilter {
+    key: string;
+    op: "eq";
+    value: string;
+}
+
 export interface RagConfigSnapshot {
     retriever_top_k?: number;
     rrf_k?: number;
@@ -16,6 +22,7 @@ export interface RagConfigSnapshot {
     embedding_backend?: string;
     embedding_model?: string;
     vs_type?: string;
+    filters?: MessageFilter[];
 }
 
 export interface Conversation {

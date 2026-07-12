@@ -61,6 +61,7 @@ class RAG(Agent):
     ) -> AsyncGenerator[AgentAnswer, None]:
         query = query_with_context.query
         history = query_with_context.history
+        filters = query_with_context.filters or None
 
         has_preprocessing = len(history) > 0 or self.number_query_expansion > 0 or self.enable_hyde
         if has_preprocessing and phase_callback:
@@ -86,7 +87,7 @@ class RAG(Agent):
                 retriever.phase_callback = phase_callback
 
         async def _retrieve_one(retriever) -> list[ChunkRecord]:
-            results = await asyncio.gather(*[retriever.retrieve(q) for q in queries])
+            results = await asyncio.gather(*[retriever.retrieve(q, filters=filters) for q in queries])
             return reciprocal_rank_fusion(list(results))[: retriever.top_k]
 
         all_results = await asyncio.gather(*[_retrieve_one(r) for r in self.retrievers])

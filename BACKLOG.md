@@ -138,6 +138,19 @@ Definitely does not look nice now but is hard to design as just raw markdown is 
 
 ---
 
+### Chat Action Bar — More Toggles Above the Chat Input
+
+The chat page has a thin action bar between the suggestion tiles and the chat input, introduced with the metadata pre-filter feature (v0.3.7). Designed as a modular row that hosts one component per action — adding a new action means dropping a sibling next to `FilterAction` in [chat-action-bar.tsx](frontend/src/components/sections/chat-action-bar.tsx), no cross-action coordination.
+
+Candidates:
+
+- **Chat-only toggle** — skip the RAG step for the next query. Useful for meta-questions ("what did I ask last?"), greetings, or when the user wants a pure LLM response without vector-search noise. Persists per-conversation like filters.
+- **Expand context** — after an answer, let the user pick one or more cited documents and re-query with the LLM instructed to read/analyse those documents in full (not just the retrieved chunks). Needs a document-selection popover and a retrieval path that fetches all chunks for the picked `source_file`s.
+
+Both integrate the same way filters do: state co-lives with `useMessaging`, threads into the request body, and (for per-conversation state) rides in `rag_config_snapshot`.
+
+---
+
 ### Neighbour Chunk Expansion
 
 **Current behaviour:** retrieval returns exactly `top_k` chunks. Each chunk is an isolated slice of the source document — the text immediately before and after it is not included, even if it would provide useful context.

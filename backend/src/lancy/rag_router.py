@@ -179,6 +179,16 @@ class ChunkBrowseResponse(BaseModel):
     has_more: bool
 
 
+# ─── Metadata facets (chat pre-filter discovery) ─────────────────────────────
+
+
+class MetadataFacetsResponse(BaseModel):
+    key: str
+    distinct_count: int
+    threshold: int
+    values: list[str] | None  # None when distinct_count exceeds threshold
+
+
 # ─── Router factory ───────────────────────────────────────────────────────────
 
 
@@ -407,6 +417,43 @@ def create_rag_router(
         if retrieve_callback is None:
             raise HTTPException(status_code=501, detail="Retrieval probe not configured.")
         return await retrieve_callback(req)
+
+    @router.get("/metadata-facets", response_model=MetadataFacetsResponse)
+    async def metadata_facets(
+        key: str,
+        kb_id: str | None = None,
+        threshold: int = 120,
+    ) -> MetadataFacetsResponse:
+        """Distinct values for a metadata key in the active (or specified) KB.
+
+        Used by the admin config UI and chat pre-filter widgets. When the number of
+        distinct values exceeds `threshold`, `values` is omitted — the caller falls
+        back to a free-text input.
+        """
+        if threshold < 1:
+            raise HTTPException(status_code=400, detail="threshold must be >= 1")
+        if kb_id and vs_by_kb_factory:
+            vs = vs_by_kb_factory(kb_id)
+            if vs is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"KB '{kb_id}' is not loaded — activate it before requesting facets.",
+                )
+        else:
+            vs = vector_store_factory()
+            if vs is None:
+                raise HTTPException(status_code=404, detail="No active KB.")
+        try:
+            values = await vs.get_metadata_values(key)
+        except Exception as exc:
+            log.warning(f"metadata-facets error for key={key!r}: {exc}")
+            raise HTTPException(status_code=500, detail=str(exc))
+        return MetadataFacetsResponse(
+            key=key,
+            distinct_count=len(values),
+            threshold=threshold,
+            values=values if len(values) <= threshold else None,
+        )
 
     @router.post("/chunks", response_model=ChunkBrowseResponse)
     async def browse_chunks(req: ChunkBrowseRequest) -> ChunkBrowseResponse:

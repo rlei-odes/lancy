@@ -83,6 +83,15 @@ class VectorStore(ABC):
         pass
 
     @abstractmethod
+    async def get_metadata_values(self, key: str) -> list[str]:
+        """Return a sorted list of distinct string values present for the given metadata key.
+
+        Non-string scalars are stringified. Chunks lacking the key are skipped.
+        Used to populate chat pre-filter dropdowns.
+        """
+        pass
+
+    @abstractmethod
     async def get_file_hashes(self) -> set[str]:
         """Return the set of file_hash values present in this collection's chunk metadata.
 

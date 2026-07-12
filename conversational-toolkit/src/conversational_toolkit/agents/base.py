@@ -19,6 +19,7 @@ class QueryWithContext(BaseModel):
     query: str
     history: list[LLMMessage]
     conversation_id: str | None = None
+    filters: dict[str, Any] | None = None  # neutral {field: value} metadata pre-filter, threaded to retrievers
 
 
 class RetrievalStats(BaseModel):

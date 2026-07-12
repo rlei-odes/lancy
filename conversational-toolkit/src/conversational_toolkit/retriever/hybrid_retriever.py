@@ -29,9 +29,11 @@ class HybridRetriever(Retriever[ChunkMatch]):
         self.retrievers = retrievers
         self.rrf_k = rrf_k
 
-    async def retrieve(self, query: str) -> list[ChunkMatch]:
+    async def retrieve(self, query: str, filters: dict[str, Any] | None = None) -> list[ChunkMatch]:
         """Query all sub-retrievers in parallel and return the top 'top_k' RRF-merged results."""
-        all_results: list[list[Any]] = await asyncio.gather(*[r.retrieve(query) for r in self.retrievers])
+        all_results: list[list[Any]] = await asyncio.gather(
+            *[r.retrieve(query, filters=filters) for r in self.retrievers]
+        )
         return self._rrf_merge(all_results)[: self.top_k]
 
     def _rrf_merge(self, results_per_retriever: list[list[ChunkRecord]]) -> list[ChunkMatch]:
