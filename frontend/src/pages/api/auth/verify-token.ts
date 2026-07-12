@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { createRemoteJWKSet, jwtVerify, JWTPayload } from "jose";
 import { signToken } from "@/lib/auth";
 import { getSSOConfig, getSessionTtlSeconds } from "@/lib/auth-config";
+import { getAppPasswordSecret } from "@/lib/password-hash";
 import { logAuth, clientIp } from "@/lib/log-auth";
 
 // Module-level JWKS cache keyed by issuer URL.
@@ -42,11 +43,11 @@ const SESSION_MAX_AGE = 60 * 60 * 24 * 365; // 1 year — stable IdP identity
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== "POST") return res.status(405).end();
 
-    const appPassword = process.env.APP_PASSWORD || "";
-    if (!appPassword) {
-        return res.status(500).json({ error: "APP_PASSWORD is not set — cannot issue session cookies" });
+    const appSecret = getAppPasswordSecret();
+    if (!appSecret) {
+        return res.status(500).json({ error: "APP_PASSWORD or APP_PASSWORD_HASH is not set — cannot issue session cookies" });
     }
-    const signingKey = process.env.SESSION_SECRET || appPassword;
+    const signingKey = process.env.SESSION_SECRET || appSecret;
 
     const sso = getSSOConfig();
     if (!sso || sso.provider !== "oidc") {

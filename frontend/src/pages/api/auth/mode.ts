@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { isMode2Active, isMode3Active, getSSOConfig } from "@/lib/auth-config";
+import { getAppPasswordSecret } from "@/lib/password-hash";
 
 export type AuthMode = {
     mode: 1 | 2 | 3;
@@ -11,15 +12,14 @@ export default function handler(req: NextApiRequest, res: NextApiResponse<AuthMo
 
     const sso = getSSOConfig();
     if (sso) {
-        const appPassword = process.env.APP_PASSWORD || "";
-        if (!appPassword) {
+        if (!getAppPasswordSecret()) {
             return res.status(500).json({
-                error: "SSO is configured but APP_PASSWORD is not set. Set APP_PASSWORD to activate Mode 3.",
+                error: "SSO is configured but neither APP_PASSWORD nor APP_PASSWORD_HASH is set. Set one to activate Mode 3.",
             } as any);
         }
         if (!isMode2Active()) {
             return res.status(500).json({
-                error: "SSO is configured but ADMIN_PASSWORD is not set. Set ADMIN_PASSWORD so admins can log in via the escape hatch.",
+                error: "SSO is configured but no admin password is set. Set ADMIN_PASSWORD or ADMIN_PASSWORD_HASH so admins can log in via the escape hatch.",
             } as any);
         }
         return res.status(200).json({ mode: 3, provider: sso.provider });

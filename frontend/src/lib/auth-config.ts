@@ -4,6 +4,7 @@
 
 import fs from "fs";
 import path from "path";
+import { hashPassword } from "./password-hash";
 
 const CONFIG_PATH = path.join(process.cwd(), "auth_config.json");
 
@@ -34,7 +35,8 @@ export interface LDAPConfig {
 export type SSOConfig = OIDCConfig | LDAPConfig;
 
 interface AuthConfig {
-    admin_password?: string;
+    admin_password?: string;       // legacy plaintext — kept for backward compat on read only
+    admin_password_hash?: string;  // pbkdf2$… — written by setAdminPassword
     sso?: SSOConfig;
 }
 
@@ -54,19 +56,31 @@ function write(config: AuthConfig): void {
 
 // ── Admin password (Mode 2) ─────────────────────────────────────────────────
 
+// Returns the stored secret (hash or plaintext) for the admin password, or null.
+// Precedence: auth_config.json (hash → legacy plaintext) → ADMIN_PASSWORD_HASH env → ADMIN_PASSWORD env.
+// Callers must pass the returned string to verifyPassword(), which auto-detects hash vs plaintext.
 export function getAdminPassword(): string | null {
-    return read().admin_password ?? process.env.ADMIN_PASSWORD ?? null;
+    const cfg = read();
+    return (
+        cfg.admin_password_hash
+        ?? cfg.admin_password
+        ?? process.env.ADMIN_PASSWORD_HASH
+        ?? process.env.ADMIN_PASSWORD
+        ?? null
+    );
 }
 
-export function setAdminPassword(password: string): void {
+export async function setAdminPassword(password: string): Promise<void> {
     const config = read();
-    config.admin_password = password;
+    config.admin_password_hash = await hashPassword(password);
+    delete config.admin_password;
     write(config);
 }
 
 export function clearAdminPassword(): void {
     const config = read();
     delete config.admin_password;
+    delete config.admin_password_hash;
     write(config);
 }
 

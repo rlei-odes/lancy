@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { verifyToken } from "@/lib/auth";
+import { getAppPasswordSecret } from "@/lib/password-hash";
 
 interface TestStep {
     label: string;
@@ -8,9 +9,9 @@ interface TestStep {
 }
 
 async function currentRole(req: NextApiRequest): Promise<"admin" | "user" | null> {
-    const appPassword = process.env.APP_PASSWORD || "";
-    if (!appPassword) return "admin";
-    const signingKey = process.env.SESSION_SECRET || appPassword;
+    const appSecret = getAppPasswordSecret();
+    if (!appSecret) return "admin";
+    const signingKey = process.env.SESSION_SECRET || appSecret;
     return verifyToken(req.cookies.rag_auth ?? "", signingKey);
 }
 

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth";
+import { getAppPasswordSecret, getAdminPasswordSecretFromEnv, verifyPassword } from "@/lib/password-hash";
 
-const APP_PASSWORD = process.env.APP_PASSWORD || "";
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
-const SIGNING_KEY = process.env.SESSION_SECRET || APP_PASSWORD;
+const APP_SECRET = getAppPasswordSecret();
+const ADMIN_SECRET = getAdminPasswordSecretFromEnv();
+const SIGNING_KEY = process.env.SESSION_SECRET || APP_SECRET || "";
 
 const CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -48,12 +49,15 @@ function withCors(response: NextResponse): NextResponse {
 // Mode 1 (no APP_PASSWORD): open access, everyone is admin.
 // Mode 2: role is embedded in the signed cookie.
 async function getRole(request: NextRequest): Promise<"admin" | "user" | null> {
-    if (!APP_PASSWORD) return "admin";
+    if (!APP_SECRET) return "admin";
 
     // Bearer token for API clients (Open WebUI, curl, etc.) — always admin
     const authHeader = request.headers.get("authorization") ?? "";
-    if (authHeader === `Bearer ${APP_PASSWORD}`) return "admin";
-    if (ADMIN_PASSWORD && authHeader === `Bearer ${ADMIN_PASSWORD}`) return "admin";
+    if (authHeader.startsWith("Bearer ")) {
+        const token = authHeader.slice(7);
+        if (await verifyPassword(token, APP_SECRET)) return "admin";
+        if (ADMIN_SECRET && (await verifyPassword(token, ADMIN_SECRET))) return "admin";
+    }
 
     const cookie = request.cookies.get("rag_auth");
     if (!cookie?.value) return null;

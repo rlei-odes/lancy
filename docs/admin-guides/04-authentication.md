@@ -54,6 +54,27 @@ The login page shows a single password field with no username. Users enter `APP_
 
 ---
 
+## Password Hashing
+
+Instead of plaintext passwords in `frontend/.env`, you can store PBKDF2-SHA256 hashes:
+
+```
+APP_PASSWORD_HASH=pbkdf2$210000$<salt>$<hash>
+ADMIN_PASSWORD_HASH=pbkdf2$210000$<salt>$<hash>
+```
+
+Generate one with the shipped helper (Node is already installed with the frontend):
+
+```
+node scripts/hash-password.mjs 'your-password'
+```
+
+Precedence per role: `*_HASH` wins over plaintext `*_PASSWORD` when both are set. Admin passwords set via the Settings UI are hashed automatically and written to `auth_config.json`; that file still wins over the env vars for browser login.
+
+**Locked out of the admin role?** Delete the `admin_password_hash` (and legacy `admin_password`) field from `frontend/auth_config.json`, restart the frontend, log in with `APP_PASSWORD` (grants admin because no admin password is configured), and set a new one via the Settings UI.
+
+---
+
 ## Mode 3 — SSO / Directory Authentication
 
 Authenticated users log in via an external identity provider (OIDC or LDAP/Active Directory). Successful authentication grants the `user` role. The admin role is available only via the admin password escape hatch (see below).

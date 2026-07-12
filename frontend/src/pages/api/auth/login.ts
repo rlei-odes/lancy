@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { randomUUID } from "crypto";
 import { signToken } from "@/lib/auth";
 import { getAdminPassword, getSSOConfig, isMode2Active, isMode3Active, getSessionTtlSeconds } from "@/lib/auth-config";
+import { getAppPasswordSecret, verifyPassword } from "@/lib/password-hash";
 import { logAuth, clientIp } from "@/lib/log-auth";
 
 const SESSION_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
@@ -37,9 +38,9 @@ function buildCookies(
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== "POST") return res.status(405).end();
 
-    const appPassword = process.env.APP_PASSWORD || "";
-    if (!appPassword) return res.status(500).json({ error: "APP_PASSWORD not configured" });
-    const signingKey = process.env.SESSION_SECRET || appPassword;
+    const appSecret = getAppPasswordSecret();
+    if (!appSecret) return res.status(500).json({ error: "APP_PASSWORD or APP_PASSWORD_HASH not configured" });
+    const signingKey = process.env.SESSION_SECRET || appSecret;
 
     const secure = process.env.NODE_ENV === "production" ? ["Secure"] : [];
 
@@ -98,9 +99,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const mode2 = isMode2Active();
 
     let role: "admin" | "user";
-    if (mode2 && password === adminPassword) {
+    if (mode2 && adminPassword && (await verifyPassword(password, adminPassword))) {
         role = "admin";
-    } else if (password === appPassword) {
+    } else if (await verifyPassword(password, appSecret)) {
         role = mode2 ? "user" : "admin";
     } else {
         logAuth("LOGIN_FAILED", { ip: clientIp(req) });

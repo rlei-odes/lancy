@@ -11,11 +11,12 @@ import {
     setSSOConfig,
     type SSOConfig,
 } from "@/lib/auth-config";
+import { getAppPasswordSecret, verifyPassword } from "@/lib/password-hash";
 
 async function currentRole(req: NextApiRequest): Promise<"admin" | "user" | null> {
-    const appPassword = process.env.APP_PASSWORD || "";
-    if (!appPassword) return "admin";
-    const signingKey = process.env.SESSION_SECRET || appPassword;
+    const appSecret = getAppPasswordSecret();
+    if (!appSecret) return "admin";
+    const signingKey = process.env.SESSION_SECRET || appSecret;
     const token = req.cookies.rag_auth ?? "";
     return verifyToken(token, signingKey);
 }
@@ -58,12 +59,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 return res.status(400).json({ error: "Password must be at least 8 characters" });
             }
 
-            const appPassword = process.env.APP_PASSWORD || "";
-            if (admin_password === appPassword) {
+            const appSecret = getAppPasswordSecret();
+            if (appSecret && (await verifyPassword(admin_password, appSecret))) {
                 return res.status(400).json({ error: "Admin password must differ from the user password" });
             }
 
-            setAdminPassword(admin_password);
+            await setAdminPassword(admin_password);
             return res.status(200).json({ ok: true, mode: "2" });
         }
 
