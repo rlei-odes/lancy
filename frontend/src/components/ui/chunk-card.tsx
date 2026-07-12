@@ -154,7 +154,16 @@ export const ChunkCard: FunctionComponent<Props> = ({
                         {metaEntries.map(([key, val]) => (
                             <span key={key} className="text-[11px] font-mono text-muted-foreground">
                                 <span className="text-muted-foreground/60">{key}:</span>{" "}
-                                <span className="text-foreground/70">{String(val)}</span>
+                                {key === "external_url" ? (
+                                    <a
+                                        href={String(val)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-foreground/70 underline hover:text-foreground"
+                                    >{String(val)}</a>
+                                ) : (
+                                    <span className="text-foreground/70">{String(val)}</span>
+                                )}
                             </span>
                         ))}
                     </div>

@@ -5,7 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [Lancy v0.3.6] — 2026-06-19 · rlei-odes
+## [Lancy v0.3.6] — 2026-06-19 and 2026-07-12· rlei-odes
 
 ### Added — `external_url` metadata field on source citations
 
@@ -28,6 +28,20 @@ Each source citation pill in the answer sidebar now has a third segment on the r
 ### Fixed — Fullscreen citation view ignored `external_url`
 
 The content preview `Sheet` opened by clicking a citation pill contains an origin caption (`- (source.pdf)`). Previously it was rendered via `Markdown`, which relied on `linkifyDocRefs` to turn the filename into a link and on the `a`-handler to rewrite it to `/api/v1/files/...` — with no path for `external_url` to win. The caption now renders as a direct `<a>` whose `href` comes from `resolveSourceUrl(...)`, the same helper used by the pill icon. Applied to both `QuoteItem` (text and markdown chunks) and the image caption in `source-item.tsx`.
+
+### Added — Metadata info popover on source citation pills
+
+A new "info" icon segment sits between the filename and the external-link icon on every citation pill. Hovering reveals a two-column list of every non-empty metadata key on the chunk (monospace key, value on the right). Long values truncate with a native `title` tooltip carrying the full string. Rendered via the already-imported `HoverCard`; clicking `stopPropagation`s so the row's content Sheet doesn't open.
+
+### Added — Clickable `external_url` in Explorer views
+
+- Chunk Browser: the `external_url` cell in the dynamic-column table renders as an underlined blue link that opens in a new tab (`stopPropagation` keeps the row-expand from firing).
+- Retrieval Probe: `ChunkCard`'s metadata footer gets the same treatment, but styled with underline only — no colour change — to keep the muted look of adjacent metadata entries.
+
+### Fixed — `Type` column empty in Chunk Browser
+
+The Chunk Browser expected `metadata.mime_type`, but `mime_type` is a top-level field on `Chunk`, not a metadata key, and `browse_chunks` only serialises `metadata`. Fixed at the ingestion choke point: `build_vector_store` now mirrors `chunk.mime_type` into `chunk.metadata` via `setdefault`, so it flows into every metadata-only consumer (Chunk Browser Type column, citation pill's metadata popover, filter dropdowns). **Requires a reindex** for the field to appear on chunks already in the store.
+
 
 ### Changed — Python dependency sweep (2026-07-11)
 

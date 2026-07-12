@@ -731,6 +731,12 @@ async def build_vector_store(
         logger.warning("No chunks to embed — vector store will be empty.")
         return vector_store
 
+    # Mirror the top-level `mime_type` field into each chunk's metadata dict so
+    # metadata-only consumers (Chunk Browser, citation metadata popup, filter
+    # dropdowns) can see it. The endpoint payload only forwards `metadata`.
+    for chunk in chunks:
+        chunk.metadata.setdefault("mime_type", chunk.mime_type)
+
     # Validate that all chunks carry a file_hash — stamped by load_chunks.
     missing = [c for c in chunks if "file_hash" not in c.metadata]
     if missing:

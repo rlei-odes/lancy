@@ -71,7 +71,7 @@ export default function ExplorerPage() {
 
                     {/* Scrollable content area */}
                     <div className="flex-1 overflow-y-auto">
-                        <div className={cn(activeTab === "probe" ? "max-w-3xl" : "max-w-6xl", "mx-auto px-5 py-6")}>
+                        <div className={cn(activeTab === "probe" ? "max-w-3xl" : "max-w-7xl", "mx-auto px-5 py-6")}>
                             {activeTab === "probe" && <RetrievalProbe />}
                             {activeTab === "browser" && <ChunkBrowser active={activeTab === "browser"} />}
                             {activeTab === "analytics" && <KbAnalytics active={activeTab === "analytics"} />}

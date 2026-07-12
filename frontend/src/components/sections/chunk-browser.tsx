@@ -328,6 +328,18 @@ export const ChunkBrowser: FunctionComponent<{ active: boolean }> = ({ active })
                 const v = row.original.metadata[key];
                 if (v === undefined || v === "") return null;
                 const s = String(v);
+                if (key === "external_url") {
+                    return (
+                        <a
+                            href={s}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            title={s}
+                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline truncate max-w-[120px] block"
+                        >{s}</a>
+                    );
+                }
                 return <span title={s} className="text-xs text-muted-foreground truncate max-w-[120px] block">{s}</span>;
             },
         })),

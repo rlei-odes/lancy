@@ -4,8 +4,9 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { QuoteItem } from "@/components/ui/quote-item";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Info } from "lucide-react";
 import { resolveSourceUrl } from "@/lib/sources";
+import { cn } from "@/lib/lorem";
 
 const DOC_EXT = /\.(pdf|xlsx|xls|docx|doc|md|txt|csv)$/i;
 
@@ -34,6 +35,11 @@ export const SourceItem: FunctionComponent<SourceItemProps> = (props: SourceItem
             : null;
 
     const captionLabel = filename ?? origin;
+
+    const metadataEntries = Object.entries(metadata)
+        .filter(([, v]) => v !== null && v !== undefined && v !== "")
+        .map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : String(v)] as const);
+    const hasMetadata = metadataEntries.length > 0;
 
     const renderContent = () => {
         if (mimeType === "image/png") {
@@ -80,6 +86,38 @@ export const SourceItem: FunctionComponent<SourceItemProps> = (props: SourceItem
                         </span>
                     )}
                 </div>
+                {hasMetadata && (
+                    <HoverCard openDelay={100} closeDelay={100}>
+                        <HoverCardTrigger asChild>
+                            <button
+                                type="button"
+                                onClick={(e) => e.stopPropagation()}
+                                aria-label="Metadata"
+                                className={cn(
+                                    "px-1.5 py-1 bg-muted text-muted-foreground hover:text-foreground flex items-center border-l",
+                                    !linkTarget && "rounded-r-md",
+                                )}
+                            >
+                                <Info className="w-3 h-3" />
+                            </button>
+                        </HoverCardTrigger>
+                        <HoverCardContent
+                            className="w-96 text-xs p-3"
+                            align="end"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="font-semibold mb-2">Metadata</div>
+                            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                                {metadataEntries.map(([k, v]) => (
+                                    <React.Fragment key={k}>
+                                        <dt className="font-mono text-muted-foreground">{k}</dt>
+                                        <dd className="truncate" title={v}>{v}</dd>
+                                    </React.Fragment>
+                                ))}
+                            </dl>
+                        </HoverCardContent>
+                    </HoverCard>
+                )}
                 {linkTarget && (
                     <a
                         href={linkTarget}
