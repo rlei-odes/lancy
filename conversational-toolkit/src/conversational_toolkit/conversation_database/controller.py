@@ -48,6 +48,7 @@ class MessageInput(BaseModel):
     kb_id: str | None = None
     kb_name: str | None = None
     filters: list[MessageFilter] | None = None  # applied only on the first message of a conversation
+    chat_only: bool = False  # per-message flag: skip retrieval, answer from history + general knowledge
 
 
 def _filters_to_dict(filters: list[MessageFilter] | list[dict] | None) -> dict[str, Any] | None:
@@ -238,6 +239,7 @@ class ConversationalToolkitController:
                     ],
                     conversation_id=conversation.id,
                     filters=effective_filters,
+                    chat_only=user_input.chat_only,
                 )
             )
 

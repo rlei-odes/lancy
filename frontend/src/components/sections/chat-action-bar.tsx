@@ -2,7 +2,7 @@
 
 import React, { FunctionComponent, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Filter, Lock, X, Check, Loader2 } from "lucide-react";
+import { Filter, Lock, X, Check, Loader2, MessageSquareOff } from "lucide-react";
 import { useMessaging } from "@/hooks/useMessaging";
 import { MessageFilter } from "@/services/conversation";
 
@@ -281,34 +281,55 @@ const FrozenFilters: FunctionComponent<{ filters: MessageFilter[] }> = ({ filter
     );
 };
 
+// ─── Chat-only toggle ─────────────────────────────────────────────────────────
+
+interface ChatOnlyActionProps {
+    on: boolean;
+    onToggle: () => void;
+}
+
+const ChatOnlyAction: FunctionComponent<ChatOnlyActionProps> = ({ on, onToggle }) => {
+    const { t } = useTranslation("app");
+    return (
+        <button
+            onClick={onToggle}
+            title={on ? t("chatOnly.tooltipOn") : t("chatOnly.tooltipOff")}
+            aria-pressed={on}
+            className={
+                on
+                    ? "inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/50 text-amber-300"
+                    : "inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border border-foreground/20 text-muted-foreground hover:border-amber-400/50 hover:text-amber-300 transition-colors"
+            }
+        >
+            <MessageSquareOff className="h-3 w-3" />
+            <span>{t("chatOnly.label")}</span>
+        </button>
+    );
+};
+
 // ─── Public: the bar ──────────────────────────────────────────────────────────
 
 /**
  * Row of chat-scoped action controls rendered between the suggestion tiles and
- * the chat input. Currently hosts one action (chat filters); designed so future
- * actions (e.g. "chat only" toggle, "expand context") can slot in as sibling
- * components without coordination.
+ * the chat input. Hosts one component per action; designed so new actions slot
+ * in as sibling components without cross-action coordination.
  */
 export const ChatActionBar: FunctionComponent = () => {
-    const { activeConversationId, chatFilters, setChatFilters, frozenChatFilters } = useMessaging();
+    const { activeConversationId, chatFilters, setChatFilters, frozenChatFilters, chatOnly, setChatOnly } = useMessaging();
     const kb = useActiveKbFilters();
 
-    // Frozen mode: existing conversation with persisted filters
-    if (activeConversationId) {
-        if (frozenChatFilters.length === 0) return null;
-        return (
-            <div className="px-1 pb-1.5 flex items-center">
-                <FrozenFilters filters={frozenChatFilters} />
-            </div>
-        );
-    }
-
-    // Editable mode: new conversation, only shows if admin has enabled + configured keys
-    if (!kb || !kb.chat_filters.enabled || kb.chat_filters.keys.length === 0) return null;
+    // Which filter-side UI (if any) do we render?
+    const showFrozenFilters = !!activeConversationId && frozenChatFilters.length > 0;
+    const showFilterAction = !activeConversationId
+        && !!kb && kb.chat_filters.enabled && kb.chat_filters.keys.length > 0;
 
     return (
-        <div className="px-1 pb-1.5 flex items-center">
-            <FilterAction kb={kb} active={chatFilters} onChange={setChatFilters} />
+        <div className="px-1 pb-1.5 flex items-center gap-2 flex-wrap">
+            {showFrozenFilters && <FrozenFilters filters={frozenChatFilters} />}
+            {showFilterAction && kb && (
+                <FilterAction kb={kb} active={chatFilters} onChange={setChatFilters} />
+            )}
+            <ChatOnlyAction on={chatOnly} onToggle={() => setChatOnly(!chatOnly)} />
         </div>
     );
 };

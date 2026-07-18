@@ -19,6 +19,11 @@ export const app = {
         textPlaceholder: "valeur exacte",
         frozenHint: "Filtre verrouillé pour cette conversation. Lancer un nouveau chat pour modifier les filtres.",
     },
+    chatOnly: {
+        label: "Chat uniquement",
+        tooltipOff: "Ignorer la récupération pour le prochain message — réponse à partir de l'historique + connaissances générales",
+        tooltipOn: "Chat uniquement activé : le prochain message ignorera la récupération",
+    },
     disclaimer: "{{name}} peut faire des erreurset manquer des sources pertinentes. Pensez à vérifier les informations importantes.",
     credits: "Lancy with 💙 by <1>SDSC</1><2/><3>Vonlanthen INSIGHT</3> & <4>Lancy</4>",
     welcome: "Que voulez-vous savoir ?",

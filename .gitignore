@@ -50,6 +50,7 @@ frontend/auth_config.json
 # Custom prompts (may contain internal/confidential instructions)
 prompts/system_prompt.custom.md
 prompts/image_captioning_prompt.custom.md
+prompts/chat_only.custom.md
 
 # Customer data
 data */

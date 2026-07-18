@@ -19,6 +19,11 @@ export const app = {
         textPlaceholder: "exact value",
         frozenHint: "Filter locked for this conversation. Start a new chat to change filters.",
     },
+    chatOnly: {
+        label: "Chat only",
+        tooltipOff: "Skip retrieval for the next message — answer from history + general knowledge",
+        tooltipOn: "Chat only is on: the next message will skip retrieval",
+    },
     disclaimer: "{{name}} can make mistakes and miss relevant sources. Consider checking important information.",
     credits: "Lancy with 💙 by <1>SDSC</1><2/><3>Vonlanthen INSIGHT</3> & <4>Lancy</4>",
     welcome: "What do you want to know?",

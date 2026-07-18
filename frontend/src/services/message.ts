@@ -56,6 +56,7 @@ export interface UserInput {
     kb_name?: string;
     session_label?: string;
     filters?: { key: string; op: "eq"; value: string }[];
+    chat_only?: boolean;
 }
 
 export interface Reaction {

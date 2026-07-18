@@ -45,6 +45,7 @@ class RAG(Agent):
         description: str = "",
         number_query_expansion: int = 0,
         enable_hyde: bool = False,
+        chat_only_system_prompt: str = "",
     ):
         super().__init__(system_prompt, llm, description)
         self.description = description
@@ -53,6 +54,8 @@ class RAG(Agent):
         self.retrievers = retrievers
         self.number_query_expansion = number_query_expansion
         self.enable_hyde = enable_hyde
+        # Used only when QueryWithContext.chat_only=True. Empty falls back to the standard system_prompt.
+        self.chat_only_system_prompt = chat_only_system_prompt
 
     async def answer_stream(  # noqa: PLR0912
         self,
@@ -62,6 +65,12 @@ class RAG(Agent):
         query = query_with_context.query
         history = query_with_context.history
         filters = query_with_context.filters or None
+
+        # Chat-only mode: skip retrieval and every preprocessing step; answer from history + general knowledge.
+        if query_with_context.chat_only:
+            async for answer in self._answer_stream_chat_only(query, history):
+                yield answer
+            return
 
         has_preprocessing = len(history) > 0 or self.number_query_expansion > 0 or self.enable_hyde
         if has_preprocessing and phase_callback:
@@ -172,3 +181,48 @@ class RAG(Agent):
                 )
                 if answer:
                     yield answer
+
+    async def _answer_stream_chat_only(
+        self,
+        query: str,
+        history: list[LLMMessage],
+    ) -> AsyncGenerator[AgentAnswer, None]:
+        """Answer using only conversation history + general knowledge — no retrieval.
+
+        Uses `chat_only_system_prompt` if provided, otherwise falls back to the standard
+        `system_prompt`. Sources on the yielded AgentAnswer are always empty.
+        """
+        system_prompt = self.chat_only_system_prompt or self.system_prompt
+        user_message = LLMMessage(
+            role=Roles.USER,
+            content=[MessageContent(type="text", text=query)],
+        )
+        response_stream = self.llm.generate_stream(
+            [
+                LLMMessage(role=Roles.SYSTEM, content=[MessageContent(type="text", text=system_prompt)]),
+                *history,
+                user_message,
+            ]
+        )
+        retrieval_stats = RetrievalStats(candidates_retrieved=0, chunks_to_llm=0)
+        logger.info("Retrieval: chat-only mode — LLM answers from history + general knowledge")
+
+        content = ""
+        async for response_chunk in response_stream:
+            if not response_chunk.content:
+                continue
+            for message_content in response_chunk.content:
+                if message_content.type == "text" and message_content.text:
+                    content += message_content.text
+                elif message_content.type == "image" and message_content.image_url:
+                    raise NotImplementedError("Image output from LLM is not supported in this version.")
+            answer = await self._answer_post_processing(
+                AgentAnswer(
+                    content=[MessageContent(type="text", text=content)],
+                    role=Roles.ASSISTANT,
+                    sources=[],
+                    retrieval_stats=retrieval_stats,
+                )
+            )
+            if answer:
+                yield answer

@@ -19,6 +19,11 @@ export const app = {
         textPlaceholder: "valore esatto",
         frozenHint: "Filtro bloccato per questa conversazione. Avvia una nuova chat per modificare i filtri.",
     },
+    chatOnly: {
+        label: "Solo chat",
+        tooltipOff: "Salta il recupero per il prossimo messaggio — risposta da cronologia + conoscenza generale",
+        tooltipOn: "Solo chat attivo: il prossimo messaggio salterà il recupero",
+    },
     disclaimer: "{{name}} può commettere errori e perdere fonti rilevanti. Considera di verificare le informazioni importanti.",
     credits: "Lancy with 💙 by <1>SDSC</1><2/><3>Vonlanthen INSIGHT</3> & <4>Lancy</4>",
     welcome: "Cosa vuoi sapere?",

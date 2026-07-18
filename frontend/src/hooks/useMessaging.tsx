@@ -46,6 +46,9 @@ const MessagingContext = createContext<{
     setChatFilters: (filters: MessageFilter[]) => void;
     /** Filters persisted on the currently loaded conversation — read-only for continuation messages. */
     frozenChatFilters: MessageFilter[];
+    /** Per-message toggle: skip retrieval, answer from history + general knowledge. */
+    chatOnly: boolean;
+    setChatOnly: (v: boolean) => void;
     createNewConversation: () => void;
     changeConversation: (conversationId: string) => void;
     changeThread: (messageId: string) => void;
@@ -68,6 +71,8 @@ const MessagingContext = createContext<{
     chatFilters: [],
     setChatFilters: () => {},
     frozenChatFilters: [],
+    chatOnly: false,
+    setChatOnly: () => {},
     createNewConversation: () => {},
     changeConversation: () => {},
     changeThread: () => {},
@@ -102,6 +107,7 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
     });
     const [chatFilters, setChatFilters] = useState<MessageFilter[]>([]);
     const [frozenChatFilters, setFrozenChatFilters] = useState<MessageFilter[]>([]);
+    const [chatOnly, setChatOnly] = useState<boolean>(false);
 
     const setSessionLabel = (label: string) => {
         setSessionLabelState(label);
@@ -154,6 +160,7 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
         setSessionLabel("");
         setChatFilters([]);
         setFrozenChatFilters([]);
+        setChatOnly(false);
     };
 
     const changeConversation = (conversationId: string) => {
@@ -215,6 +222,7 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
             ...(!activeConversationId && sessionLabel ? { session_label: sessionLabel } : {}),
             ...(kbId ? { kb_id: kbId, ...(kbName ? { kb_name: kbName } : {}) } : {}),
             ...(!activeConversationId && chatFilters.length > 0 ? { filters: chatFilters } : {}),
+            ...(chatOnly ? { chat_only: true } : {}),
         };
 
         if (type === MessageTypes.REDO) {
@@ -357,6 +365,8 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
                 chatFilters,
                 setChatFilters,
                 frozenChatFilters,
+                chatOnly,
+                setChatOnly,
                 createNewConversation,
                 changeConversation,
                 changeThread,

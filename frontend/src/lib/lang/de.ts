@@ -19,6 +19,11 @@ export const app = {
         textPlaceholder: "exakter Wert",
         frozenHint: "Filter für diese Unterhaltung fixiert. Neuen Chat starten, um Filter zu ändern.",
     },
+    chatOnly: {
+        label: "Nur Chat",
+        tooltipOff: "Retrieval für die nächste Nachricht überspringen — Antwort aus Verlauf + Allgemeinwissen",
+        tooltipOn: "Nur Chat ist aktiv: Die nächste Nachricht überspringt das Retrieval",
+    },
     disclaimer: "{{name}} kann Fehler machen und relevante Quellen übersehen. Überprüfen Sie wichtige Informationen.",
     credits: "Lancy with 💙 by <1>SDSC</1><2/><3>Vonlanthen INSIGHT</3> & <4>Lancy</4>",
     welcome: "Was möchten Sie wissen?",
