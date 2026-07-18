@@ -7,6 +7,7 @@ Typical usage: initialise from a list of 'ChunkRecord' objects already stored in
 """
 
 import re
+from typing import Any
 
 from rank_bm25 import BM25Okapi  # type: ignore[import-untyped]
 
@@ -36,8 +37,13 @@ class BM25Retriever(Retriever[ChunkMatch]):
         """Lowercase word-boundary tokenisation."""
         return re.findall(r"\b\w+\b", text.lower())
 
-    async def retrieve(self, query: str) -> list[ChunkMatch]:
-        """Score the corpus against 'query' using BM25 and return the top 'top_k' matches."""
+    async def retrieve(self, query: str, filters: dict[str, Any] | None = None) -> list[ChunkMatch]:
+        """Score the corpus against 'query' using BM25 and return the top 'top_k' matches.
+
+        'filters' post-filters scored results by chunk metadata (equality match). The
+        BM25 index is built over the full corpus and cached; filtering happens after
+        scoring so the cache remains valid across queries with different filters.
+        """
         if self._bm25 is None:
             import asyncio
 
@@ -55,7 +61,13 @@ class BM25Retriever(Retriever[ChunkMatch]):
 
         query_terms = self._tokenize(query)
         scores: list[float] = self._bm25.get_scores(query_terms).tolist()
-        top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[: self.top_k]
+        ranked_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+        if filters:
+            def _matches(i: int) -> bool:
+                m = self.corpus[i].metadata or {}
+                return all(str(m.get(k, "")) == str(v) for k, v in filters.items())
+            ranked_indices = [i for i in ranked_indices if _matches(i)]
+        top_indices = ranked_indices[: self.top_k]
         return [
             ChunkMatch(
                 id=self.corpus[i].id,

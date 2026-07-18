@@ -7,6 +7,18 @@ import { useRole } from "@/hooks/useRole";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/** One admin-configured metadata key exposed as a chat pre-filter. */
+interface ChatFilterKey {
+    key: string;
+    widget: "dropdown" | "text";
+}
+
+/** Per-KB chat pre-filter configuration. */
+interface ChatFiltersConfig {
+    enabled: boolean;
+    keys: ChatFilterKey[];
+}
+
 /** KB-level config: embedding + file limits. Persisted per KB on the backend. */
 interface KBConfig {
     embedding_backend: "local" | "ollama" | "litellm" | "custom";
@@ -25,6 +37,7 @@ interface KBConfig {
     image_embedding_model: string;
     image_retrieval_enabled: boolean;
     image_captioning_enabled: boolean;
+    chat_filters: ChatFiltersConfig;
 }
 
 /** Session-level config: retrieval, LLM, prompt. No re-index needed. */
@@ -86,6 +99,15 @@ interface KBPreset {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+/** Facet cardinality threshold: below this we default to dropdown, above to text input. */
+const CHAT_FILTER_ENUM_THRESHOLD = 120;
+
+/** Metadata keys most commonly worth exposing as chat pre-filters. */
+const CHAT_FILTER_KEY_SUGGESTIONS = [
+    "document_class", "document_type", "author", "document_released_at",
+    "document_created_at", "external_url", "source_file",
+];
+
 const EMBEDDING_MODEL_CONTEXT: Record<string, number> = {
     "all-MiniLM-L6-v2": 256,
     "nomic-ai/nomic-embed-text-v1": 8192,
@@ -126,6 +148,7 @@ const DEFAULT_KB_CONFIG: KBConfig = {
     image_embedding_model: "Qwen/Qwen3-VL-Embedding-2B",
     image_retrieval_enabled: false,
     image_captioning_enabled: false,
+    chat_filters: { enabled: false, keys: [] },
 };
 
 const DEFAULT_SESSION: SessionConfig = {
@@ -194,17 +217,31 @@ const FieldRow: FunctionComponent<{ label: string; hint?: string; children: Reac
 );
 
 const NumberInput: FunctionComponent<{
-    value: number; min: number; max: number; step?: number; onChange: (v: number) => void; warn?: boolean;
-}> = ({ value, min, max, step = 1, onChange, warn }) => (
-    <div className="flex items-center gap-2">
-        <input
-            type="range" min={min} max={max} step={step} value={value}
-            onChange={(e) => onChange(Number(e.target.value))}
-            className={`w-24 disabled:opacity-50 disabled:cursor-default ${warn ? "accent-red-400" : "accent-blue-400"}`}
-        />
-        <span className={`text-xs font-mono w-10 text-right ${warn ? "text-red-400" : "text-blue-400"}`}>{value}</span>
-    </div>
-);
+    value: number; min: number; max: number; step?: number; onChange: (v: number) => void; warn?: boolean; editable?: boolean;
+}> = ({ value, min, max, step = 1, onChange, warn, editable }) => {
+    const clamp = (n: number) => Math.min(max, Math.max(min, n));
+    return (
+        <div className="flex items-center gap-2">
+            <input
+                type="range" min={min} max={max} step={step} value={value}
+                onChange={(e) => onChange(Number(e.target.value))}
+                className={`w-24 disabled:opacity-50 disabled:cursor-default ${warn ? "accent-red-400" : "accent-blue-400"}`}
+            />
+            {editable ? (
+                <input
+                    type="number" min={min} max={max} step={step} value={value}
+                    onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (!Number.isNaN(n)) onChange(clamp(n));
+                    }}
+                    className={`bg-muted border border-border text-xs font-mono w-20 text-right rounded px-1 py-0.5 focus:outline-none focus:border-blue-400 ${warn ? "text-red-400" : "text-blue-400"}`}
+                />
+            ) : (
+                <span className={`text-xs font-mono w-10 text-right ${warn ? "text-red-400" : "text-blue-400"}`}>{value}</span>
+            )}
+        </div>
+    );
+};
 
 const Toggle: FunctionComponent<{ checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }> = ({ checked, onChange, disabled }) => (
     <button
@@ -250,7 +287,15 @@ function findMatchingRetrievalPreset(session: SessionConfig, presets: RetrievalP
 
 function findMatchingKbPreset(cfg: KBConfig, presets: KBPreset[]): string {
     return presets.find((p) =>
-        (Object.keys(p.data) as (keyof KBConfig)[]).every((k) => p.data[k] === cfg[k])
+        (Object.keys(p.data) as (keyof KBConfig)[]).every((k) => {
+            const pv = p.data[k];
+            const cv = cfg[k];
+            // Nested objects (e.g. chat_filters) need a content compare, not a reference compare.
+            if (pv !== null && typeof pv === "object") {
+                return JSON.stringify(pv) === JSON.stringify(cv);
+            }
+            return pv === cv;
+        })
     )?.name ?? "";
 }
 
@@ -353,6 +398,7 @@ function kbInfoToConfig(kb: KBInfo): KBConfig {
         image_embedding_model: kb.image_embedding_model ?? "Qwen/Qwen3-VL-Embedding-2B",
         image_retrieval_enabled: kb.image_retrieval_enabled ?? false,
         image_captioning_enabled: kb.image_captioning_enabled ?? false,
+        chat_filters: kb.chat_filters ?? { enabled: false, keys: [] },
     };
 }
 
@@ -804,6 +850,73 @@ export const RagConfigPanel: FunctionComponent = () => {
         setSelectedKbPreset("");
     }, []);
 
+    // ── Chat filters (admin config) ──────────────────────────────────────────
+    const [newChatFilterKey, setNewChatFilterKey] = useState("");
+    const [chatFilterFetching, setChatFilterFetching] = useState(false);
+    const [chatFilterFeedback, setChatFilterFeedback] = useState<{ type: "info" | "error"; text: string } | null>(null);
+
+    const removeChatFilterKey = useCallback((index: number) => {
+        setKbConfig((c) => ({
+            ...c,
+            chat_filters: { ...c.chat_filters, keys: c.chat_filters.keys.filter((_, i) => i !== index) },
+        }));
+        setSelectedKbPreset("");
+    }, []);
+
+    const updateChatFilterWidget = useCallback((index: number, widget: "dropdown" | "text") => {
+        setKbConfig((c) => ({
+            ...c,
+            chat_filters: {
+                ...c.chat_filters,
+                keys: c.chat_filters.keys.map((k, i) => i === index ? { ...k, widget } : k),
+            },
+        }));
+        setSelectedKbPreset("");
+    }, []);
+
+    const handleAddChatFilterKey = useCallback(async () => {
+        const key = newChatFilterKey.trim();
+        if (!key || !activeKb) return;
+        if (kbConfig.chat_filters.keys.some((k) => k.key === key)) {
+            setChatFilterFeedback({ type: "error", text: t("rag.chatFiltersKeyDuplicate") });
+            return;
+        }
+        setChatFilterFetching(true);
+        setChatFilterFeedback(null);
+        try {
+            const url = `${API_BASE}/api/v1/rag/metadata-facets?key=${encodeURIComponent(key)}` +
+                `&kb_id=${encodeURIComponent(activeKb.id)}&threshold=${CHAT_FILTER_ENUM_THRESHOLD}`;
+            const r = await fetch(url, { credentials: "include" });
+            if (!r.ok) {
+                setChatFilterFeedback({ type: "error", text: t("rag.chatFiltersFacetError", { code: r.status }) });
+                return;
+            }
+            const data: { key: string; distinct_count: number; values: string[] | null; threshold: number } = await r.json();
+            if (data.distinct_count === 0) {
+                setChatFilterFeedback({ type: "error", text: t("rag.chatFiltersKeyNotFound") });
+                return;
+            }
+            const widget: "dropdown" | "text" = data.values ? "dropdown" : "text";
+            setKbConfig((c) => ({
+                ...c,
+                chat_filters: {
+                    ...c.chat_filters,
+                    keys: [...c.chat_filters.keys, { key, widget }],
+                },
+            }));
+            setSelectedKbPreset("");
+            setNewChatFilterKey("");
+            const label = widget === "dropdown"
+                ? t("rag.chatFiltersAddedDropdown", { count: data.distinct_count })
+                : t("rag.chatFiltersAddedText", { count: data.distinct_count, threshold: data.threshold });
+            setChatFilterFeedback({ type: "info", text: label });
+        } catch {
+            setChatFilterFeedback({ type: "error", text: t("rag.chatFiltersFetchFailed") });
+        } finally {
+            setChatFilterFetching(false);
+        }
+    }, [newChatFilterKey, activeKb, kbConfig.chat_filters.keys, t]);
+
     const updateEmbeddingBackend = useCallback((backend: KBConfig["embedding_backend"]) => {
         const firstModel = EMBEDDING_MODELS[backend]?.[0] ?? "";
         setKbConfig((c) => ({
@@ -977,7 +1090,8 @@ export const RagConfigPanel: FunctionComponent = () => {
         session.reranking_enabled !== savedSession.current.reranking_enabled ||
         session.reranking_candidate_pool !== savedSession.current.reranking_candidate_pool ||
         session.image_retriever_top_k !== savedSession.current.image_retriever_top_k ||
-        kbConfig.image_retrieval_enabled !== savedKbConfig.current.image_retrieval_enabled;
+        kbConfig.image_retrieval_enabled !== savedKbConfig.current.image_retrieval_enabled ||
+        JSON.stringify(kbConfig.chat_filters) !== JSON.stringify(savedKbConfig.current.chat_filters);
 
     const embeddingDirty =
         kbConfig.embedding_backend !== savedKbConfig.current.embedding_backend ||
@@ -1366,11 +1480,9 @@ export const RagConfigPanel: FunctionComponent = () => {
                                     className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full"
                                 />
                             </FieldRow>
-                            {session.llm_backend === "ollama" && (
-                                <FieldRow label={t("rag.fieldNumCtx")} hint={t("rag.fieldNumCtxHint")}>
-                                    <NumberInput value={session.num_ctx} min={512} max={131072} step={512} onChange={(v) => updateSession("num_ctx", v)} />
-                                </FieldRow>
-                            )}
+                            <FieldRow label={t("rag.fieldNumCtx")} hint={t("rag.fieldNumCtxHint")}>
+                                <NumberInput value={session.num_ctx} min={512} max={131072} step={512} onChange={(v) => updateSession("num_ctx", v)} editable />
+                            </FieldRow>
                             {session.llm_backend !== "ollama" && (
                                 <FieldRow label={t("rag.fieldMaxTokens")} hint={t("rag.fieldMaxTokensHint")}>
                                     <NumberInput value={session.llm_max_tokens} min={128} max={8192} step={128} onChange={(v) => updateSession("llm_max_tokens", v)} />
@@ -1572,6 +1684,80 @@ export const RagConfigPanel: FunctionComponent = () => {
                                 <FieldRow label={t("rag.fieldImageRetrieverTopK")} hint={t("rag.fieldImageRetrieverTopKHint")}>
                                     <NumberInput value={session.image_retriever_top_k} min={1} max={4} step={1} onChange={(v) => updateSession("image_retriever_top_k", v)} />
                                 </FieldRow>
+                            )}
+                            <FieldRow label={t("rag.fieldChatFilters")} hint={t("rag.fieldChatFiltersHint")}>
+                                <Toggle
+                                    checked={kbConfig.chat_filters.enabled}
+                                    onChange={(v) => updateKbConfig("chat_filters", { ...kbConfig.chat_filters, enabled: v })}
+                                    disabled={!isAdmin}
+                                />
+                            </FieldRow>
+                            {kbConfig.chat_filters.enabled && (
+                                <div className="py-2 space-y-1.5">
+                                    {kbConfig.chat_filters.keys.length === 0 && (
+                                        <div className="text-[10px] text-muted-foreground italic">
+                                            {t("rag.chatFiltersEmpty")}
+                                        </div>
+                                    )}
+                                    {kbConfig.chat_filters.keys.map((k, i) => (
+                                        <div key={`${k.key}-${i}`} className="flex items-center gap-1 text-xs">
+                                            <span className="flex-1 font-mono truncate text-foreground" title={k.key}>{k.key}</span>
+                                            <select
+                                                value={k.widget}
+                                                disabled={!isAdmin}
+                                                onChange={(e) => updateChatFilterWidget(i, e.target.value as "dropdown" | "text")}
+                                                className="bg-muted border border-border text-foreground text-[10px] rounded px-1 py-0.5 focus:outline-none focus:border-blue-400"
+                                            >
+                                                <option value="dropdown">{t("rag.chatFiltersWidgetDropdown")}</option>
+                                                <option value="text">{t("rag.chatFiltersWidgetText")}</option>
+                                            </select>
+                                            <button
+                                                onClick={() => removeChatFilterKey(i)}
+                                                disabled={!isAdmin}
+                                                title={t("rag.chatFiltersRemove")}
+                                                className="p-0.5 text-muted-foreground hover:text-red-400 disabled:opacity-40 disabled:cursor-default"
+                                            >
+                                                <X size={12} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    {isAdmin && (
+                                        <>
+                                            <div className="flex gap-1 pt-1">
+                                                <input
+                                                    list="chat-filter-key-suggestions"
+                                                    value={newChatFilterKey}
+                                                    onChange={(e) => setNewChatFilterKey(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === "Enter" && !chatFilterFetching && newChatFilterKey.trim()) {
+                                                            e.preventDefault();
+                                                            handleAddChatFilterKey();
+                                                        }
+                                                    }}
+                                                    placeholder={t("rag.chatFiltersKeyPlaceholder")}
+                                                    className="flex-1 min-w-0 bg-muted border border-border text-foreground text-xs rounded px-2 py-0.5 focus:outline-none focus:border-blue-400"
+                                                />
+                                                <datalist id="chat-filter-key-suggestions">
+                                                    {CHAT_FILTER_KEY_SUGGESTIONS
+                                                        .filter((k) => !kbConfig.chat_filters.keys.some((existing) => existing.key === k))
+                                                        .map((k) => <option key={k} value={k} />)}
+                                                </datalist>
+                                                <button
+                                                    onClick={handleAddChatFilterKey}
+                                                    disabled={!newChatFilterKey.trim() || chatFilterFetching}
+                                                    className="text-xs px-2 py-0.5 rounded font-medium bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 disabled:cursor-default flex items-center"
+                                                >
+                                                    {chatFilterFetching ? <Loader2 size={10} className="animate-spin" /> : t("rag.chatFiltersAdd")}
+                                                </button>
+                                            </div>
+                                            {chatFilterFeedback && (
+                                                <div className={`text-[10px] leading-relaxed ${chatFilterFeedback.type === "error" ? "text-red-400" : "text-muted-foreground"}`}>
+                                                    {chatFilterFeedback.text}
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
                             )}
                         </div>
                     )}

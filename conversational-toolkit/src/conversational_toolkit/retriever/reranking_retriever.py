@@ -38,9 +38,9 @@ class RerankingRetriever(Retriever[ChunkMatch]):
         self.last_rerank_stats: dict | None = None
         self._last_rerank_fallback: bool = False
 
-    async def retrieve(self, query: str) -> list[ChunkMatch]:
+    async def retrieve(self, query: str, filters: dict[str, Any] | None = None) -> list[ChunkMatch]:
         """Fetch candidates from the base retriever and rerank them with the LLM."""
-        candidates: list[ChunkRecord] = await self.retriever.retrieve(query)  # type: ignore[assignment]
+        candidates: list[ChunkRecord] = await self.retriever.retrieve(query, filters=filters)  # type: ignore[assignment]
         if not candidates:
             return []
 

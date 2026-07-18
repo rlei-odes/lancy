@@ -17,7 +17,7 @@ from conversational_toolkit.utils.retriever import (
     reciprocal_rank_fusion,
     hyde_expansion,
 )
-from conversational_toolkit.vectorstores.base import ChunkRecord
+from conversational_toolkit.vectorstores.base import ChunkRecord, VectorStore
 
 import logging
 
@@ -45,6 +45,9 @@ class RAG(Agent):
         description: str = "",
         number_query_expansion: int = 0,
         enable_hyde: bool = False,
+        chat_only_system_prompt: str = "",
+        expand_context_system_prompt: str = "",
+        vector_store: VectorStore | None = None,
     ):
         super().__init__(system_prompt, llm, description)
         self.description = description
@@ -53,6 +56,12 @@ class RAG(Agent):
         self.retrievers = retrievers
         self.number_query_expansion = number_query_expansion
         self.enable_hyde = enable_hyde
+        # Used only when QueryWithContext.chat_only=True. Empty falls back to the standard system_prompt.
+        self.chat_only_system_prompt = chat_only_system_prompt
+        # Used only when QueryWithContext.expand_context is set. Empty falls back to the standard system_prompt.
+        self.expand_context_system_prompt = expand_context_system_prompt
+        # Required for expand_context mode: fetches all chunks matching the picked source_files.
+        self.vector_store = vector_store
 
     async def answer_stream(  # noqa: PLR0912
         self,
@@ -61,6 +70,20 @@ class RAG(Agent):
     ) -> AsyncGenerator[AgentAnswer, None]:
         query = query_with_context.query
         history = query_with_context.history
+        filters = query_with_context.filters or None
+
+        # Chat-only mode: skip retrieval and every preprocessing step; answer from history + general knowledge.
+        if query_with_context.chat_only:
+            async for answer in self._answer_stream_chat_only(query, history):
+                yield answer
+            return
+
+        # Expand-context mode: skip retrieval and every preprocessing step; fetch all chunks for
+        # the user-picked source_files and pass them wholesale to the LLM.
+        if query_with_context.expand_context:
+            async for answer in self._answer_stream_expand_context(query, history, query_with_context.expand_context):
+                yield answer
+            return
 
         has_preprocessing = len(history) > 0 or self.number_query_expansion > 0 or self.enable_hyde
         if has_preprocessing and phase_callback:
@@ -86,7 +109,7 @@ class RAG(Agent):
                 retriever.phase_callback = phase_callback
 
         async def _retrieve_one(retriever) -> list[ChunkRecord]:
-            results = await asyncio.gather(*[retriever.retrieve(q) for q in queries])
+            results = await asyncio.gather(*[retriever.retrieve(q, filters=filters) for q in queries])
             return reciprocal_rank_fusion(list(results))[: retriever.top_k]
 
         all_results = await asyncio.gather(*[_retrieve_one(r) for r in self.retrievers])
@@ -171,3 +194,139 @@ class RAG(Agent):
                 )
                 if answer:
                     yield answer
+
+    async def _answer_stream_expand_context(
+        self,
+        query: str,
+        history: list[LLMMessage],
+        source_files: list[str],
+    ) -> AsyncGenerator[AgentAnswer, None]:
+        """Answer using ALL chunks of the picked source_files — no retrieval, no reranking.
+
+        Fetches every chunk whose `metadata.source_file` matches one of `source_files`, sorts
+        each document's chunks by their sequential id where present (falls back to insertion
+        order), then wraps them in the same <sources><source>…</source></sources> XML the
+        standard RAG path uses. Uses `expand_context_system_prompt` if provided, otherwise
+        falls back to the standard `system_prompt`.
+        """
+        if self.vector_store is None:
+            raise RuntimeError("expand_context requested but RAG agent has no vector_store configured")
+
+        chunks = await self.vector_store.get_chunks_by_filter(filters={"source_file": source_files})
+
+        # Group by source_file so the LLM sees each document's chunks contiguously.
+        # Within a document, keep the vector store's natural (insertion) order.
+        by_file: dict[str, list[ChunkRecord]] = {}
+        for c in chunks:
+            by_file.setdefault(c.metadata.get("source_file", ""), []).append(c)
+        sources: list[ChunkRecord] = [c for f in source_files for c in by_file.get(f, [])]
+
+        retrieval_stats = RetrievalStats(
+            candidates_retrieved=len(sources),
+            chunks_to_llm=len(sources),
+        )
+        logger.info(
+            f"Retrieval: expand-context mode — {len(sources)} chunk(s) across {len(source_files)} document(s) to LLM"
+        )
+
+        system_prompt = self.expand_context_system_prompt or self.system_prompt
+
+        context_message = LLMMessage(role=Roles.USER, content=[
+            MessageContent(type="text", text="<sources>"),
+        ])
+        for source in sources:
+            if "text" in source.mime_type:
+                context_message.content.append(
+                    MessageContent(
+                        type="text",
+                        text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}">{source.content}</source>',
+                    )
+                )
+            elif "image" in source.mime_type:
+                # Images normally live in a separate vector store, so this branch is unlikely,
+                # but if a picked source_file happens to be image-typed, emit it consistently.
+                context_message.content.append(
+                    MessageContent(type="text", text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}" type="image">')
+                )
+                context_message.content.append(
+                    MessageContent(type="image", image_url=source.content)
+                )
+                context_message.content.append(
+                    MessageContent(type="text", text="</source>")
+                )
+            else:
+                raise ValueError(f"Unsupported MIME type: {source.mime_type}")
+        context_message.content.append(MessageContent(type="text", text=f"</sources>\n<user_question>\n{query}\n</user_question>"))
+
+        response_stream = self.llm.generate_stream(
+            [
+                LLMMessage(role=Roles.SYSTEM, content=[MessageContent(type="text", text=system_prompt)]),
+                *history,
+                context_message,
+            ]
+        )
+
+        content = ""
+        async for response_chunk in response_stream:
+            if not response_chunk.content:
+                continue
+            for message_content in response_chunk.content:
+                if message_content.type == "text" and message_content.text:
+                    content += message_content.text
+                elif message_content.type == "image" and message_content.image_url:
+                    raise NotImplementedError("Image output from LLM is not supported in this version.")
+            answer = await self._answer_post_processing(
+                AgentAnswer(
+                    content=[MessageContent(type="text", text=content)],
+                    role=Roles.ASSISTANT,
+                    sources=sources,
+                    retrieval_stats=retrieval_stats,
+                )
+            )
+            if answer:
+                yield answer
+
+    async def _answer_stream_chat_only(
+        self,
+        query: str,
+        history: list[LLMMessage],
+    ) -> AsyncGenerator[AgentAnswer, None]:
+        """Answer using only conversation history + general knowledge — no retrieval.
+
+        Uses `chat_only_system_prompt` if provided, otherwise falls back to the standard
+        `system_prompt`. Sources on the yielded AgentAnswer are always empty.
+        """
+        system_prompt = self.chat_only_system_prompt or self.system_prompt
+        user_message = LLMMessage(
+            role=Roles.USER,
+            content=[MessageContent(type="text", text=query)],
+        )
+        response_stream = self.llm.generate_stream(
+            [
+                LLMMessage(role=Roles.SYSTEM, content=[MessageContent(type="text", text=system_prompt)]),
+                *history,
+                user_message,
+            ]
+        )
+        retrieval_stats = RetrievalStats(candidates_retrieved=0, chunks_to_llm=0)
+        logger.info("Retrieval: chat-only mode — LLM answers from history + general knowledge")
+
+        content = ""
+        async for response_chunk in response_stream:
+            if not response_chunk.content:
+                continue
+            for message_content in response_chunk.content:
+                if message_content.type == "text" and message_content.text:
+                    content += message_content.text
+                elif message_content.type == "image" and message_content.image_url:
+                    raise NotImplementedError("Image output from LLM is not supported in this version.")
+            answer = await self._answer_post_processing(
+                AgentAnswer(
+                    content=[MessageContent(type="text", text=content)],
+                    role=Roles.ASSISTANT,
+                    sources=[],
+                    retrieval_stats=retrieval_stats,
+                )
+            )
+            if answer:
+                yield answer

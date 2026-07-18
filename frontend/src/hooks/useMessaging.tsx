@@ -3,7 +3,7 @@ import { messageService as mockMessageService } from "@/services/mock-message";
 import { Message, messageService as realMessageService, MessageTypes, Reaction } from "@/services/message";
 import { useTranslation } from "react-i18next";
 import { conversationService as mockConversationService } from "@/services/mock-conversation";
-import { Conversation, conversationService as realConversationService } from "@/services/conversation";
+import { Conversation, conversationService as realConversationService, MessageFilter } from "@/services/conversation";
 import { useRouter } from "next/router";
 import { getLastChild, getMessageThread } from "@/lib/thread";
 
@@ -41,6 +41,19 @@ const MessagingContext = createContext<{
     loading: boolean;
     sessionLabel: string;
     setSessionLabel: (label: string) => void;
+    /** Filters the user is composing for the next new-conversation message. */
+    chatFilters: MessageFilter[];
+    setChatFilters: (filters: MessageFilter[]) => void;
+    /** Filters persisted on the currently loaded conversation — read-only for continuation messages. */
+    frozenChatFilters: MessageFilter[];
+    /** Per-message toggle: skip retrieval, answer from history + general knowledge. */
+    chatOnly: boolean;
+    setChatOnly: (v: boolean) => void;
+    /** Per-message list of source_files: use ALL their chunks instead of retrieval. Cleared after send. */
+    expandContextFiles: string[];
+    setExpandContextFiles: (files: string[]) => void;
+    /** Previous expand-context selection, kept so the popover can pre-check the last-used docs. */
+    lastExpandContextFiles: string[];
     createNewConversation: () => void;
     changeConversation: (conversationId: string) => void;
     changeThread: (messageId: string) => void;
@@ -60,6 +73,14 @@ const MessagingContext = createContext<{
     loading: false,
     sessionLabel: "",
     setSessionLabel: () => {},
+    chatFilters: [],
+    setChatFilters: () => {},
+    frozenChatFilters: [],
+    chatOnly: false,
+    setChatOnly: () => {},
+    expandContextFiles: [],
+    setExpandContextFiles: () => {},
+    lastExpandContextFiles: [],
     createNewConversation: () => {},
     changeConversation: () => {},
     changeThread: () => {},
@@ -92,6 +113,11 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
         }
         return "";
     });
+    const [chatFilters, setChatFilters] = useState<MessageFilter[]>([]);
+    const [frozenChatFilters, setFrozenChatFilters] = useState<MessageFilter[]>([]);
+    const [chatOnly, setChatOnly] = useState<boolean>(false);
+    const [expandContextFiles, setExpandContextFiles] = useState<string[]>([]);
+    const [lastExpandContextFiles, setLastExpandContextFiles] = useState<string[]>([]);
 
     const setSessionLabel = (label: string) => {
         setSessionLabelState(label);
@@ -142,6 +168,11 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
         setCursor("");
         setMessagesAndThread([], "");
         setSessionLabel("");
+        setChatFilters([]);
+        setFrozenChatFilters([]);
+        setChatOnly(false);
+        setExpandContextFiles([]);
+        setLastExpandContextFiles([]);
     };
 
     const changeConversation = (conversationId: string) => {
@@ -155,6 +186,11 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
                 setCursor(cur);
                 setMessagesAndThread(response, cur);
                 setConversationId(conversationId);
+                setChatFilters([]);
+                // Fetch the conversation record for its frozen filters snapshot.
+                conversationService.get(conversationId).then((conv) => {
+                    setFrozenChatFilters(conv?.rag_config_snapshot?.filters ?? []);
+                });
             }
         });
     };
@@ -197,12 +233,21 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
             ...(activeConversationId && parentId ? { parent_id: parentId } : {}),
             ...(!activeConversationId && sessionLabel ? { session_label: sessionLabel } : {}),
             ...(kbId ? { kb_id: kbId, ...(kbName ? { kb_name: kbName } : {}) } : {}),
+            ...(!activeConversationId && chatFilters.length > 0 ? { filters: chatFilters } : {}),
+            ...(chatOnly ? { chat_only: true } : {}),
+            ...(expandContextFiles.length > 0 ? { expand_context: expandContextFiles } : {}),
         };
 
         if (type === MessageTypes.REDO) {
             setThread((prev) => [...getMessageThread(prev, parentId), makeLoadingMessage(activeConversationId, "")]);
         } else {
             setThread((prev) => [...getMessageThread(prev, parentId), userMessage, makeLoadingMessage(activeConversationId, "")]);
+        }
+        // expand-context is one-shot: preserve the picked list for the next popover
+        // re-open, but clear the armed state so the next question uses normal retrieval.
+        if (expandContextFiles.length > 0) {
+            setLastExpandContextFiles(expandContextFiles);
+            setExpandContextFiles([]);
         }
         setSending(true);
         const abortController = new AbortController();
@@ -227,6 +272,11 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
                 if (!activeConversationId && streamedMessage.conversation_id && !loadedConversation) {
                     loadedConversation = streamedMessage.conversation_id;
                     _saveSessionLabelToHistory(sessionLabel);
+                    // Freeze the filters we just sent — they're now persisted on the conversation.
+                    if (chatFilters.length > 0) {
+                        setFrozenChatFilters(chatFilters);
+                        setChatFilters([]);
+                    }
                     setConversationId(streamedMessage.conversation_id);
                     // Add placeholder with user input as title (avoids race condition with done callback)
                     _updateConversation(streamedMessage.conversation_id, {
@@ -331,6 +381,14 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
                 loading: initialLoading,
                 sessionLabel,
                 setSessionLabel,
+                chatFilters,
+                setChatFilters,
+                frozenChatFilters,
+                chatOnly,
+                setChatOnly,
+                expandContextFiles,
+                setExpandContextFiles,
+                lastExpandContextFiles,
                 createNewConversation,
                 changeConversation,
                 changeThread,

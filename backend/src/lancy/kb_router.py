@@ -37,6 +37,20 @@ log = logging.getLogger("uvicorn")
 # ─── Data models ──────────────────────────────────────────────────────────────
 
 
+class ChatFilterKey(BaseModel):
+    """One admin-configured metadata key exposed as a chat pre-filter."""
+
+    key: str = Field(..., min_length=1, max_length=100)
+    widget: Literal["dropdown", "text"] = "dropdown"
+
+
+class ChatFiltersConfig(BaseModel):
+    """Per-KB chat pre-filter settings. Disabled by default on all KBs."""
+
+    enabled: bool = False
+    keys: list[ChatFilterKey] = Field(default_factory=list)
+
+
 class KBCreate(BaseModel):
     """Fields the caller provides when creating or updating a KB."""
 
@@ -58,6 +72,7 @@ class KBCreate(BaseModel):
     image_retrieval_enabled: bool = False
     image_embedding_model: str = Field("Qwen/Qwen3-VL-Embedding-2B", max_length=200)
     image_captioning_enabled: bool = False
+    chat_filters: ChatFiltersConfig = Field(default_factory=ChatFiltersConfig)
 
 
 class KBInfo(KBCreate):

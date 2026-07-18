@@ -89,12 +89,20 @@ class ChromaDBVectorStore(VectorStore):
 
     @staticmethod
     def _to_chroma_where(filters: dict[str, Any]) -> dict[str, Any]:
-        """Translate neutral {field: value} dict to ChromaDB $eq/$and filter format."""
+        """Translate neutral {field: value} dict to ChromaDB filter format.
+
+        Scalar value → {field: {"$eq": value}}; list value → {field: {"$in": value}}.
+        Multiple keys are combined with $and.
+        """
+        def _clause(k: str, v: Any) -> dict[str, Any]:
+            if isinstance(v, list):
+                return {k: {"$in": v}}
+            return {k: {"$eq": v}}
         items = list(filters.items())
         if len(items) == 1:
             k, v = items[0]
-            return {k: {"$eq": v}}
-        return {"$and": [{k: {"$eq": v}} for k, v in items]}
+            return _clause(k, v)
+        return {"$and": [_clause(k, v) for k, v in items]}
 
     async def get_chunks_by_filter(
         self,
@@ -151,6 +159,22 @@ class ChromaDBVectorStore(VectorStore):
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(None, lambda: self.collection.get(include=["metadatas"]))
         return sorted({m.get("source_file", "") for m in (result.get("metadatas") or []) if m and m.get("source_file")})
+
+    async def get_metadata_values(self, key: str) -> list[str]:
+        """Distinct values for a metadata key. ChromaDB has no native DISTINCT — scan all metadatas."""
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, lambda: self.collection.get(include=["metadatas"]))
+        values: set[str] = set()
+        for m in result.get("metadatas") or []:
+            if not m or key not in m:
+                continue
+            v = m[key]
+            if v is None or v == "":
+                continue
+            values.add(str(v))
+        return sorted(values)
 
     async def get_file_hashes(self) -> set[str]:
         """Return the set of file_hash values present in this collection's chunk metadata."""

@@ -54,6 +54,10 @@ export interface UserInput {
     type: MessageTypes;
     kb_id?: string;
     kb_name?: string;
+    session_label?: string;
+    filters?: { key: string; op: "eq"; value: string }[];
+    chat_only?: boolean;
+    expand_context?: string[];
 }
 
 export interface Reaction {

@@ -19,6 +19,9 @@ class QueryWithContext(BaseModel):
     query: str
     history: list[LLMMessage]
     conversation_id: str | None = None
+    filters: dict[str, Any] | None = None  # neutral {field: value} metadata pre-filter, threaded to retrievers
+    chat_only: bool = False  # if True, agent skips retrieval and answers from history + general knowledge only
+    expand_context: list[str] | None = None  # if set, replace retrieval with all chunks from these source_files
 
 
 class RetrievalStats(BaseModel):

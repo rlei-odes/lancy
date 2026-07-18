@@ -7,6 +7,7 @@ import { AlertTriangle, SendHorizonal, Square, Tag, X } from "lucide-react";
 import { cn } from "@/lib/lorem";
 import { useMessaging } from "@/hooks/useMessaging";
 import { MessageTypes } from "@/services/message";
+import { ChatActionBar } from "@/components/sections/chat-action-bar";
 
 const API_BASE = "";
 
@@ -98,6 +99,7 @@ export const SendBar: FunctionComponent = () => {
                             <Suggestions suggestions={suggestions} onClick={handleSendMessage} />
                         </div>
                     ) : null}
+                    <ChatActionBar />
                     <div className="relative flex items-center">
                         <NewMessageInput
                             className="pr-12 w-full text-base"
