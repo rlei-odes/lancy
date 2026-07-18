@@ -375,7 +375,13 @@ const ExpandContextAction: FunctionComponent<ExpandContextActionProps> = ({ last
             {open && (
                 <ExpandContextPopover
                     documents={documents}
-                    initial={selected.length > 0 ? selected : lastSelected.filter((f) => documents.includes(f))}
+                    initial={
+                        selected.length > 0
+                            ? selected
+                            : documents.length === 1
+                                ? documents
+                                : lastSelected.filter((f) => documents.includes(f))
+                    }
                     onApply={(next) => { onChange(next); setOpen(false); }}
                     onCancel={() => setOpen(false)}
                     onClear={() => { onChange([]); setOpen(false); }}
