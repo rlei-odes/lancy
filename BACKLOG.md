@@ -151,16 +151,15 @@ Definitely does not look nice now but is hard to design as just raw markdown is 
 
 ---
 
-### Chat Action Bar — More Toggles Above the Chat Input
+### Expand Context — Pin a Fixed KB Document
 
-The chat page has a thin action bar between the suggestion tiles and the chat input, introduced with the metadata pre-filter feature (v0.3.7). Designed as a modular row that hosts one component per action — adding a new action means dropping a sibling next to `FilterAction` in [chat-action-bar.tsx](frontend/src/components/sections/chat-action-bar.tsx), no cross-action coordination.
+The **Expand context** action (v0.3.8) currently only lets the user pick from documents that appeared in the last answer's retrieved sources. Extend it so an admin (or user) can also pin an arbitrary document from the active KB — regardless of whether it was retrieved — as a permanent context anchor for the conversation.
 
-Candidates:
+**Use case:** the admin knows there is a "master glossary" or "policy handbook" that should always be in context for every question in this KB, without relying on retrieval to surface it.
 
-- **Chat-only toggle** — skip the RAG step for the next query. Useful for meta-questions ("what did I ask last?"), greetings, or when the user wants a pure LLM response without vector-search noise. Persists per-conversation like filters.
-- **Expand context** — after an answer, let the user pick one or more cited documents and re-query with the LLM instructed to read/analyse those documents in full (not just the retrieved chunks). Needs a document-selection popover and a retrieval path that fetches all chunks for the picked `source_file`s.
+**Reuse:** the backend path already exists — `RAG._answer_stream_expand_context` accepts any list of `source_files`. What's missing is a UI to browse the full KB file list (endpoint `GET /api/v1/rag/store-info` already returns `file_list`) and a persistence layer so the pinned selection survives across messages (unlike the current one-shot pick, which resets after send). Likely lives in `rag_config_snapshot` on the conversation, or as a KB-level admin setting.
 
-Both integrate the same way filters do: state co-lives with `useMessaging`, threads into the request body, and (for per-conversation state) rides in `rag_config_snapshot`.
+**Open question:** interaction with the current per-answer pick — should pinned docs merge with the one-shot selection, or are they mutually exclusive?
 
 ---
 

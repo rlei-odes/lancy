@@ -89,12 +89,20 @@ class ChromaDBVectorStore(VectorStore):
 
     @staticmethod
     def _to_chroma_where(filters: dict[str, Any]) -> dict[str, Any]:
-        """Translate neutral {field: value} dict to ChromaDB $eq/$and filter format."""
+        """Translate neutral {field: value} dict to ChromaDB filter format.
+
+        Scalar value → {field: {"$eq": value}}; list value → {field: {"$in": value}}.
+        Multiple keys are combined with $and.
+        """
+        def _clause(k: str, v: Any) -> dict[str, Any]:
+            if isinstance(v, list):
+                return {k: {"$in": v}}
+            return {k: {"$eq": v}}
         items = list(filters.items())
         if len(items) == 1:
             k, v = items[0]
-            return {k: {"$eq": v}}
-        return {"$and": [{k: {"$eq": v}} for k, v in items]}
+            return _clause(k, v)
+        return {"$and": [_clause(k, v) for k, v in items]}
 
     async def get_chunks_by_filter(
         self,

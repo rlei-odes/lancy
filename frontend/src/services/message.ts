@@ -57,6 +57,7 @@ export interface UserInput {
     session_label?: string;
     filters?: { key: string; op: "eq"; value: string }[];
     chat_only?: boolean;
+    expand_context?: string[];
 }
 
 export interface Reaction {

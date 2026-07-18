@@ -65,8 +65,9 @@ class VectorStore(ABC):
         """Return chunks matching the given metadata filters (no embedding needed).
 
         filters is a flat {field: value} dict; all conditions are ANDed.
-        Implementations translate this neutral format to their native query syntax
-        (ChromaDB: $eq/$and; pgvector: SQL WHERE).
+        A scalar value matches with equality; a list value matches with IN
+        (any of the listed values). Implementations translate this neutral
+        format to their native query syntax (ChromaDB: $eq/$in/$and; pgvector: SQL WHERE).
 
         limit=None returns all matching chunks. offset is 0-based.
         """

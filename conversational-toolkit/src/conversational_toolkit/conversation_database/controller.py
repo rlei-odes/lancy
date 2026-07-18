@@ -49,6 +49,7 @@ class MessageInput(BaseModel):
     kb_name: str | None = None
     filters: list[MessageFilter] | None = None  # applied only on the first message of a conversation
     chat_only: bool = False  # per-message flag: skip retrieval, answer from history + general knowledge
+    expand_context: list[str] | None = None  # per-message list of source_files: use ALL their chunks instead of retrieval
 
 
 def _filters_to_dict(filters: list[MessageFilter] | list[dict] | None) -> dict[str, Any] | None:
@@ -240,6 +241,7 @@ class ConversationalToolkitController:
                     conversation_id=conversation.id,
                     filters=effective_filters,
                     chat_only=user_input.chat_only,
+                    expand_context=user_input.expand_context,
                 )
             )
 

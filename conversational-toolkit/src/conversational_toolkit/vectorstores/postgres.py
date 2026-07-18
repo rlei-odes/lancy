@@ -152,12 +152,21 @@ class PGVectorStore(VectorStore):
         limit: int | None = None,
         offset: int = 0,
     ) -> list[ChunkRecord]:
-        """Return chunks matching the given metadata filters."""
+        """Return chunks matching the given metadata filters.
+
+        Scalar values match with equality; list values match with IN.
+        """
         await self._ensure_initialized()
         async with self.SessionLocal() as session:
             query = select(self.table)
             if filters:
-                conditions = [self.table.c.chunk_metadata[key].astext == str(value) for key, value in filters.items()]
+                conditions = []
+                for key, value in filters.items():
+                    col = self.table.c.chunk_metadata[key].astext
+                    if isinstance(value, list):
+                        conditions.append(col.in_([str(v) for v in value]))
+                    else:
+                        conditions.append(col == str(value))
                 query = query.where(and_(*conditions))
             if offset:
                 query = query.offset(offset)

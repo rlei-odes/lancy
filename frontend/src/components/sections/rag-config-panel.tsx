@@ -217,17 +217,31 @@ const FieldRow: FunctionComponent<{ label: string; hint?: string; children: Reac
 );
 
 const NumberInput: FunctionComponent<{
-    value: number; min: number; max: number; step?: number; onChange: (v: number) => void; warn?: boolean;
-}> = ({ value, min, max, step = 1, onChange, warn }) => (
-    <div className="flex items-center gap-2">
-        <input
-            type="range" min={min} max={max} step={step} value={value}
-            onChange={(e) => onChange(Number(e.target.value))}
-            className={`w-24 disabled:opacity-50 disabled:cursor-default ${warn ? "accent-red-400" : "accent-blue-400"}`}
-        />
-        <span className={`text-xs font-mono w-10 text-right ${warn ? "text-red-400" : "text-blue-400"}`}>{value}</span>
-    </div>
-);
+    value: number; min: number; max: number; step?: number; onChange: (v: number) => void; warn?: boolean; editable?: boolean;
+}> = ({ value, min, max, step = 1, onChange, warn, editable }) => {
+    const clamp = (n: number) => Math.min(max, Math.max(min, n));
+    return (
+        <div className="flex items-center gap-2">
+            <input
+                type="range" min={min} max={max} step={step} value={value}
+                onChange={(e) => onChange(Number(e.target.value))}
+                className={`w-24 disabled:opacity-50 disabled:cursor-default ${warn ? "accent-red-400" : "accent-blue-400"}`}
+            />
+            {editable ? (
+                <input
+                    type="number" min={min} max={max} step={step} value={value}
+                    onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (!Number.isNaN(n)) onChange(clamp(n));
+                    }}
+                    className={`bg-muted border border-border text-xs font-mono w-20 text-right rounded px-1 py-0.5 focus:outline-none focus:border-blue-400 ${warn ? "text-red-400" : "text-blue-400"}`}
+                />
+            ) : (
+                <span className={`text-xs font-mono w-10 text-right ${warn ? "text-red-400" : "text-blue-400"}`}>{value}</span>
+            )}
+        </div>
+    );
+};
 
 const Toggle: FunctionComponent<{ checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }> = ({ checked, onChange, disabled }) => (
     <button
@@ -1466,11 +1480,9 @@ export const RagConfigPanel: FunctionComponent = () => {
                                     className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full"
                                 />
                             </FieldRow>
-                            {session.llm_backend === "ollama" && (
-                                <FieldRow label={t("rag.fieldNumCtx")} hint={t("rag.fieldNumCtxHint")}>
-                                    <NumberInput value={session.num_ctx} min={512} max={131072} step={512} onChange={(v) => updateSession("num_ctx", v)} />
-                                </FieldRow>
-                            )}
+                            <FieldRow label={t("rag.fieldNumCtx")} hint={t("rag.fieldNumCtxHint")}>
+                                <NumberInput value={session.num_ctx} min={512} max={131072} step={512} onChange={(v) => updateSession("num_ctx", v)} editable />
+                            </FieldRow>
                             {session.llm_backend !== "ollama" && (
                                 <FieldRow label={t("rag.fieldMaxTokens")} hint={t("rag.fieldMaxTokensHint")}>
                                     <NumberInput value={session.llm_max_tokens} min={128} max={8192} step={128} onChange={(v) => updateSession("llm_max_tokens", v)} />

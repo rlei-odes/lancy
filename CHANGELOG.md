@@ -35,6 +35,39 @@ New pill in the `ChatActionBar` (next to the filter action) lets the user skip t
 
 **Files:** `prompts/chat_only.default.md` (new), `.gitignore` (add `chat_only.custom.md`), `backend/src/lancy/main.py` (`_load_chat_only_prompt` + `CustomRAG` constructor arg), `conversational-toolkit/agents/rag.py` (`chat_only_system_prompt` param + `_answer_stream_chat_only` method), `conversational-toolkit/agents/base.py` (`QueryWithContext.chat_only`), `conversational-toolkit/conversation_database/controller.py` (`MessageInput.chat_only` + pass-through), `frontend/services/message.ts`, `frontend/hooks/useMessaging.tsx`, `frontend/components/sections/chat-action-bar.tsx`, `frontend/lib/lang/{en,de,fr,it}.ts`.
 
+### Added — "Expand context" action (answer from full documents, not top-k chunks)
+
+Third pill in the `ChatActionBar` lets the user pick one or more documents from the last answer's retrieved sources and re-ask their next question with the LLM instructed to read those documents **in full** — all chunks, not just the top-k retrieval subset. Useful for whole-document analysis ("summarise this manual", "what does this contract say about X in total?") where the top-k slice would miss context.
+
+**Behaviour:**
+
+- **Pool** = unique `source_file`s from the last assistant message's `sources` (includes chunks that were retrieved but not cited). Pill hides when there is no prior assistant answer.
+- **One-shot with re-arm memory** — armed selection clears after send, but the previous picks are remembered and pre-checked when the popover re-opens (as long as the same documents still appear in the current pool). New conversation resets everything.
+- **Supersedes chat filters and chat-only** — when armed, both other pills are hidden because the user has explicitly named the documents to use. Retrieval, reranking, query rewriting, HyDE, and query expansion are all skipped.
+- **Char-based budget check** — the popover shows chunk count and estimated tokens (`chars/3.5`) per document, an aggregate total, and a colored bar sized against `num_ctx × 0.6` (60% cap leaves headroom for prompt + output + tokenizer imprecision). Apply is disabled when over budget.
+
+**Backend:**
+
+- `MessageInput.expand_context: list[str] | None` and `QueryWithContext.expand_context` (per-message list of source_files, not persisted server-side).
+- `RAG._answer_stream_expand_context` — fetches all chunks matching the picked source_files via `VectorStore.get_chunks_by_filter({"source_file": [...]})`, groups them by source_file preserving insertion order, and wraps them in the same `<sources>` XML the standard path uses.
+- `VectorStore.get_chunks_by_filter` now accepts a **list value** on any filter field, translated to `$in` (ChromaDB) or SQL `IN` (pgvector). Scalar values still translate to `$eq`. Backward compatible.
+- `RAG.__init__` accepts `expand_context_system_prompt` and `vector_store` (required for expand-context; unused otherwise).
+- New prompt file `prompts/expand_context.default.md` — mirrors the `chat_only.*.md` pattern with a `expand_context.custom.md` override (gitignored). Loaded in `main.py::_load_expand_context_prompt()`.
+- New endpoint `POST /api/v1/rag/document-stats` — returns `{source_file, chunk_count, char_count}` for a batch of source_files. Powers the popover's per-doc stats and budget bar.
+
+**Config panel:**
+
+- `num_ctx` is now shown for **all** LLM backends, not just Ollama. Hint text updated to reflect that on custom/litellm it declares the model's context window and is used for feature budgets (like expand-context); on Ollama it also allocates KV-cache with the original VRAM caveats.
+- `NumberInput` gains an optional side-by-side editable number input (`editable` prop) so wide numeric ranges like `num_ctx` can be set precisely without fighting the 256-step slider.
+
+**Frontend:**
+
+- `ExpandContextAction` + `ExpandContextPopover` components in `chat-action-bar.tsx`. Emerald-tinted when active to distinguish from the blue filter chips and amber chat-only pill.
+- `useMessaging` gains `expandContextFiles` (armed for next send, cleared after) and `lastExpandContextFiles` (persistent within the conversation for re-arm). Both reset on `createNewConversation`.
+- i18n added in `en`, `de`, `fr`, `it` under `expandContext.*`; existing `fieldNumCtxHint` rewritten to be backend-agnostic across all four locales.
+
+**Files:** `prompts/expand_context.default.md` (new), `.gitignore` (add `expand_context.custom.md`), `backend/src/lancy/main.py` (`_load_expand_context_prompt` + CustomRAG args), `backend/src/lancy/rag_router.py` (`/document-stats` endpoint + models), `conversational-toolkit/agents/rag.py` (`_answer_stream_expand_context` + constructor args), `conversational-toolkit/agents/base.py` (`QueryWithContext.expand_context`), `conversational-toolkit/conversation_database/controller.py` (`MessageInput.expand_context` + pass-through), `conversational-toolkit/vectorstores/{base,chromadb,postgres}.py` ($in support), `frontend/services/message.ts`, `frontend/hooks/useMessaging.tsx`, `frontend/components/sections/chat-action-bar.tsx`, `frontend/components/sections/rag-config-panel.tsx` (`NumberInput.editable` + unconditional `num_ctx`), `frontend/lib/lang/{en,de,fr,it}.ts`.
+
 ---
 
 ## [Lancy v0.3.7] — 2026-07-12 · rlei-odes

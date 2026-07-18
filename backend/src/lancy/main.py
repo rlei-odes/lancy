@@ -172,6 +172,18 @@ def _load_chat_only_prompt() -> str:
     return ""
 
 
+def _load_expand_context_prompt() -> str:
+    """Load the expand-context system prompt (used when a message has expand_context set).
+    Custom overrides default; both live in prompts/. Empty means fall back to the standard system prompt."""
+    for name in ("expand_context.custom.md", "expand_context.default.md"):
+        p = _PROMPTS_DIR / name
+        if p.exists():
+            content = p.read_text().strip()
+            if content:
+                return content
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # JSON schema for structured LLM output
 # ---------------------------------------------------------------------------
@@ -443,6 +455,8 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
         utility_llm=DebugLLM(utility_llm),
         system_prompt=base_prompt,
         chat_only_system_prompt=_load_chat_only_prompt(),
+        expand_context_system_prompt=_load_expand_context_prompt(),
+        vector_store=vs,
         retrievers=all_retrievers,
         number_query_expansion=cfg.query_expansion,
         enable_hyde=cfg.hyde_enabled,

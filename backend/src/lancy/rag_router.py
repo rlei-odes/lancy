@@ -189,6 +189,23 @@ class MetadataFacetsResponse(BaseModel):
     values: list[str] | None  # None when distinct_count exceeds threshold
 
 
+# ─── Document stats (expand-context budget estimation) ────────────────────────
+
+
+class DocumentStatsRequest(BaseModel):
+    source_files: list[str] = Field(..., min_length=1, max_length=100)
+
+
+class DocumentStat(BaseModel):
+    source_file: str
+    chunk_count: int
+    char_count: int
+
+
+class DocumentStatsResponse(BaseModel):
+    stats: list[DocumentStat]
+
+
 # ─── Router factory ───────────────────────────────────────────────────────────
 
 
@@ -475,6 +492,36 @@ def create_rag_router(
             )
         except Exception as exc:
             log.warning(f"browse-chunks error: {exc}")
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @router.post("/document-stats", response_model=DocumentStatsResponse)
+    async def document_stats(req: DocumentStatsRequest) -> DocumentStatsResponse:
+        """Return chunk_count + char_count per requested source_file.
+
+        Used by the expand-context popover to estimate LLM context budget usage
+        before the user commits. Character count is used as a cheap, model-
+        agnostic proxy for tokens (see the popover's ~/3.5 approximation).
+        """
+        try:
+            vs = vector_store_factory()
+            if vs is None:
+                raise HTTPException(status_code=404, detail="No active KB.")
+            chunks = await vs.get_chunks_by_filter(filters={"source_file": req.source_files})
+            by_file: dict[str, tuple[int, int]] = {}
+            for c in chunks:
+                sf = c.metadata.get("source_file", "")
+                cur = by_file.get(sf, (0, 0))
+                by_file[sf] = (cur[0] + 1, cur[1] + len(c.content or ""))
+            return DocumentStatsResponse(
+                stats=[
+                    DocumentStat(source_file=sf, chunk_count=by_file.get(sf, (0, 0))[0], char_count=by_file.get(sf, (0, 0))[1])
+                    for sf in req.source_files
+                ]
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            log.warning(f"document-stats error: {exc}")
             raise HTTPException(status_code=500, detail=str(exc))
 
     return router

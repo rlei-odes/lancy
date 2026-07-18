@@ -51,6 +51,7 @@ frontend/auth_config.json
 prompts/system_prompt.custom.md
 prompts/image_captioning_prompt.custom.md
 prompts/chat_only.custom.md
+prompts/expand_context.custom.md
 
 # Customer data
 data */
