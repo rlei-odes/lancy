@@ -74,6 +74,21 @@ class PGVectorStore(VectorStore):
             result = await session.execute(select(func.count()).select_from(self.table))
             return result.scalar() or 0
 
+    @staticmethod
+    def _strip_nul(v: Any) -> Any:
+        """Recursively remove NUL bytes from strings — Postgres text/jsonb reject \\u0000.
+
+        Docling occasionally emits NULs in PDF chapter titles from unmappable glyphs;
+        those end up in metadata (e.g. `chapters`) and crash the JSONB insert.
+        """
+        if isinstance(v, str):
+            return v.replace("\x00", "")
+        if isinstance(v, list):
+            return [PGVectorStore._strip_nul(x) for x in v]
+        if isinstance(v, dict):
+            return {k: PGVectorStore._strip_nul(x) for k, x in v.items()}
+        return v
+
     async def insert_chunks(self, chunks: list[Chunk], embedding: NDArray[np.float64]) -> None:
         await self._ensure_initialized()
         data_to_insert = [
@@ -83,7 +98,7 @@ class PGVectorStore(VectorStore):
                 "content": chunk.content.replace("\x00", ""),
                 "embedding": emb,
                 "mime_type": chunk.mime_type,
-                "chunk_metadata": chunk.metadata,
+                "chunk_metadata": self._strip_nul(chunk.metadata),
             }
             for chunk, emb in zip(chunks, embedding)
         ]
