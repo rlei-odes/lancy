@@ -220,6 +220,18 @@ const NumberInput: FunctionComponent<{
     value: number; min: number; max: number; step?: number; onChange: (v: number) => void; warn?: boolean; editable?: boolean;
 }> = ({ value, min, max, step = 1, onChange, warn, editable }) => {
     const clamp = (n: number) => Math.min(max, Math.max(min, n));
+    if (editable) {
+        return (
+            <input
+                type="number" min={min} max={max} step={step} value={value}
+                onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (!Number.isNaN(n)) onChange(clamp(n));
+                }}
+                className={`bg-muted border border-border text-xs font-mono w-24 text-right rounded px-1 py-0.5 focus:outline-none focus:border-blue-400 ${warn ? "text-red-400" : "text-blue-400"}`}
+            />
+        );
+    }
     return (
         <div className="flex items-center gap-2">
             <input
@@ -227,18 +239,7 @@ const NumberInput: FunctionComponent<{
                 onChange={(e) => onChange(Number(e.target.value))}
                 className={`w-24 disabled:opacity-50 disabled:cursor-default ${warn ? "accent-red-400" : "accent-blue-400"}`}
             />
-            {editable ? (
-                <input
-                    type="number" min={min} max={max} step={step} value={value}
-                    onChange={(e) => {
-                        const n = Number(e.target.value);
-                        if (!Number.isNaN(n)) onChange(clamp(n));
-                    }}
-                    className={`bg-muted border border-border text-xs font-mono w-20 text-right rounded px-1 py-0.5 focus:outline-none focus:border-blue-400 ${warn ? "text-red-400" : "text-blue-400"}`}
-                />
-            ) : (
-                <span className={`text-xs font-mono w-10 text-right ${warn ? "text-red-400" : "text-blue-400"}`}>{value}</span>
-            )}
+            <span className={`text-xs font-mono w-10 text-right ${warn ? "text-red-400" : "text-blue-400"}`}>{value}</span>
         </div>
     );
 };
