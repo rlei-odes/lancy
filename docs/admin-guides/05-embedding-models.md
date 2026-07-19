@@ -1,10 +1,10 @@
 # Embedding Models
 
-Lancy ships four local embedding models, ordered by memory footprint. Picking the right one affects retrieval quality, indexing speed, and hardware requirements.
+Lancy ships four built-in local embedding models, ordered by memory footprint. Picking the right one affects retrieval quality, indexing speed, and hardware requirements. Additional models can be run via other backends — see [Running Qwen3-Embedding-8B via Ollama](#running-qwen3-embedding-8b-via-ollama) for one such setup.
 
 ---
 
-## Models
+## Built-in models
 
 | Model | Tier | Dims | Context | Params | ~VRAM |
 |---|---|---|---|---|---|
@@ -72,6 +72,51 @@ The four models above all use the `local` backend. Lancy also supports:
 Switching backends unlocks different model families (e.g., Voyage AI `voyage-3-large` with 32k context via `litellm`), but for a fully offline deployment the `local` backend covers all four tiers.
 
 Image embedding uses a separate dedicated model (`Qwen3-VL-Embedding-2B` by default) and is configured independently from the text embedding backend.
+
+---
+
+## Running Qwen3-Embedding-8B via Ollama
+
+`Qwen3-Embedding-8B` topped the MTEB multilingual leaderboard on release (70.58, June 2025). It is not shipped as a `local` option because Lancy's `local` backend runs SentenceTransformer (fp16 → ~16 GB VRAM for 8B). The quantized GGUF variant is served via **Ollama** in ~5–6 GB VRAM at Q4_K_M with minimal quality loss.
+
+| Property | Value |
+|---|---|
+| Dims | 4096 (Matryoshka-truncatable to 32–4096) |
+| Context | 32,768 tokens |
+| Languages | 100+ |
+| Backend | `ollama` |
+| Model string | `hf.co/Qwen/Qwen3-Embedding-8B-GGUF:Q4_K_M` |
+| VRAM (Q4_K_M) | ~5–6 GB |
+
+### Setup
+
+1. On the machine running Ollama:
+   ```
+   ollama pull hf.co/Qwen/Qwen3-Embedding-8B-GGUF:Q4_K_M
+   ```
+   Pulls the official Qwen GGUF from HuggingFace via Ollama's HF passthrough (~4.7 GB download).
+
+2. In Lancy, for a **new KB**:
+   - Embedding backend: `ollama`
+   - Ollama host: `localhost:11434` (or the remote host serving Ollama)
+   - Embedding model: pick `hf.co/Qwen/Qwen3-Embedding-8B-GGUF:Q4_K_M` from the dropdown (it appears automatically once pulled)
+   - Task prefix toggle: auto-enables when the Qwen model is selected
+
+
+### Task prefix (asymmetric)
+
+Qwen3-Embedding uses an instruction template on **queries only** — documents are embedded as plain text. Lancy applies this automatically when the task-prefix toggle is on.
+
+### Trade-offs vs BGE-M3
+
+| | BGE-M3 (local) | Qwen3-Embedding-8B (Ollama) |
+|---|---|---|
+| MTEB multilingual | ~68 | ~70.6 |
+| VRAM | ~2.3 GB | ~5–6 GB |
+| Dims | 1024 | 4096 (larger index, higher query cost) |
+| Latency | in-process, fast | HTTP round-trip to Ollama |
+| Offline | yes (fully) | yes (Ollama is offline after pull) |
+
 
 ---
 

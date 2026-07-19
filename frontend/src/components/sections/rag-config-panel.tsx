@@ -61,6 +61,8 @@ interface SessionConfig {
     image_retriever_top_k: number;
     custom_base_url: string;
     custom_api_key: string;
+    utility_custom_base_url: string;
+    utility_custom_api_key: string;
 }
 
 interface KBInfo extends KBConfig {
@@ -171,6 +173,8 @@ const DEFAULT_SESSION: SessionConfig = {
     image_retriever_top_k: 1,
     custom_base_url: "",
     custom_api_key: "",
+    utility_custom_base_url: "",
+    utility_custom_api_key: "",
 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -256,7 +260,9 @@ const Toggle: FunctionComponent<{ checked: boolean; onChange: (v: boolean) => vo
 
 const supportsTaskPrefix = (model: string): boolean => {
     const m = model.toLowerCase();
-    return m.includes("nomic") || m.includes("e5");
+    return m.includes("nomic")
+        || m.includes("e5")
+        || (m.includes("qwen") && m.includes("embedding") && !m.includes("vl"));
 };
 
 const SelectInput: FunctionComponent<{
@@ -549,6 +555,8 @@ export const RagConfigPanel: FunctionComponent = () => {
                     llm_backend: backend,
                     custom_base_url: raw.custom_base_url ?? "",
                     custom_api_key: raw.custom_api_key ?? "",
+                    utility_custom_base_url: raw.utility_custom_base_url ?? "",
+                    utility_custom_api_key: raw.utility_custom_api_key ?? "",
                 };
                 setSession(loaded);
                 savedSession.current = loaded;
@@ -1080,7 +1088,9 @@ export const RagConfigPanel: FunctionComponent = () => {
         session.num_ctx !== savedSession.current.num_ctx ||
         session.llm_max_tokens !== savedSession.current.llm_max_tokens ||
         session.custom_base_url !== savedSession.current.custom_base_url ||
-        session.custom_api_key !== savedSession.current.custom_api_key;
+        session.custom_api_key !== savedSession.current.custom_api_key ||
+        session.utility_custom_base_url !== savedSession.current.utility_custom_base_url ||
+        session.utility_custom_api_key !== savedSession.current.utility_custom_api_key;
 
     const retrievalDirty =
         session.retriever_top_k !== savedSession.current.retriever_top_k ||
@@ -1471,6 +1481,14 @@ export const RagConfigPanel: FunctionComponent = () => {
                             <FieldRow label={t("rag.fieldTemperature")} hint={t("rag.fieldTemperatureHint")}>
                                 <NumberInput value={session.llm_temperature} min={0} max={1} step={0.05} onChange={(v) => updateSession("llm_temperature", v)} />
                             </FieldRow>
+                            <FieldRow label={t("rag.fieldNumCtx")} hint={t("rag.fieldNumCtxHint")}>
+                                <NumberInput value={session.num_ctx} min={512} max={131072} step={512} onChange={(v) => updateSession("num_ctx", v)} editable />
+                            </FieldRow>
+                            {session.llm_backend !== "ollama" && (
+                                <FieldRow label={t("rag.fieldMaxTokens")} hint={t("rag.fieldMaxTokensHint")}>
+                                    <NumberInput value={session.llm_max_tokens} min={128} max={8192} step={128} onChange={(v) => updateSession("llm_max_tokens", v)} />
+                                </FieldRow>
+                            )}
                             <FieldRow label={t("rag.fieldUtilityModel")} hint={t("rag.fieldUtilityModelHint")}>
                                 <input
                                     type="text"
@@ -1481,13 +1499,33 @@ export const RagConfigPanel: FunctionComponent = () => {
                                     className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full"
                                 />
                             </FieldRow>
-                            <FieldRow label={t("rag.fieldNumCtx")} hint={t("rag.fieldNumCtxHint")}>
-                                <NumberInput value={session.num_ctx} min={512} max={131072} step={512} onChange={(v) => updateSession("num_ctx", v)} editable />
-                            </FieldRow>
-                            {session.llm_backend !== "ollama" && (
-                                <FieldRow label={t("rag.fieldMaxTokens")} hint={t("rag.fieldMaxTokensHint")}>
-                                    <NumberInput value={session.llm_max_tokens} min={128} max={8192} step={128} onChange={(v) => updateSession("llm_max_tokens", v)} />
-                                </FieldRow>
+                            {session.llm_backend === "custom" && (
+                                <>
+                                    <FieldRow label={t("rag.fieldUtilityCustomUrl")} hint={t("rag.fieldUtilityCustomUrlHint")}>
+                                        <input
+                                            type="text"
+                                            value={session.utility_custom_base_url}
+                                            onChange={(e) => updateSession("utility_custom_base_url", e.target.value)}
+                                            placeholder={t("rag.fieldUtilityCustomUrlPlaceholder")}
+                                            maxLength={500}
+                                            className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full"
+                                        />
+                                    </FieldRow>
+                                    <FieldRow label="Utility API Key">
+                                        {isAdmin ? (
+                                            <input
+                                                type="password"
+                                                value={session.utility_custom_api_key}
+                                                onChange={(e) => updateSession("utility_custom_api_key", e.target.value)}
+                                                placeholder={t("rag.fieldUtilityCustomKeyPlaceholder")}
+                                                maxLength={500}
+                                                className="bg-muted border border-border text-foreground text-[10px] [font-family:inherit] rounded px-2 py-1 focus:outline-none focus:border-blue-400 w-full"
+                                            />
+                                        ) : (
+                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-background border border-border text-[10px] text-muted-foreground font-mono">••••••••</span>
+                                        )}
+                                    </FieldRow>
+                                </>
                             )}
                         </div>
                         </fieldset>

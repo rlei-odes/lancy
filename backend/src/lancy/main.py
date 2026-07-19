@@ -404,6 +404,16 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
     _utility_model_cfg = cfg.utility_llm_model.strip()
     _has_separate = _utility_model_cfg and _utility_model_cfg != (cfg.llm_model or "").strip()
     _utility_model_name = _utility_model_cfg if _has_separate else (cfg.llm_model or None)
+    # For custom backend: allow utility LLM to hit a different endpoint (e.g., two vLLM
+    # processes on different ports). Empty utility_custom_* falls back to main custom_*.
+    _util_base_url = (
+        getattr(cfg, "utility_custom_base_url", "").strip()
+        or getattr(cfg, "custom_base_url", "")
+    )
+    _util_api_key = (
+        getattr(cfg, "utility_custom_api_key", "").strip()
+        or getattr(cfg, "custom_api_key", "")
+    )
     try:
         utility_llm = build_llm(
             backend=cfg.llm_backend,
@@ -412,8 +422,8 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
             ollama_host=ollama_host,
             num_ctx=cfg.num_ctx,
             max_tokens=512 if cfg.llm_backend != "ollama" else None,
-            custom_base_url=getattr(cfg, "custom_base_url", ""),
-            custom_api_key=getattr(cfg, "custom_api_key", ""),
+            custom_base_url=_util_base_url,
+            custom_api_key=_util_api_key,
         )
         if _has_separate:
             log.info(f"Utility LLM: {cfg.llm_backend}/{_utility_model_name}")

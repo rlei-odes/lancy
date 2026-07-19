@@ -127,12 +127,19 @@ def _task_prefixes(model_name: str) -> tuple[str, str] | None:
 
     - nomic-embed-text: "search_document: " / "search_query: "
     - intfloat E5 family: "passage: " / "query: "
+    - Qwen3-Embedding: no doc prefix / "Instruct: {task}\\nQuery:" (asymmetric)
     """
     name = model_name.lower()
     if "nomic" in name:
         return ("search_document: ", "search_query: ")
     if "e5" in name:
         return ("passage: ", "query: ")
+    if "qwen" in name and "embedding" in name and "vl" not in name:
+        instruction = (
+            "Given a question, retrieve relevant passages from technical "
+            "and compliance documents that answer it"
+        )
+        return ("", f"Instruct: {instruction}\nQuery:")
     return None
 
 

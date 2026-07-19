@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.3.9] — 2026-07-19 · rlei-odes
+
+### Added — Qwen3-Embedding task prefix (ollama backend)
+
+Asymmetric instruction prefix for Qwen3-Embedding models — auto-enabled when a `qwen*embedding` model is selected. Recommended: `hf.co/Qwen/Qwen3-Embedding-8B-GGUF:Q4_K_M` (~5–6 GB VRAM, MTEB-leading multilingual retrieval). Admin guide `05-embedding-models.md` updated with setup steps and BGE-M3 trade-off comparison.
+
+### Added — Separate utility LLM endpoint (custom backend)
+
+New optional `Utility Base URL` / `Utility API Key` fields in the RAG panel let the utility LLM (query expansion, HyDE, LLM-reranking) hit a different endpoint than the main LLM — e.g. two vLLM processes on different ports. Empty falls back to the main URL/key, so existing configs are unaffected.
+
+---
+
 ## [Lancy v0.3.8] — 2026-07-18 · rlei-odes
 
 ### Added — "Chat only" toggle (skip retrieval for the next message)

@@ -69,6 +69,12 @@ class RagConfig(BaseModel):
         "", max_length=500
     )  # custom: OpenAI-compat base URL, e.g. https://api.anthropic.com/v1
     custom_api_key: str = Field("", max_length=500)  # custom: API key for custom endpoint
+    utility_custom_base_url: str = Field(
+        "", max_length=500
+    )  # custom: base URL for utility LLM; empty = same as custom_base_url
+    utility_custom_api_key: str = Field(
+        "", max_length=500
+    )  # custom: API key for utility endpoint; empty = same as custom_api_key
 
     # Image retrieval (session-level; requires image_retrieval_enabled on active KB)
     image_retriever_top_k: int = Field(1, ge=1, le=4)
