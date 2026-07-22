@@ -42,7 +42,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!appSecret) return res.status(500).json({ error: "APP_PASSWORD or APP_PASSWORD_HASH not configured" });
     const signingKey = process.env.SESSION_SECRET || appSecret;
 
-    const secure = process.env.NODE_ENV === "production" ? ["Secure"] : [];
+    // "Secure" must reflect whether this request actually arrived over HTTPS, not whether
+    // this is a production build — a production `next start` is very often served plain
+    // HTTP on an internal network (no public exposure), and a Secure cookie there would be
+    // silently dropped by the browser, breaking login with no visible error.
+    const secure = req.headers["x-forwarded-proto"] === "https" ? ["Secure"] : [];
 
     // ── Mode 3 LDAP ──────────────────────────────────────────────────────────
     const sso = getSSOConfig();

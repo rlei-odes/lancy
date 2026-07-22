@@ -102,7 +102,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const authToken = await signToken("user", signingKey, ttl);
 
-    const secure = process.env.NODE_ENV === "production" ? ["Secure"] : [];
+    // See login.ts — Secure must reflect actual TLS termination (via reverse proxy),
+    // not build mode, or plain-HTTP internal deployments silently drop the cookie.
+    const secure = req.headers["x-forwarded-proto"] === "https" ? ["Secure"] : [];
     const cookies = [
         [`rag_auth=${authToken}`, "Path=/", `Max-Age=${ttl}`, "HttpOnly", "SameSite=Lax", ...secure].join("; "),
         [`session_id=${sessionId}`, "Path=/", `Max-Age=${SESSION_MAX_AGE}`, "HttpOnly", "SameSite=Lax", ...secure].join("; "),
