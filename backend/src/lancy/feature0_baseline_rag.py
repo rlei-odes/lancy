@@ -85,6 +85,9 @@ EMBEDDING_DIMS: dict[str, int] = {
     "text-embedding-ada-002": 1536,
     "text-embedding-3-large": 3072,
     "voyage/voyage-3": 1024,
+    "hf.co/Qwen/Qwen3-Embedding-8B-GGUF:Q4_K_M": 4096,
+    "hf.co/Qwen/Qwen3-Embedding-4B-GGUF:Q4_K_M": 2560,
+    "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF:Q4_K_M": 1024,
 }
 _DEFAULT_EMBEDDING_DIM = 768
 
