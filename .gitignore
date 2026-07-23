@@ -73,3 +73,6 @@ frontend/tsconfig.tsbuildinfo
 
 # Systemd service files (contain local paths / secrets)
 *.service
+
+# Caddy TLS setup (contains private key material, host-specific)
+caddy/

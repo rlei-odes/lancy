@@ -220,6 +220,17 @@ Three dedicated tiers. Suitable for teams, higher load, or managed infrastructur
 | KB definitions | `vs_connection_string=postgresql://...` (if using pgvector; set in RAG Parameters panel) |
 | Reverse proxy | TLS termination, proxy to frontend port 3000 |
 
+**TLS termination is easy with Caddy.** No Docker required — install it natively, point `reverse_proxy` at `localhost:3000`, and give it a cert (either automatic via ACME/Let's Encrypt for a public hostname, or one issued by an internal CA for an internal-only hostname). A minimal internal-CA Caddyfile:
+
+```
+lancy.internal.example.com {
+    tls /path/to/cert.pem /path/to/key.pem
+    reverse_proxy localhost:3000
+}
+```
+
+No further configuration needed on the lancy side — the frontend already sets the session cookie's `Secure` flag based on the `X-Forwarded-Proto` header, which Caddy sends automatically once it terminates TLS, and chat responses stream over plain chunked HTTP (no WebSocket upgrade), so a standard `reverse_proxy` directive handles it with no extra flags.
+
 ---
 
 ## First Run — Create a Knowledge Base
