@@ -46,6 +46,18 @@ The KB create form does not check for name collisions. Submitting a name that al
 
 **Fix:** validate uniqueness on the frontend (compare against `kbRegistry.bases` keys / names) before submitting, and have the backend return a 409 on collision instead of disambiguating silently.
 
+### pgvector Incompatible with High-Dimension Embedding Models (Qwen3-Embedding-8B/4B)
+
+pgvector's HNSW index has a hard cap of 2000 dimensions — a Postgres/pgvector limitation, not something Lancy's code controls. Qwen3-Embedding-8B (4096 dims) and -4B (2560 dims) both exceed it. `create_table()` in `conversational_toolkit/vectorstores/postgres.py` unconditionally creates an HNSW index, so ingestion fails at `CREATE INDEX ... USING hnsw` with `asyncpg.exceptions.ProgramLimitExceededError` for any pgvector KB using either model — even though `05-embedding-models.md` documents Qwen3-Embedding-8B as a supported/recommended option. Only the 0.6B variant (1024 dims) currently works with pgvector's HNSW index; ChromaDB is unaffected (no such dimension cap).
+
+Discovered while deploying with pgvector + Qwen3-Embedding-8B via Ollama: got past an earlier gap (8B/4B/0.6B were missing from the `EMBEDDING_DIMS` lookup in `feature0_baseline_rag.py`, now fixed) only to hit this structural limit next. Worked around for now by switching that deployment to the `local` backend with `BAAI/bge-m3` (1024 dims).
+
+**Fix candidates (undecided — pick one before re-enabling 8B/4B + pgvector):**
+1. Matryoshka truncation — slice + renormalize the returned embedding to ≤2000 dims (e.g. 1024) client-side in the embeddings wrapper, with a configurable target size. Keeps most of 8B's quality; needs a real implementation (truncation, renormalization, a config knob), not just a lookup-table fix.
+2. Make HNSW index creation optional per-KB for pgvector, falling back to a brute-force sequential scan when the model's dimension exceeds pgvector's cap. Keeps full 8B quality; loses ANN speed at large scale (likely fine at small/medium KB sizes).
+3. Investigate pgvector's `halfvec` type — it may have a higher indexable dimension ceiling and could close this gap without truncation. Not yet checked.
+4. Document the 1024-dim ceiling as the practical limit for pgvector + Ollama embeddings, and steer pgvector deployments toward smaller embedding models.
+
 ---
 
 ## Authentication & Access Control
