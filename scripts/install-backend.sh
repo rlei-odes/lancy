@@ -49,6 +49,11 @@ for name, kwargs in MODELS:
         print(f"  WARN: {name} — {exc}")
 EOF
 
+echo "==> Pre-downloading docling PDF-parsing models (layout, table structure, OCR)..."
+echo "    (also required before first use under HF_HUB_OFFLINE=1 — otherwise PDF ingestion"
+echo "     silently skips any file that needs a model not yet cached)"
+.venv/bin/docling-tools models download
+
 echo ""
 echo "Install complete."
 echo ""

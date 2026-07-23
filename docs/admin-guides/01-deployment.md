@@ -60,7 +60,7 @@ The text and image embedding models run inside the backend process and cannot be
 
 ### Backend
 
-Run the install script — it handles system packages, Python venv creation, pip install, and pre-downloading the embedding models to the HuggingFace cache:
+Run the install script — it handles system packages, Python venv creation, pip install, and pre-downloading the embedding models and docling's PDF-parsing models (layout, table structure, OCR) to the HuggingFace cache. This matters because the backend runs with `HF_HUB_OFFLINE=1` by default (set in `start.sh` / `start-backend.sh`) — any model not cached before first use fails, and for docling specifically this means affected PDFs are silently skipped during ingestion rather than the run failing outright:
 
 ```bash
 git clone https://github.com/rlei-odes/lancy.git ~/lancy
