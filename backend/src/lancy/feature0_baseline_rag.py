@@ -685,7 +685,7 @@ def load_chunks(
                     file_path.name, file_idx + 1, len(supported_files), len(all_chunks)
                 )
         except Exception as exc:
-            logger.warning(f"Skipping {file_path.name}: {exc}")
+            logger.opt(exception=True).warning(f"Skipping {file_path.name}: {type(exc).__name__}: {exc}")
 
     logger.info(f"Done, {len(all_chunks)} chunks total")
     return all_chunks
