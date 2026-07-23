@@ -263,7 +263,7 @@ def create_rag_router(
         elif p.exists():
             p.unlink()  # empty string = reset to default
 
-    def _load_config(user_id: str | None = None) -> RagConfig:
+    def _load_config(user_id: str | None = None, role: str = "user") -> RagConfig:
         # 1. Admin baseline from rag_config.json
         cfg = RagConfig()
         if config_path.exists():
@@ -274,8 +274,11 @@ def create_rag_router(
             except Exception as exc:
                 log.warning(f"Could not load rag_config.json: {exc} — using defaults")
         cfg.system_prompt = _read_custom_prompt()
-        # 2. Overlay user-scoped retrieval fields from SQLite
-        if user_id:
+        # 2. Overlay user-scoped retrieval fields from SQLite (admin writes go
+        # straight to rag_config.json, never to this table — so admin reads
+        # must skip the overlay too, or they'd always hit the "first visit"
+        # seed fallback below and clobber the baseline they just saved).
+        if role != "admin" and user_id:
             user_data = get_user_retrieval(sqlite_path, user_id)
             if user_data:
                 overlay = {k: v for k, v in user_data.items() if k in USER_RETRIEVAL_FIELDS}
@@ -304,7 +307,8 @@ def create_rag_router(
     @router.get("/config", response_model=RagConfig)
     async def get_config(request: Request) -> RagConfig:
         user_id = request.headers.get("x-session-id")
-        return _load_config(user_id)
+        role = request.headers.get("x-user-role", "user")
+        return _load_config(user_id, role)
 
     @router.post("/config", response_model=RagConfig)
     async def save_config(request: Request, cfg: RagConfig, background_tasks: BackgroundTasks) -> RagConfig:
