@@ -63,7 +63,9 @@ export default function Login() {
             const body =
                 view === "ldap"
                     ? { username, password }
-                    : { password };
+                    : view === "admin-escape"
+                        ? { password, adminEscape: true }
+                        : { password };
 
             const res = await fetch("/api/auth/login", {
                 method: "POST",

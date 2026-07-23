@@ -49,8 +49,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const secure = req.headers["x-forwarded-proto"] === "https" ? ["Secure"] : [];
 
     // ── Mode 3 LDAP ──────────────────────────────────────────────────────────
+    // Skip this branch for the admin-escape submission (login.tsx sends adminEscape: true) —
+    // that form has no username field and must fall through to the admin password check below.
     const sso = getSSOConfig();
-    if (sso?.provider === "ldap") {
+    const { adminEscape } = req.body ?? {};
+    if (sso?.provider === "ldap" && !adminEscape) {
         const { username, password } = req.body ?? {};
         if (!username || !password) {
             return res.status(400).json({ error: "Username and password required" });
