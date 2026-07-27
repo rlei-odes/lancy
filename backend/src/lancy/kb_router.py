@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import mimetypes
 import re
 import shutil
 import tempfile
@@ -30,7 +31,10 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from lancy.feature0_baseline_rag import _CHUNKERS, _IMAGE_EXTENSIONS
 from lancy.kb_pool import EmbeddingConflict
+
+_SUPPORTED_UPLOAD_EXTS = set(_CHUNKERS) | _IMAGE_EXTENSIONS
 
 log = logging.getLogger("uvicorn")
 
@@ -355,7 +359,27 @@ def create_kb_router(
             )
 
         original_filename = file.filename or "upload"
-        suffix = Path(original_filename).suffix or ".bin"
+        suffix = Path(original_filename).suffix.lower()
+        if suffix not in _SUPPORTED_UPLOAD_EXTS:
+            # The multipart filename can come back empty or unparsed for
+            # reasons entirely outside the uploaded file itself — e.g. some
+            # HTTP clients (observed: .NET's HttpClient/MultipartFormDataContent)
+            # encode non-ASCII filenames using the RFC 5987/2231 extended form
+            # (filename*=UTF-8''...), which our multipart parser does not
+            # decode, silently dropping the filename. Content-Type is a
+            # separate header and unaffected by that, so use it to recover
+            # the extension before giving up — otherwise this used to fall
+            # back to ".bin" and fail much later, silently, as "no_chunks".
+            guessed = mimetypes.guess_extension(file.content_type or "") or ""
+            if guessed.lower() in _SUPPORTED_UPLOAD_EXTS:
+                suffix = guessed.lower()
+            else:
+                raise HTTPException(
+                    422,
+                    f"Could not determine a supported file type for this upload "
+                    f"(filename={original_filename!r}, content_type={file.content_type!r}). "
+                    f"Supported extensions: {sorted(_SUPPORTED_UPLOAD_EXTS)}",
+                )
         tmp_path = Path(tempfile.mktemp(suffix=suffix))
         tmp_path.write_bytes(await file.read())
 
