@@ -36,6 +36,20 @@ from lancy.rag_router import RagConfig, ReindexResult
 log = logging.getLogger("uvicorn")
 
 
+async def _dispose_vs(vs_instance: Any) -> None:
+    """Close a vector store's underlying connection pool, if it has one.
+
+    `make_vector_store("pgvector", ...)` opens a fresh asyncpg connection pool
+    on every call. Callers that create a short-lived instance (as opposed to
+    the long-lived, shared `vs` passed into these functions) must dispose it
+    when done, or the pool's connections leak until Postgres's max_connections
+    is exhausted. No-op for ChromaDB stores, which have no `.engine`.
+    """
+    engine = getattr(vs_instance, "engine", None)
+    if engine is not None:
+        await engine.dispose()
+
+
 def _available_ram_gb() -> float | None:
     try:
         for line in Path("/proc/meminfo").read_text().splitlines():
@@ -413,6 +427,11 @@ async def run_ingestion(
                         "All files will be re-embedded on this run."
                     )
 
+        if vs_type == "pgvector":
+            # Done querying with this instance — a fresh one is created per file
+            # inside _sync_build_vs_for_file below. Dispose now or its pool leaks.
+            await _dispose_vs(vs_for_query)
+
         # Pre-pass: collect candidates, hash them, apply dedup filters.
         # File hashing reads entire file bytes — blocking I/O, run in executor.
         def _prepass() -> tuple[list[Path], dict[Path, str], int, int, list[Path], list[Path]]:
@@ -511,6 +530,8 @@ async def run_ingestion(
                 table_name=f"rag_{kb.id.replace('-', '_')}_images",
             )
             existing_image_hashes = await image_vs_for_query.get_file_hashes()
+            if vs_type == "pgvector":
+                await _dispose_vs(image_vs_for_query)
 
         image_emb = None
         if kb.image_indexing_enabled:
@@ -614,6 +635,7 @@ async def run_ingestion(
 
             def _sync_build_vs_for_file():
                 new_loop = asyncio.new_event_loop()
+                vs_instance = None
                 try:
                     if vs_type == "pgvector":
                         vs_instance = make_vector_store(
@@ -639,6 +661,8 @@ async def run_ingestion(
                         )
                     )
                 finally:
+                    if vs_type == "pgvector" and vs_instance is not None:
+                        new_loop.run_until_complete(_dispose_vs(vs_instance))
                     new_loop.close()
 
             await loop.run_in_executor(None, _sync_build_vs_for_file)
@@ -650,6 +674,7 @@ async def run_ingestion(
 
                 def _sync_build_image_vs_for_file():
                     new_loop = asyncio.new_event_loop()
+                    image_vs = None
                     try:
                         image_vs = make_vector_store(
                             vs_type=vs_type,
@@ -669,6 +694,8 @@ async def run_ingestion(
                             )
                         )
                     finally:
+                        if vs_type == "pgvector" and image_vs is not None:
+                            new_loop.run_until_complete(_dispose_vs(image_vs))
                         new_loop.close()
 
                 await loop.run_in_executor(None, _sync_build_image_vs_for_file)
@@ -909,6 +936,7 @@ async def ingest_uploaded_file(
 
         def _sync_embed_insert():
             new_loop = asyncio.new_event_loop()
+            vs_instance = None
             try:
                 if vs_type == "pgvector":
                     # Fresh instance: the shared `vs`'s asyncpg pool is bound to the main
@@ -937,6 +965,8 @@ async def ingest_uploaded_file(
                     )
                 )
             finally:
+                if vs_type == "pgvector" and vs_instance is not None:
+                    new_loop.run_until_complete(_dispose_vs(vs_instance))
                 new_loop.close()
 
         await loop.run_in_executor(None, _sync_embed_insert)
@@ -954,10 +984,13 @@ async def ingest_uploaded_file(
             deleted_images = await image_vs_for_delete.delete_chunks_by_document_id(document_id)
             if deleted_images:
                 log.info(f"Removed {deleted_images} existing image chunk(s) for document_id='{document_id}'")
+            if vs_type == "pgvector":
+                await _dispose_vs(image_vs_for_delete)
             image_emb = build_embedding_model("qwen3vl", kb.image_embedding_model)
 
             def _sync_embed_images():
                 new_loop = asyncio.new_event_loop()
+                image_vs = None
                 try:
                     image_vs = make_vector_store(
                         vs_type=vs_type,
@@ -977,6 +1010,8 @@ async def ingest_uploaded_file(
                         )
                     )
                 finally:
+                    if vs_type == "pgvector" and image_vs is not None:
+                        new_loop.run_until_complete(_dispose_vs(image_vs))
                     new_loop.close()
 
             await loop.run_in_executor(None, _sync_embed_images)
