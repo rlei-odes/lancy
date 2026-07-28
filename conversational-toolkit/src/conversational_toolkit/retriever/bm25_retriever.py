@@ -37,6 +37,21 @@ class BM25Retriever(Retriever[ChunkMatch]):
         """Lowercase word-boundary tokenisation."""
         return re.findall(r"\b\w+\b", text.lower())
 
+    @staticmethod
+    def _searchable_text(chunk: Any) -> str:
+        """Chunk content plus filename/title, so lexical search also matches
+        document names — e.g. "find X" over a filename that never appears in
+        the body text. Metadata/title are cheap to include here since BM25
+        tokenises this in memory at query time; embeddings are unaffected.
+
+        Underscores are replaced with spaces before tokenising: _tokenize's
+        \\w+ treats "_" as a word character, so an underscore-joined filename
+        segment (e.g. "Komponenten_000014468_B_001") would otherwise become
+        one glued token instead of separately matchable words.
+        """
+        source_file = (chunk.metadata or {}).get("source_file", "").replace("_", " ")
+        return " ".join(part for part in (source_file, chunk.title, chunk.content) if part)
+
     async def retrieve(self, query: str, filters: dict[str, Any] | None = None) -> list[ChunkMatch]:
         """Score the corpus against 'query' using BM25 and return the top 'top_k' matches.
 
@@ -55,7 +70,7 @@ class BM25Retriever(Retriever[ChunkMatch]):
             if not self.corpus:
                 return []
 
-            tokenized = [self._tokenize(chunk.content) for chunk in self.corpus]
+            tokenized = [self._tokenize(self._searchable_text(chunk)) for chunk in self.corpus]
             # BM25Okapi index build is CPU-bound — run in thread to avoid blocking event loop
             self._bm25 = await loop.run_in_executor(None, lambda: BM25Okapi(tokenized))
 
