@@ -5,15 +5,33 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [Lancy v0.3.9] — 2026-07-19 · rlei-odes
+## [Lancy v0.3.9] — 2026-07-31 · rlei-odes
 
-### Added — Qwen3-Embedding task prefix (ollama backend)
+Stability release: bug fixes across ingestion, auth/config, and KB upload, plus two small retrieval-quality additions.
 
-Asymmetric instruction prefix for Qwen3-Embedding models — auto-enabled when a `qwen*embedding` model is selected. Recommended: `hf.co/Qwen/Qwen3-Embedding-8B-GGUF:Q4_K_M` (~5–6 GB VRAM, MTEB-leading multilingual retrieval). Admin guide `05-embedding-models.md` updated with setup steps and BGE-M3 trade-off comparison.
+### Added
 
-### Added — Separate utility LLM endpoint (custom backend)
+- **Separate utility LLM endpoint (custom backend)** — new optional `Utility Base URL` / `Utility API Key` fields in the RAG panel let the utility LLM (query expansion, HyDE, LLM-reranking) hit a different endpoint than the main LLM (e.g. two vLLM processes on different ports). Empty falls back to the main URL/key; existing configs unaffected.
+- **BM25 indexes filename and PDF title** — the lexical index now includes each chunk's filename and PDF `document_title` alongside the chunk body, so keyword queries can match by filename/title even when the chunk text doesn't contain the term.
+- **Qwen3-Embedding task prefix (ollama backend)** — asymmetric instruction prefix auto-enabled when a `qwen*embedding` model is selected. (Model-recommendation walk-through for Qwen3-Embedding-8B was pulled from the admin guide pending pgvector support for >2000-dim HNSW indexes — see BACKLOG.)
 
-New optional `Utility Base URL` / `Utility API Key` fields in the RAG panel let the utility LLM (query expansion, HyDE, LLM-reranking) hit a different endpoint than the main LLM — e.g. two vLLM processes on different ports. Empty falls back to the main URL/key, so existing configs are unaffected.
+### Fixed
+
+- **Ingestion**
+  - Docling PDF models are pre-cached so runs with `HF_HUB_OFFLINE=1` no longer silently skip PDFs.
+  - Per-call pgvector connection pools are now disposed after use — long-lived runs no longer accumulate idle Postgres connections.
+  - pgvector table sizing now recognises Qwen3-Embedding dims (0.6B / 4B / 8B); previously fell back to 768, causing every insert to fail with a dimension mismatch.
+- **KB upload** — uploads without a filename extension now recover it from the `Content-Type` header; unresolvable uploads are rejected with a clear error instead of being silently dropped.
+- **Auth & config**
+  - LDAP (Mode 3) no longer blocks the admin-escape login form.
+  - `GET /api/v1/config` now honours the `x-user-role` header — admins receive the raw `rag_config.json`, non-admins get the per-user SQLite overlay (matching `save_config`'s behaviour).
+  - Cookie `Secure` flag no longer breaks plain-HTTP logins (e.g. LAN deployments behind a TLS-terminating reverse proxy).
+- **Frontend** — removed the redundant slider next to the editable `num_ctx` input.
+
+### Docs
+
+- Added a Caddy TLS-termination note to the admin setup guide; `python3` corrected in install steps.
+- Removed the Qwen3-Embedding-8B / Ollama walk-through from `05-embedding-models.md` (moved to BACKLOG — pgvector's HNSW 2000-dim cap can't hold the model's 4096-dim output).
 
 ---
 
