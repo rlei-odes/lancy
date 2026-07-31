@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "properties": {
+    "question1": {
+      "type": "string",
+      "enum": ["yes", "no", "unclear"],
+      "description": "Termination clause present?"
+    },
+    "question2": {
+      "type": "boolean",
+      "description": "Mentions Switzerland?"
+    },
+    "question3": {
+      "type": "string",
+      "description": "Primary counterparty name; empty string if not identifiable."
+    },
+    "remark": {
+      "type": "string",
+      "description": "One-sentence note on anything unusual; empty string if none."
+    }
+  },
+  "required": ["question1", "question2", "question3", "remark"],
+  "additionalProperties": false
+}

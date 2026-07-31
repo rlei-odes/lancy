@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.3.10] — 2026-07-31 · rlei-odes
+
+### Added — Batch document analysis
+
+New `POST /api/v1/rag/analyze-document` endpoint plus a `scripts/batch-analyze.py` helper for running a caller-defined analysis over every document in a KB and collecting the results as a CSV table. Sibling to the interactive expand-context feature: non-streaming, per-document, script-friendly.
+
+**Endpoint** — accepts `{document_id | source_file, prompt, response_schema, kb_id?}`. Fetches all chunks for the picked document, wraps them as `<document><chunk id="…">…</chunk></document>`, and hands them to the main LLM together with the caller's prompt. On OpenAI-compatible backends (`custom` / vLLM / LiteLLM / OpenAI-native) the caller's JSON Schema is enforced at decode time via `response_format: json_schema` with `strict: true`; on Ollama, `format: "json"` guarantees valid JSON with the schema guiding via the prompt. 110 s per-request timeout (under the 120 s Next.js proxy timeout). Documents exceeding the ~60 % context budget are skipped (not truncated) — response reports `skipped: "over_budget"` so the script can log and continue.
+
+**Script** — `scripts/batch-analyze.py` logs into the frontend at `/api/auth/login` (`LANCY_PASSWORD` env var or interactive prompt; `LANCY_ADMIN=1` for admin-escape), iterates a text file of identifiers, and appends one CSV row per document. Resumable: reruns skip ids already present in the output. Ready-to-adapt example inputs (`docs.txt`, `prompt.txt`, `schema.json`) ship in `scripts/examples/batch-analyze/`.
+
+**Prompt template** — `prompts/batch_analyze.default.md` frames the caller's questions with the schema and reading instructions. Gitignored `batch_analyze.custom.md` override follows the same pattern as `chat_only` / `expand_context`.
+
+**Files:** `backend/src/lancy/rag_router.py` (new `AnalyzeDocumentRequest`/`AnalyzeDocumentResponse` + `/analyze-document` endpoint), `prompts/batch_analyze.default.md` (new), `.gitignore` (add `batch_analyze.custom.md`), `scripts/batch-analyze.py` (new), `scripts/examples/batch-analyze/` (new — README + example docs/prompt/schema), `docs/admin-guides/03-API-endpoints.md` (documented under RAG → Batch Document Analysis).
+
+---
+
 ## [Lancy v0.3.9] — 2026-07-31 · rlei-odes
 
 Stability release: bug fixes across ingestion, auth/config, and KB upload, plus two small retrieval-quality additions.
