@@ -1,0 +1,6 @@
+Analyze the document and answer the following. Keep each answer concise.
+
+question1: Does the document contain a termination clause? Answer "yes", "no", or "unclear".
+question2: Is Switzerland mentioned anywhere in the document? true or false.
+question3: Who is the primary counterparty named in the document? Return the name only, or an empty string if not identifiable.
+remark: One short sentence with anything else worth flagging (unusual clauses, missing dates, references to other agreements). Empty string if nothing notable.

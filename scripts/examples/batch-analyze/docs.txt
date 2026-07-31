@@ -1,0 +1,6 @@
+# One identifier per line. Blank lines and lines starting with '#' are ignored.
+# With --id-field source_file (default), these are filenames as ingested.
+# With --id-field document_id, these are the ids passed at upload time.
+contract-2025-01.pdf
+contract-2025-02.pdf
+policy-handbook-v3.docx

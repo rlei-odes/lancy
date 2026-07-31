@@ -726,6 +726,69 @@ Returns a paginated list of raw chunks from the vector store, optionally filtere
 
 ---
 
+### Batch Document Analysis
+
+```
+POST /rag/analyze-document
+```
+
+Analyses a single document end-to-end and returns a caller-defined JSON object. All chunks of the picked document are fetched (like the expand-context feature), wrapped as `<document><chunk id="…">…</chunk>…</document>`, and handed to the main LLM together with the caller's questions and JSON schema. Non-streaming; per-request timeout is 110 s (Next.js proxy timeout is 120 s).
+
+Meant for headless batch use — for example the [scripts/batch-analyze.py](../../scripts/batch-analyze.py) helper that walks a list of documents and writes one CSV row per doc.
+
+**Request:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `document_id` | string | The upload-time id. Provide **exactly one** of this or `source_file`. |
+| `source_file` | string | The filename as ingested. Provide **exactly one** of this or `document_id`. |
+| `prompt` | string | Natural-language questions to answer per document. |
+| `response_schema` | object | JSON Schema for the LLM output. On OpenAI-compatible backends (`custom`, `litellm`, OpenAI-native) the schema is enforced at decode time via `response_format: json_schema` with `strict: true`; on Ollama, `format: "json"` is used and the schema only guides via the prompt. |
+| `kb_id` | string | Optional. Target a specific KB instead of the currently active one. |
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3000/api/v1/rag/analyze-document \
+  -H "Cookie: rag_auth=..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_file": "contract-2025-01.pdf",
+    "prompt": "Q1: has termination clause? Q2: mentions Switzerland (true/false)?",
+    "response_schema": {
+      "type": "object",
+      "properties": {
+        "question1": {"type": "string"},
+        "question2": {"type": "boolean"}
+      },
+      "required": ["question1", "question2"]
+    }
+  }'
+```
+
+**Response (success):**
+
+```json
+{
+  "document_id": null,
+  "source_file": "contract-2025-01.pdf",
+  "chunk_count": 42,
+  "char_count": 91234,
+  "result": { "question1": "yes", "question2": true },
+  "skipped": null,
+  "budget_chars": null
+}
+```
+
+**Response (skipped):** `result` is `null` and `skipped` is either:
+
+- `"no_chunks"` — no chunk matches the identifier in the target KB.
+- `"over_budget"` — the document's total `char_count` exceeds `num_ctx × 0.6 × 3.5` (~60 % context budget, same as expand-context). Increase `num_ctx` in the RAG panel or pre-summarise the document if you want it in scope.
+
+**Errors:** `422` on invalid request (both / neither identifier, missing fields), `404` if `kb_id` is set but not found, `502` if the LLM call fails or returns invalid JSON, `504` if the LLM exceeds the 110 s timeout.
+
+---
+
 ### Utility Endpoints
 
 These are read-only, take no significant parameters, and are self-explanatory in the Swagger UI:

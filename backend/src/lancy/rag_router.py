@@ -11,6 +11,7 @@ POST /api/v1/rag/reindex      — trigger ingestion on the active KB
 GET  /api/v1/rag/store-info   — chunk count + file list for the active KB
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -19,6 +20,8 @@ import re
 from typing import Annotated, Any, Callable, Literal
 
 _SERVER_STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+from conversational_toolkit.llms.base import LLMMessage, MessageContent, Roles
 
 from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
@@ -34,6 +37,7 @@ from lancy.database import (
     seed_presets,
     set_user_retrieval,
 )
+from lancy.feature0_baseline_rag import build_llm
 
 log = logging.getLogger("uvicorn")
 
@@ -212,6 +216,48 @@ class DocumentStatsResponse(BaseModel):
     stats: list[DocumentStat]
 
 
+# ─── Batch document analysis ──────────────────────────────────────────────────
+
+
+class AnalyzeDocumentRequest(BaseModel):
+    """Analyze a single document end-to-end with a caller-supplied prompt + JSON schema.
+
+    Exactly one of `document_id` or `source_file` must be set. All chunks matching that
+    identifier are fetched, wrapped, and handed to the main LLM together with the
+    caller's questions. Response is validated against `response_schema` (OpenAI-compatible
+    backends enforce this at decode time; Ollama's `json` mode returns valid JSON but
+    without schema constraint — the schema still guides the model via the prompt).
+
+    `kb_id` is optional — omit it to use the currently active KB.
+    """
+
+    document_id: str | None = Field(default=None, max_length=500)
+    source_file: str | None = Field(default=None, max_length=500)
+    prompt: str = Field(..., min_length=1, max_length=20_000)
+    response_schema: dict[str, Any] = Field(..., description="JSON Schema for the LLM output.")
+    kb_id: str | None = Field(default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def one_identifier(self) -> "AnalyzeDocumentRequest":
+        if bool(self.document_id) == bool(self.source_file):
+            raise ValueError("Provide exactly one of document_id or source_file.")
+        return self
+
+
+class AnalyzeDocumentResponse(BaseModel):
+    document_id: str | None
+    source_file: str | None
+    chunk_count: int
+    char_count: int
+    result: dict[str, Any] | None
+    skipped: str | None = None  # "over_budget" | "no_chunks" | None
+    budget_chars: int | None = None
+
+
+_ANALYZE_TIMEOUT_S = 110  # Next.js proxy is 120s; stay under it so the script sees a clean error
+_BUDGET_FRACTION = 0.6    # match expand-context — leaves headroom for prompt + output
+
+
 # ─── Router factory ───────────────────────────────────────────────────────────
 
 
@@ -262,6 +308,17 @@ def create_rag_router(
             p.write_text(text)
         elif p.exists():
             p.unlink()  # empty string = reset to default
+
+    def _read_analyze_prompt() -> str:
+        if prompts_dir is None:
+            return ""
+        for name in ("batch_analyze.custom.md", "batch_analyze.default.md"):
+            p = prompts_dir / name
+            if p.exists():
+                content = p.read_text().strip()
+                if content:
+                    return content
+        return ""
 
     def _load_config(user_id: str | None = None, role: str = "user") -> RagConfig:
         # 1. Admin baseline from rag_config.json
@@ -533,5 +590,116 @@ def create_rag_router(
         except Exception as exc:
             log.warning(f"document-stats error: {exc}")
             raise HTTPException(status_code=500, detail=str(exc))
+
+    @router.post("/analyze-document", response_model=AnalyzeDocumentResponse)
+    async def analyze_document(req: AnalyzeDocumentRequest, http: Request) -> AnalyzeDocumentResponse:
+        """Analyze one document end-to-end: fetch all its chunks, wrap them, invoke the
+        main LLM with the caller's prompt and JSON schema, return the parsed result.
+
+        Sibling to expand-context but non-streaming, script-friendly, and per-document.
+        Chunks are grouped and ordered like expand-context. Over-budget documents are
+        skipped (not truncated) — the response reports `skipped="over_budget"` so the
+        batch script can log a row and continue.
+        """
+        vs = (vs_by_kb_factory(req.kb_id) if req.kb_id and vs_by_kb_factory else None) or vector_store_factory()
+        if vs is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"KB {req.kb_id!r} not found." if req.kb_id else "No active KB.",
+            )
+
+        filter_field = "document_id" if req.document_id else "source_file"
+        filter_value = req.document_id or req.source_file
+        try:
+            chunks = await vs.get_chunks_by_filter(filters={filter_field: filter_value})
+        except Exception as exc:
+            log.warning(f"analyze-document chunk fetch failed ({filter_field}={filter_value!r}): {exc}")
+            raise HTTPException(status_code=500, detail=f"Chunk fetch failed: {exc}")
+
+        char_count = sum(len(c.content or "") for c in chunks)
+        if not chunks:
+            return AnalyzeDocumentResponse(
+                document_id=req.document_id, source_file=req.source_file,
+                chunk_count=0, char_count=0, result=None, skipped="no_chunks",
+            )
+
+        role = http.headers.get("x-user-role", "user")
+        user_id = http.headers.get("x-session-id")
+        cfg = _load_config(user_id=user_id, role=role)
+        budget_chars = int(cfg.num_ctx * _BUDGET_FRACTION * 3.5)  # ~3.5 chars per token
+        if char_count > budget_chars:
+            return AnalyzeDocumentResponse(
+                document_id=req.document_id, source_file=req.source_file,
+                chunk_count=len(chunks), char_count=char_count,
+                result=None, skipped="over_budget", budget_chars=budget_chars,
+            )
+
+        system_prompt_tpl = _read_analyze_prompt()
+        if not system_prompt_tpl:
+            raise HTTPException(status_code=500, detail="batch_analyze prompt template not found")
+        system_prompt = system_prompt_tpl.replace(
+            "{schema}", json.dumps(req.response_schema, indent=2)
+        ).replace("{user_prompt}", req.prompt)
+
+        # Wrap chunks as <document><chunk id="…">…</chunk>…</document>. Single-document
+        # variant of expand-context's <sources><source>…</source></sources>.
+        parts = [f'<document filename="{req.source_file or req.document_id}">']
+        for c in chunks:
+            if "text" not in (c.mime_type or ""):
+                continue  # skip image chunks — this endpoint is for text analysis
+            parts.append(f'<chunk id="{c.id}">{c.content}</chunk>')
+        parts.append("</document>")
+        user_content = "\n".join(parts)
+
+        # OpenAI-compatible backends get schema-constrained decoding; Ollama's `json` mode
+        # only enforces valid JSON (schema shape is guided by the prompt).
+        if cfg.llm_backend == "ollama":
+            response_format: Any = "json"
+        else:
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {"name": "AnalysisResult", "schema": req.response_schema, "strict": True},
+            }
+
+        try:
+            llm = build_llm(
+                backend=cfg.llm_backend,
+                model_name=cfg.llm_model or None,
+                temperature=cfg.llm_temperature,
+                response_format=response_format,
+                ollama_host=cfg.ollama_host.strip() or None,
+                num_ctx=cfg.num_ctx,
+                max_tokens=cfg.llm_max_tokens if cfg.llm_backend != "ollama" else None,
+                custom_base_url=getattr(cfg, "custom_base_url", ""),
+                custom_api_key=getattr(cfg, "custom_api_key", ""),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail=f"LLM build failed: {exc}")
+
+        messages = [
+            LLMMessage(role=Roles.SYSTEM, content=[MessageContent(type="text", text=system_prompt)]),
+            LLMMessage(role=Roles.USER, content=[MessageContent(type="text", text=user_content)]),
+        ]
+
+        try:
+            response = await asyncio.wait_for(llm.generate(messages), timeout=_ANALYZE_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            log.warning(f"analyze-document timeout ({_ANALYZE_TIMEOUT_S}s) for {filter_field}={filter_value!r}")
+            raise HTTPException(status_code=504, detail=f"LLM timed out after {_ANALYZE_TIMEOUT_S}s")
+        except Exception as exc:
+            log.warning(f"analyze-document LLM call failed for {filter_field}={filter_value!r}: {exc}")
+            raise HTTPException(status_code=502, detail=f"LLM call failed: {exc}")
+
+        raw = "".join(mc.text or "" for mc in response.content if mc.type == "text").strip()
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            log.warning(f"analyze-document JSON parse failed: {exc}; raw={raw[:500]!r}")
+            raise HTTPException(status_code=502, detail=f"LLM returned invalid JSON: {exc}")
+
+        return AnalyzeDocumentResponse(
+            document_id=req.document_id, source_file=req.source_file,
+            chunk_count=len(chunks), char_count=char_count, result=parsed,
+        )
 
     return router
