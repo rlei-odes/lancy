@@ -42,6 +42,7 @@ import asyncio
 import hashlib
 import os
 import re
+import threading
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -284,6 +285,101 @@ def build_embedding_model(
             model_name=name,
             trust_remote_code="nomic" in name.lower(),
         )
+
+
+# ---------------------------------------------------------------------------
+# Shared embedding model cache
+#
+# build_embedding_model() puts a fresh SentenceTransformer on the GPU every call
+# (~2.1 GiB for bge-m3). Callers that rebuild agents — KB switch, session config
+# save, reindex — used to allocate a new copy each time and pin the old one via
+# the retriever it was bound into, exhausting VRAM after a handful of rebuilds.
+#
+# Serving and ingestion share this cache, so one model instance serves the whole
+# process. Only one entry is kept: a different embedding config means every KB in
+# the pool must be rebuilt anyway (see KBPool.reset), so the old model is dead.
+# ---------------------------------------------------------------------------
+
+_emb_lock = threading.Lock()
+_emb_cached: EmbeddingsModel | None = None
+_emb_cached_key: tuple | None = None
+
+
+def _describe(key: tuple | None) -> str:
+    """Render a cache key for logging — backend/model only, never the key digest."""
+    return f"{key[0]}/{key[1]}" if key else "none"
+
+
+def _release_cuda_memory() -> None:
+    """Return freed VRAM to the driver. No-op without torch/CUDA."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+
+def get_shared_embedding_model(
+    embedding_backend: str | None = None,
+    model_name: str | None = None,
+    ollama_host: str = "",
+    custom_base_url: str = "",
+    custom_api_key: str = "",
+) -> EmbeddingsModel:
+    """build_embedding_model() with a process-wide single-entry cache.
+
+    Thread-safe: the lock is held across construction so two concurrent rebuilds
+    can't both load the model — that double-allocation is what pushed a nearly
+    full GPU over the edge.
+    """
+    global _emb_cached, _emb_cached_key
+
+    # The api_key is part of the identity — rotating it in the Settings UI has to
+    # invalidate a cached remote client — but only its digest is stored, so the
+    # secret never reaches a log line or a traceback.
+    key = (
+        (embedding_backend or "").lower().strip(),
+        model_name or "",
+        ollama_host or "",
+        custom_base_url or "",
+        hashlib.sha256((custom_api_key or "").encode()).hexdigest()[:12],
+    )
+    with _emb_lock:
+        if _emb_cached is not None and _emb_cached_key == key:
+            return _emb_cached
+
+        if _emb_cached is not None:
+            logger.info(
+                f"Embedding config changed {_describe(_emb_cached_key)} -> "
+                f"{_describe(key)}; releasing old model"
+            )
+            _emb_cached = None
+            _emb_cached_key = None
+            _release_cuda_memory()
+
+        _emb_cached = build_embedding_model(
+            embedding_backend,
+            model_name,
+            ollama_host=ollama_host,
+            custom_base_url=custom_base_url,
+            custom_api_key=custom_api_key,
+        )
+        _emb_cached_key = key
+        return _emb_cached
+
+
+def clear_embedding_cache() -> None:
+    """Drop the cached model and release its VRAM. Called on shutdown and pool reset."""
+    global _emb_cached, _emb_cached_key
+    with _emb_lock:
+        if _emb_cached is None:
+            return
+        logger.info(f"Releasing cached embedding model {_describe(_emb_cached_key)}")
+        _emb_cached = None
+        _emb_cached_key = None
+    _release_cuda_memory()
 
 
 def build_llm(

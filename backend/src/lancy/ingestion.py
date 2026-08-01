@@ -27,6 +27,7 @@ from lancy.feature0_baseline_rag import (
     build_llm,
     build_vector_store,
     file_hash,
+    get_shared_embedding_model,
     make_vector_store,
 )
 from lancy.kb_router import KBInfo
@@ -143,28 +144,21 @@ def _reset_chunking_pool() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Embedding model cache — keep one loaded instance per (backend, model_name)
-# so it isn't reloaded from GPU on every document. Cleared on KB switch.
+# Embedding model — delegated to the process-wide cache in feature0_baseline_rag
+# so ingestion and the serving path share a single GPU-resident instance. This
+# used to be a second, independent cache, which meant a reindex allocated its own
+# copy of the model alongside the one the agents were already holding.
 # ---------------------------------------------------------------------------
-_emb_cache: dict[tuple, Any] = {}
-_emb_cache_key: tuple = ()
 
 
 def _get_cached_embedding_model(kb) -> Any:
-    global _emb_cache, _emb_cache_key
-    key = (kb.embedding_backend, kb.embedding_model, kb.embedding_ollama_host,
-           kb.embedding_custom_base_url)
-    if key != _emb_cache_key or not _emb_cache:
-        _emb_cache.clear()
-        _emb_cache[key] = build_embedding_model(
-            kb.embedding_backend,
-            kb.embedding_model,
-            ollama_host=kb.embedding_ollama_host or "",
-            custom_base_url=kb.embedding_custom_base_url or "",
-            custom_api_key=kb.embedding_custom_api_key or "",
-        )
-        _emb_cache_key = key
-    return _emb_cache[key]
+    return get_shared_embedding_model(
+        kb.embedding_backend,
+        kb.embedding_model,
+        ollama_host=kb.embedding_ollama_host or "",
+        custom_base_url=kb.embedding_custom_base_url or "",
+        custom_api_key=kb.embedding_custom_api_key or "",
+    )
 
 
 # ---------------------------------------------------------------------------

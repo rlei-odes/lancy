@@ -14,6 +14,72 @@ from typing import Any, Callable
 log = logging.getLogger("uvicorn")
 
 
+async def _dispose_vs(vs_instance: Any) -> None:
+    """Close a vector store's asyncpg connection pool, if it has one.
+
+    Mirrors ingestion._dispose_vs (kept local to avoid a pool -> ingestion import).
+    make_vector_store("pgvector", ...) opens a fresh pool per call, so a replaced
+    instance must be disposed or its connections leak until Postgres runs out.
+    No-op for ChromaDB stores, which have no `.engine`.
+    """
+    try:
+        engine = getattr(vs_instance, "engine", None)
+        if engine is not None:
+            await engine.dispose()
+    except Exception as exc:
+        log.warning(f"KBPool: vector store dispose failed: {exc}")
+
+
+async def _dispose_agent_stores(agent: Any) -> None:
+    """Dispose the extra stores an agent owns (image store, when enabled)."""
+    for store in getattr(agent, "aux_vector_stores", None) or []:
+        await _dispose_vs(store)
+
+
+# A stream captures its LoadedKB — and through it the vector store — before it
+# starts yielding, so a store that has just been replaced can still be serving a
+# query. Refcounting used to make that safe; an explicit dispose does not. Wait
+# out the retrieval window before closing the pool. Retrieval happens at the head
+# of answer_stream, so this only has to outlast retrieval, not generation.
+_DISPOSE_GRACE_SECONDS = 60.0
+
+_pending_disposals: set = set()
+
+
+def _dispose_soon(vs: Any = None, agent: Any = None) -> None:
+    """Schedule a displaced store and/or agent's stores for deferred disposal."""
+
+    async def _run() -> None:
+        await asyncio.sleep(_DISPOSE_GRACE_SECONDS)
+        if vs is not None:
+            await _dispose_vs(vs)
+        if agent is not None:
+            await _dispose_agent_stores(agent)
+
+    try:
+        task = asyncio.create_task(_run())
+    except RuntimeError:  # no running loop (e.g. teardown) — process exit closes them
+        return
+    # asyncio holds only a weak reference to tasks; without this the disposal can
+    # be garbage-collected before it runs.
+    _pending_disposals.add(task)
+    task.add_done_callback(_pending_disposals.discard)
+
+
+def _release_shared_embedding_model() -> None:
+    """Drop the process-wide embedding model and return its VRAM.
+
+    Imported lazily so this module stays free of heavyweight (torch-pulling)
+    imports at load time.
+    """
+    try:
+        from lancy.feature0_baseline_rag import clear_embedding_cache
+
+        clear_embedding_cache()
+    except Exception as exc:  # never let cleanup break a pool operation
+        log.warning(f"KBPool: embedding cache release failed: {exc}")
+
+
 class EmbeddingConflict(Exception):
     """Raised when adding a KB whose embedding config differs from the pool's."""
 
@@ -95,30 +161,43 @@ class KBPool:
         if kb_id in self._pool:
             self._active_id = kb_id
 
-    def unload(self, kb_id: str) -> None:
-        """Remove a KB from the pool.
+    async def unload(self, kb_id: str) -> None:
+        """Remove a KB from the pool and release the resources it owned.
 
         In-flight streams hold a local reference to LoadedKB and complete
-        safely — Python reference counting prevents premature GC.
+        safely — Python reference counting prevents premature GC. The vector
+        store's connection pool, however, is not reclaimed by refcounting; it
+        must be disposed explicitly or its Postgres connections leak.
         """
         if kb_id not in self._pool:
             return
-        name = self._pool[kb_id].kb.name
-        del self._pool[kb_id]
+        entry = self._pool.pop(kb_id)
         if self._active_id == kb_id:
             self._active_id = next(iter(self._pool), None)
         if not self._pool:
             self._emb = None
             self._emb_key = None
-        log.info(f"KBPool: unloaded '{name}' (id={kb_id}), pool={list(self._pool)}")
+            _release_shared_embedding_model()
+        _dispose_soon(vs=entry.vs, agent=entry.agent)
+        log.info(f"KBPool: unloaded '{entry.kb.name}' (id={kb_id}), pool={list(self._pool)}")
 
     async def reset(self, kb: Any, cfg: Any, build_fn: Callable) -> LoadedKB:
         """Clear all entries (embedding config switch) then load a single KB."""
         cleared = list(self._pool)
+        evicted = list(self._pool.values())
         self._pool.clear()
         self._emb = None
         self._emb_key = None
         self._active_id = None
+        # The incoming KB uses a different embedding config by definition (that is
+        # what forces a reset), so the cached model is dead weight on the GPU.
+        # Release it immediately — load() is about to allocate the replacement and
+        # the GPU may not have room for both. The evicted stores are cheap by
+        # comparison and go through the deferred path, which keeps any in-flight
+        # query working.
+        _release_shared_embedding_model()
+        for entry in evicted:
+            _dispose_soon(vs=entry.vs, agent=entry.agent)
         log.info(f"KBPool: reset — cleared {cleared}")
         return await self.load(kb, cfg, build_fn)
 
@@ -128,9 +207,21 @@ class KBPool:
             self._loading.add(kb_id)
             try:
                 loop = asyncio.get_event_loop()
-                _, new_agent, _ = await loop.run_in_executor(None, build_fn, entry.kb, cfg)
+                new_vs, new_agent, emb = await loop.run_in_executor(None, build_fn, entry.kb, cfg)
+                # Adopt the whole tuple. The new agent's retrievers are bound to
+                # new_vs and emb; keeping the previous ones on the entry left two
+                # live vector stores and two embedding models per rebuild, neither
+                # of which was ever released. The displaced store owns a connection
+                # pool, so it is disposed rather than merely dropped.
+                old_vs, old_agent = entry.vs, entry.agent
+                entry.vs = new_vs
                 entry.agent = new_agent
                 entry.probe_bm25 = None
+                self._emb = emb
+                _dispose_soon(
+                    vs=old_vs if old_vs is not new_vs else None,
+                    agent=old_agent if old_agent is not new_agent else None,
+                )
                 log.info(f"KBPool: rebuilt agent for '{kb_id}'")
             except Exception as exc:
                 log.error(f"KBPool: agent rebuild failed for '{kb_id}': {exc}")

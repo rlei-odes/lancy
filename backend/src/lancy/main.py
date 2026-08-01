@@ -83,6 +83,8 @@ from lancy.feature0_baseline_rag import (
     _ROOT,
     build_embedding_model,
     build_llm,
+    clear_embedding_cache,
+    get_shared_embedding_model,
     make_vector_store,
     _make_retriever,
 )
@@ -90,6 +92,7 @@ from lancy.llm_debug import DebugLLM, configure as _configure_llm_debug
 _configure_llm_debug(_ROOT / "logs" / "llm_debug.log")
 from lancy.ingestion import (
     _index_status,
+    _reset_chunking_pool,
     cancel_indexing,
     enqueue_upload,
     run_ingestion,
@@ -225,9 +228,19 @@ _query_status: dict = {"active": False, "phase": "idle"}
 
 
 class CustomRAG(RAG):
-    def __init__(self, *args, follow_up_count: int = 3, **kwargs):
+    def __init__(
+        self,
+        *args,
+        follow_up_count: int = 3,
+        aux_vector_stores: list | None = None,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.follow_up_count = follow_up_count
+        # Stores this agent owns beyond the primary one (currently the image
+        # store). Each holds its own connection pool, so whoever replaces or
+        # discards the agent is responsible for disposing them.
+        self.aux_vector_stores = aux_vector_stores or []
 
     async def answer_stream(self, query_with_context):
         _query_status.update({"active": True, "phase": "retrieving"})
@@ -329,9 +342,32 @@ class CustomRAG(RAG):
 # ---------------------------------------------------------------------------
 # Component builder
 # ---------------------------------------------------------------------------
+def _dispose_vs_sync(vs_instance: Any) -> None:
+    """Dispose a vector store's connection pool from a synchronous context.
+
+    _build_components runs in a thread-pool executor with no running event loop,
+    so the async dispose needs a throwaway loop — same approach as the sync
+    ingestion paths in ingestion.py.
+    """
+    engine = getattr(vs_instance, "engine", None)
+    if engine is None:
+        return
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(engine.dispose())
+        finally:
+            loop.close()
+    except Exception as exc:
+        log.warning(f"Vector store dispose failed during failed build: {exc}")
+
+
 def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRAG, Any]:
     """Instantiate (vector_store, agent, embedding_model) for the given KB + session config."""
-    emb = build_embedding_model(
+    # Shared cache, not a fresh instance: this runs on every KB load and on every
+    # agent rebuild (session config save), and each local SentenceTransformer costs
+    # ~2.1 GiB of VRAM that stays pinned by the retriever it gets bound into.
+    emb = get_shared_embedding_model(
         kb.embedding_backend,
         kb.embedding_model,
         ollama_host=kb.embedding_ollama_host or "",
@@ -347,7 +383,25 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
         vs_connection_string=vs_conn,
         table_name=f"rag_{kb.id.replace('-', '_')}",
     )
+    try:
+        return _assemble_components(kb, cfg, emb, vs, vs_type, vs_conn)
+    except Exception:
+        # The caller never receives `vs`, so nothing else can dispose it.
+        # rebuild_all_agents swallows build failures, which would otherwise
+        # strand one Postgres pool per failed rebuild.
+        _dispose_vs_sync(vs)
+        raise
 
+
+def _assemble_components(
+    kb: KBInfo,
+    cfg: RagConfig,
+    emb: Any,
+    vs: VectorStore,
+    vs_type: str,
+    vs_conn: str,
+) -> tuple[VectorStore, CustomRAG, Any]:
+    """Build the retrievers, LLMs and agent around an already-created store."""
     top_k = cfg.retriever_top_k
     # When reranking, fetch a larger candidate pool first
     retriever_k = cfg.reranking_candidate_pool if cfg.reranking_enabled else top_k
@@ -440,6 +494,7 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
     )
 
     all_retrievers = [final_retriever]
+    aux_stores: list = []
 
     if kb.image_retrieval_enabled:
         image_emb = build_embedding_model("qwen3vl", kb.image_embedding_model)
@@ -454,24 +509,32 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
             image_emb, image_vs, cfg.image_retriever_top_k, False
         )
         all_retrievers.append(image_retriever)
+        aux_stores.append(image_vs)
         log.info(
             f"Image retrieval enabled: {kb.image_embedding_model} top_k={cfg.image_retriever_top_k}"
         )
 
-    base_prompt = cfg.system_prompt.strip() or _load_system_prompt()
+    try:
+        base_prompt = cfg.system_prompt.strip() or _load_system_prompt()
 
-    agent = CustomRAG(
-        llm=DebugLLM(llm),
-        utility_llm=DebugLLM(utility_llm),
-        system_prompt=base_prompt,
-        chat_only_system_prompt=_load_chat_only_prompt(),
-        expand_context_system_prompt=_load_expand_context_prompt(),
-        vector_store=vs,
-        retrievers=all_retrievers,
-        number_query_expansion=cfg.query_expansion,
-        enable_hyde=cfg.hyde_enabled,
-        follow_up_count=cfg.follow_up_count,
-    )
+        agent = CustomRAG(
+            llm=DebugLLM(llm),
+            utility_llm=DebugLLM(utility_llm),
+            system_prompt=base_prompt,
+            chat_only_system_prompt=_load_chat_only_prompt(),
+            expand_context_system_prompt=_load_expand_context_prompt(),
+            vector_store=vs,
+            retrievers=all_retrievers,
+            number_query_expansion=cfg.query_expansion,
+            enable_hyde=cfg.hyde_enabled,
+            follow_up_count=cfg.follow_up_count,
+            aux_vector_stores=aux_stores,
+        )
+    except Exception:
+        # No agent means nothing owns these yet; the caller only disposes `vs`.
+        for store in aux_stores:
+            _dispose_vs_sync(store)
+        raise
     return vs, agent, emb
 
 
@@ -596,10 +659,31 @@ def build_server():
             log.error(f"_conversation_metadata failed: {_e!r}")
             return {}
 
+    async def _shutdown() -> None:
+        """Release GPU-holding resources before the process exits.
+
+        The docling chunking pool runs "spawn" children that initialise their own
+        CUDA context. Without an explicit shutdown they are reparented to init and
+        hold that VRAM until the machine is rebooted — SIGKILL on the parent skips
+        ProcessPoolExecutor's atexit handler, so this is the only reliable hook.
+        """
+        try:
+            _reset_chunking_pool()
+            log.info("Chunking subprocess pool shut down.")
+        except Exception as exc:
+            log.warning(f"Chunking pool shutdown failed: {exc}")
+        try:
+            clear_embedding_cache()
+        except Exception as exc:
+            log.warning(f"Embedding cache teardown failed: {exc}")
+
     @asynccontextmanager
     async def _lifespan(_app):
         await _startup()
-        yield
+        try:
+            yield
+        finally:
+            await _shutdown()
 
     app = create_app(
         controller=controller,
@@ -750,7 +834,7 @@ def build_server():
         # from the currently-locked pool), the on-disk vectors are still intact;
         # report success and let the user trigger a pool switch separately.
         entry = None
-        pool.unload(kb.id)
+        await pool.unload(kb.id)
         try:
             entry = await pool.load(kb, cfg, _build_components)
             pool.set_active(kb.id)

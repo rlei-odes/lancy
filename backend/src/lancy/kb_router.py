@@ -97,7 +97,7 @@ class KBRegistry(BaseModel):
 # ─── Callback types ───────────────────────────────────────────────────────────
 
 ActivateCallback = Callable[[KBInfo, bool], Awaitable[None]]
-DeactivateCallback = Callable[[str], None]
+DeactivateCallback = Callable[[str], Awaitable[None]]
 UploadCallback = Callable[[Path, KBInfo, dict], Awaitable[None]]
 
 
@@ -271,7 +271,7 @@ def create_kb_router(
         if kb_id not in reg.bases:
             raise HTTPException(404, f"KB '{kb_id}' not found")
         if deactivate_callback is not None:
-            deactivate_callback(kb_id)
+            await deactivate_callback(kb_id)
         log.info(f"Deactivated KB '{kb_id}' (unloaded from pool)")
         return {"deactivated": kb_id}
 
