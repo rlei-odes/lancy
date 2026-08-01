@@ -15,9 +15,23 @@ New `POST /api/v1/rag/analyze-document` endpoint plus a `scripts/batch-analyze.p
 
 **Script** — `scripts/batch-analyze.py` logs into the frontend at `/api/auth/login` (`LANCY_PASSWORD` env var or interactive prompt; `LANCY_ADMIN=1` for admin-escape), iterates a text file of identifiers, and appends one CSV row per document. Resumable: reruns skip ids already present in the output. Ready-to-adapt example inputs (`docs.txt`, `prompt.txt`, `schema.json`) ship in `scripts/examples/batch-analyze/`.
 
+**Script preflight** — three checks run before the first LLM call, so a misconfigured batch fails in a second rather than once per document: input files present and the schema internally consistent (a `required` field absent from `properties` is rejected outright, since strict decoding refuses it); duplicate identifiers collapsed, first occurrence wins, with a count of what was dropped; and a KB check reporting backend/model, the per-document char budget derived from `num_ctx`, and how many identifiers actually exist in the target KB — catching a wrong `--kb` or `--id-field` up front instead of as a CSV full of `no_chunks`. `--interactive` pauses between checks, `--dry-run` stops after them. TLS and LDAP-login failures now print what to do (`REQUESTS_CA_BUNDLE`, `LANCY_ADMIN=1`) instead of a urllib3 traceback.
+
 **Prompt template** — `prompts/batch_analyze.default.md` frames the caller's questions with the schema and reading instructions. Gitignored `batch_analyze.custom.md` override follows the same pattern as `chat_only` / `expand_context`.
 
 **Files:** `backend/src/lancy/rag_router.py` (new `AnalyzeDocumentRequest`/`AnalyzeDocumentResponse` + `/analyze-document` endpoint), `prompts/batch_analyze.default.md` (new), `.gitignore` (add `batch_analyze.custom.md`), `scripts/batch-analyze.py` (new), `scripts/examples/batch-analyze/` (new — README + example docs/prompt/schema), `docs/admin-guides/03-API-endpoints.md` (documented under RAG → Batch Document Analysis).
+
+### Fixed — KB selection for non-admin sessions
+
+Non-admin users could not switch knowledge base, and the panel could name a KB the backend was not actually querying.
+
+`switchKb()` always called the admin-only `POST /kb/<id>/activate`, so every selection returned 403 for LDAP logins (always `role=user`). The call was also unnecessary: the pool holds several compatible KBs at once and `DispatchingAgent` routes per conversation via `pool.get(kb_id)`, so adopting an already-pooled KB is session-local. Activate moves the shared active pointer and stays admin-only.
+
+More seriously, `fetchKbRegistry()` fired an activate on mount and discarded the result — a 403 is not a fetch rejection, so the refusal was invisible — then displayed that KB anyway while answers came from whatever the pool had loaded. Pool membership now decides what is shown, checked against `GET /kb/pool` rather than `registry.active`, which can name a KB the pool rejected. The dropdown greys out and marks KBs a user cannot reach.
+
+Two related backend bugs are **not** fixed here and are recorded in BACKLOG under Known Bugs: `activate_kb()` persists `registry.active` before the pool load succeeds, and an unloaded `kb_id` is silently answered from a different KB.
+
+**Files:** `frontend/src/components/sections/rag-config-panel.tsx` (pool-aware `switchKb` + new `selectPooledKb`, mount-path resolution, selector gating), `frontend/src/lib/lang/{en,de,fr,it}.ts` (new `statusKbNotLoaded` / `kbNotLoadedShort`), `BACKLOG.md` (two new Known Bugs entries).
 
 ---
 

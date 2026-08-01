@@ -211,6 +211,8 @@ export const app = {
         kbAbort: "Cancel",
         statusSwitchingKb: "Switching knowledge base...",
         statusKbActive: "Knowledge base «{{name}}» active.",
+        statusKbNotLoaded: "«{{name}}» is not loaded on the server. Ask an administrator to activate it.",
+        kbNotLoadedShort: "not loaded",
         statusCreatingKb: "Creating knowledge base...",
         statusKbCreated: "KB «{{name}}» created. Not yet indexed.",
         statusKbUpdated: "Knowledge base updated.",

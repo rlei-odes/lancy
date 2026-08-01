@@ -206,6 +206,8 @@ export const app = {
         kbAbort: "Annulla",
         statusSwitchingKb: "Cambio base di conoscenza...",
         statusKbActive: "Base di conoscenza «{{name}}» attiva.",
+        statusKbNotLoaded: "«{{name}}» non è caricata sul server. Chiedi a un amministratore di attivarla.",
+        kbNotLoadedShort: "non caricata",
         statusCreatingKb: "Creazione base di conoscenza...",
         statusKbCreated: "BdC «{{name}}» creata. Non ancora indicizzata.",
         statusKbUpdated: "Base di conoscenza aggiornata.",

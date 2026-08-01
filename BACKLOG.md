@@ -58,6 +58,22 @@ Discovered while deploying with pgvector + Qwen3-Embedding-8B via Ollama: got pa
 3. Investigate pgvector's `halfvec` type — it may have a higher indexable dimension ceiling and could close this gap without truncation. Not yet checked.
 4. Document the 1024-dim ceiling as the practical limit for pgvector + Ollama embeddings, and steer pgvector deployments toward smaller embedding models.
 
+### `registry.active` Persisted Before the Pool Load Succeeds
+
+`activate_kb()` in `kb_router.py` sets `reg.active = kb_id` and calls `_save(reg)` *before* awaiting `activate_callback`. When the callback raises `EmbeddingConflict` the endpoint correctly returns 409, but `kb_registry.json` has already been written and now names a KB that was never loaded into the pool. The mismatch survives restarts: on boot `main.py` loads `registry.active` into the pool, which fails again for the same embedding reason, leaving the registry and the pool permanently disagreeing.
+
+Discovered while investigating why an LDAP user's KB selector showed `md_profile` while answers came from `md-vorschriften-stale` (`GET /kb/pool` reported only the latter as loaded). The frontend no longer trusts `registry.active` for display — it checks pool membership instead — but the backend still writes the inconsistent state.
+
+**Fix:** move `_save(reg)` after `await activate_callback(...)` so the registry only records an activation that actually took. Consider whether `reg.active` should be reverted explicitly on failure, or simply left untouched.
+
+### Unloaded `kb_id` Silently Answers from a Different KB
+
+`DispatchingAgent.answer_stream()` in `kb_pool.py` resolves its KB with `self._pool.get(kb_id) or self._pool.get_active()`. A conversation whose persisted `kb_id` is not in the pool is therefore answered from whatever KB *is* active, with no error, no warning, and no indication in the response. The user believes they are querying one knowledge base and receives answers from another.
+
+This is reachable in normal operation, because conversation `kb_id` is persisted in the DB while pool membership is not: a backend restart loads only `registry.active`, so every conversation bound to any other KB silently falls back. Observed in production alongside the bug above.
+
+**Fix:** decide the intended contract before changing it. Options: (a) raise/return an explicit error telling the user the KB is not loaded, (b) attempt an on-demand `pool.load()` for a compatible KB and only fail if it conflicts, or (c) keep the fallback but surface it clearly in the response and the sources panel. (b) is the most useful and pairs with the missing non-admin pool-load path — a compatible KB can join the pool without disturbing other users, and `EmbeddingConflict` already rejects incompatible ones.
+
 ---
 
 ## Authentication & Access Control

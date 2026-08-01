@@ -206,6 +206,8 @@ export const app = {
         kbAbort: "Abbrechen",
         statusSwitchingKb: "Wissensdatenbank wird gewechselt...",
         statusKbActive: "Wissensdatenbank «{{name}}» aktiv.",
+        statusKbNotLoaded: "«{{name}}» ist auf dem Server nicht geladen. Bitten Sie einen Administrator, sie zu aktivieren.",
+        kbNotLoadedShort: "nicht geladen",
         statusCreatingKb: "Wissensdatenbank wird erstellt...",
         statusKbCreated: "WDB «{{name}}» erstellt. Noch nicht indexiert.",
         statusKbUpdated: "Wissensdatenbank aktualisiert.",
