@@ -45,7 +45,8 @@ node_modules/
 CLAUDE.md
 
 # Auth config — set via settings UI, contains admin password
-frontend/auth_config.json
+# Glob covers manual/editor backups (.bak, .orig, …) — they hold the same secrets
+frontend/auth_config.json*
 
 # Custom prompts (may contain internal/confidential instructions)
 prompts/system_prompt.custom.md
