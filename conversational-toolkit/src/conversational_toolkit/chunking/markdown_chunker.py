@@ -22,3 +22,11 @@ class MarkdownChunker(PDFChunker):
             return path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             return path.read_text(encoding="latin-1")
+
+    def _normalize_newlines(self, text: str) -> str:
+        """Keep the source line structure verbatim.
+
+        These files are authored, not extracted from a page layout, so there is
+        no visual line wrapping to undo — every newline is the author's intent.
+        """
+        return text
