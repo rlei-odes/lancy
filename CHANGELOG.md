@@ -33,6 +33,18 @@ Two related backend bugs are **not** fixed here and are recorded in BACKLOG unde
 
 **Files:** `frontend/src/components/sections/rag-config-panel.tsx` (pool-aware `switchKb` + new `selectPooledKb`, mount-path resolution, selector gating), `frontend/src/lib/lang/{en,de,fr,it}.ts` (new `statusKbNotLoaded` / `kbNotLoadedShort`), `BACKLOG.md` (two new Known Bugs entries).
 
+### Fixed — Markdown tables and lists flattened during chunking
+
+Chunking collapsed every newline inside a block to a space, so a markdown table arrived in the index as a single line (`| A | B | |---|---| | 1 | 2 |`). It no longer parsed as a table, and both the source viewer and the LLM received a wall of pipes instead of a column structure — the cell-to-header mapping had to be reverse-engineered from prose. Lists were flattened the same way, running enumerated items together.
+
+`_normalize_newlines` existed to undo visual line wrapping from PDF extraction, and that behaviour is kept: a line that does not open a markdown block is still folded into the previous one with a space. Lines opening a block (`#`, `-`/`*`/`+`, `N.`, `|`, `>`) now keep their own line, and fenced code passes through verbatim. Measured against real Docling output, the new result is byte-identical to what Docling emitted — across five sampled PDFs (2,572 lines) there were no wrapped continuation lines to join, so the collapse had only ever destroyed structure.
+
+`.md` / `.txt` files skip normalisation entirely. These are authored rather than extracted from a page layout, so there is no wrapping to undo and every newline is intentional.
+
+Chunks already in an index stay flattened until re-ingested, so the renderer reconstructs pipe tables at display time. Column count comes from the delimiter row and rows are rebuilt only when every group of cells lines up exactly; anything ambiguous is left as raw text rather than split on a guess. Tables that already have their newlines are untouched. Across the 224 pipe-containing chunks of the default KB this turns 1 rendered table into 254, altering no chunk that already rendered one.
+
+**Files:** `conversational-toolkit/src/conversational_toolkit/chunking/pdf_chunker.py` (block-aware `_normalize_newlines`), `conversational-toolkit/src/conversational_toolkit/chunking/markdown_chunker.py` (normalisation suppressed for authored sources), `frontend/src/components/ui/markdown.tsx` (new `reflowFlattenedTable` / `reflowFlattenedTables`, applied in the render pipeline).
+
 ---
 
 ## [Lancy v0.3.9] — 2026-07-31 · rlei-odes

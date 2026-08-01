@@ -25,6 +25,61 @@ const sanitizeSchema = {
     },
 };
 
+const DELIM_CELL = /^\s*:?-{3,}:?\s*$/;
+
+// Chunks indexed before the ingestion fix had every newline inside a block
+// replaced by a space, which leaves a whole markdown table on one line:
+//   | A | B | |---|---| | 1 | 2 |
+// Rebuild the rows, but only when the cell counts line up exactly — splitting a
+// row apart on a guess is worse than showing the raw text.
+function reflowFlattenedTable(line: string): string | null {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("|") || !trimmed.endsWith("|") || !trimmed.includes("---")) return null;
+
+    const cells = trimmed.split("|").slice(1, -1);
+    const start = cells.findIndex((c) => DELIM_CELL.test(c));
+    if (start < 0) return null;
+
+    // The delimiter row gives the column count.
+    let cols = 0;
+    while (start + cols < cells.length && DELIM_CELL.test(cells[start + cols])) cols++;
+    // It must sit directly after the header row's cells plus the collapsed newline.
+    if (start !== cols + 1) return null;
+
+    const rows: string[][] = [];
+    for (let i = 0; i < cells.length;) {
+        if (cells.length - i < cols) return null;
+        rows.push(cells.slice(i, i + cols));
+        i += cols;
+        if (i < cells.length) {
+            if (cells[i].trim()) return null; // must be the space a newline became
+            i++;
+        }
+    }
+    return rows.map((r) => `| ${r.map((c) => c.trim()).join(" | ")} |`).join("\n");
+}
+
+// Tables that already have their newlines are left untouched: their individual
+// lines fail the reconstruction above and pass straight through.
+function reflowFlattenedTables(content: string): string {
+    if (!content.includes("|")) return content;
+
+    const out: string[] = [];
+    const lines = content.split("\n");
+    lines.forEach((line, i) => {
+        const table = reflowFlattenedTable(line);
+        if (!table) {
+            out.push(line);
+            return;
+        }
+        // GFM only parses the table as a block if it is not glued to adjacent text.
+        if (out.length > 0 && out[out.length - 1].trim()) out.push("");
+        out.push(table);
+        if (lines[i + 1]?.trim()) out.push("");
+    });
+    return out.join("\n");
+}
+
 // Convert (filename.pdf) plain-text references to markdown links,
 // but only for filenames that actually exist in the provided sources.
 const DOC_REF_RE = /\(([^()\s][^()]*\.(pdf|xlsx|xls|docx|doc|md|txt|csv))\)/gi;
@@ -191,6 +246,6 @@ export const Markdown: FunctionComponent<{ content: string; sources?: Source[] }
             td: (tdProps) => <td {...tdProps} className="px-4 py-3 text-left text-foreground" />,
         }}
     >
-        {linkifyDocRefs(content, sources)}
+        {reflowFlattenedTables(linkifyDocRefs(content, sources))}
     </ReactMarkdown>
 );

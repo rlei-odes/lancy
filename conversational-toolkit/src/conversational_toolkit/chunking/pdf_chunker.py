@@ -66,10 +66,37 @@ class PDFChunker(Chunker):
         else:
             raise NotImplementedError(f"Engine '{engine}' is not supported.")
 
+    # Lines that open a markdown block and must therefore keep their own line.
+    _BLOCK_LINE = re.compile(r"^\s*(#{1,6}\s|[-*+]\s|\d+[.)]\s|\||>)")
+
     def _normalize_newlines(self, text: str) -> str:
-        paragraphs = text.split("\n\n")
-        processed_paragraphs = [para.replace("\n", " ") for para in paragraphs]
-        return "\n\n".join(processed_paragraphs)
+        """Join lines that document extraction wrapped, without flattening blocks.
+
+        A newline inside a paragraph is a visual wrap from the source layout and
+        should become a space. A newline between table rows or list items is
+        structure: collapsing it puts the whole table on one line, where it no
+        longer parses as markdown and both the UI and the LLM see a wall of pipes.
+        So only lines that continue the previous one are folded back into it.
+        """
+        out: list[str] = []
+        in_fence = False
+
+        for line in text.split("\n"):
+            is_fence = line.lstrip().startswith(("```", "~~~"))
+            if in_fence:
+                out.append(line)
+                in_fence = not is_fence
+            elif is_fence:
+                in_fence = True
+                out.append(line)
+            elif not line.strip():
+                out.append("")
+            elif not out or not out[-1].strip() or self._BLOCK_LINE.match(line):
+                out.append(line)
+            else:
+                out[-1] = out[-1].rstrip() + " " + line.strip()
+
+        return "\n".join(out)
 
     def make_chunks(
         self,
