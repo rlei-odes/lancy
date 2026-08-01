@@ -515,22 +515,48 @@ export const RagConfigPanel: FunctionComponent = () => {
             if (!r.ok) return;
             const reg: KBRegistry = await r.json();
             setKbRegistry(reg);
+
+            // Which KB this session should show. A restored selection is only honoured
+            // if the pool can actually serve it: DispatchingAgent falls back to the
+            // pool's active entry for an unloaded kb_id (silently, see kb_pool.py), so
+            // displaying a KB the pool does not hold means the panel names one KB while
+            // answers come from another.
+            let pool = { loaded: [] as string[], active: null as string | null };
+            try {
+                const pr = await fetch(`${API_BASE}/api/v1/kb/pool`, { credentials: "include" });
+                if (pr.ok) pool = await pr.json();
+            } catch { /* fall through — treated as "nothing known to be loaded" */ }
+
             const savedKbId = sessionStorage.getItem("lancy_selected_kb_id");
-            const resolvedKbId = savedKbId && reg.bases[savedKbId] ? savedKbId : reg.active;
+            const candidate = savedKbId && reg.bases[savedKbId] ? savedKbId : reg.active;
+            let resolvedKbId = candidate;
+
+            // Membership is checked against the pool itself, never against reg.active:
+            // POST /activate persists reg.active before the pool load is attempted, so a
+            // load that fails (409 on an embedding conflict) leaves the registry naming a
+            // KB the pool never took.
+            if (!pool.loaded.includes(candidate)) {
+                // Not in the pool — try to get it there. Unlike before, the outcome
+                // decides what we display: non-admins get 403 and an embedding
+                // mismatch gets 409, and in both cases the KB will not serve queries.
+                let loaded = false;
+                try {
+                    const ar = await fetch(`${API_BASE}/api/v1/kb/${candidate}/activate`, {
+                        method: "POST", credentials: "include",
+                    });
+                    loaded = ar.ok;
+                } catch { /* network error — same handling as a refusal */ }
+                if (!loaded) {
+                    resolvedKbId = pool.active && reg.bases[pool.active] ? pool.active : reg.active;
+                }
+            }
+
             const kb = reg.bases[resolvedKbId];
             if (kb) {
                 setActiveKb(kb);
                 sessionStorage.setItem("lancy_selected_kb_id", kb.id);
                 sessionStorage.setItem("lancy_selected_kb_name", kb.name);
                 window.dispatchEvent(new CustomEvent("lancy-kb-changed", { detail: { kbId: kb.id } }));
-                // Ensure the KB is in the pool. If it's already loaded this is a fast no-op.
-                // Required when the session restores a KB that differs from the server's active
-                // (e.g. after a server restart, or first load with two users on different KBs).
-                if (kb.id !== reg.active) {
-                    fetch(`${API_BASE}/api/v1/kb/${kb.id}/activate`, {
-                        method: "POST", credentials: "include",
-                    }).catch(() => { /* pool load is best-effort on mount */ });
-                }
                 const kbCfg = kbInfoToConfig(kb);
                 setKbConfig(kbCfg);
                 savedKbConfig.current = kbCfg;
@@ -717,10 +743,57 @@ export const RagConfigPanel: FunctionComponent = () => {
 
     // ── KB actions ────────────────────────────────────────────────────────────
 
+    /** Adopt a KB the pool already holds. No server call: per-conversation routing
+     *  resolves through pool.get(kb_id), so only this session's selection changes.
+     *  POST /activate additionally moves the pool's global active pointer, which is
+     *  a shared side effect and therefore admin-only — and unnecessary here. */
+    const selectPooledKb = async (kb: KBInfo) => {
+        setActiveKb(kb);
+        sessionStorage.setItem("lancy_selected_kb_id", kb.id);
+        sessionStorage.setItem("lancy_selected_kb_name", kb.name);
+        window.dispatchEvent(new CustomEvent("lancy-kb-changed", { detail: { kbId: kb.id } }));
+        const kbCfg = kbInfoToConfig(kb);
+        setKbConfig(kbCfg);
+        savedKbConfig.current = kbCfg;
+        const loaded = await fetchUserPresets(kb.id);
+        setUserRetrievalPresets(loaded.retrieval);
+        setUserKbPresets(loaded.kb);
+        const defaultPreset = loaded.retrieval.find((p) => p.name === "Default");
+        if (defaultPreset) {
+            const mergedSession = { ...session, ...defaultPreset.data };
+            setSession(mergedSession);
+            savedSession.current = mergedSession;
+            fetch(`${API_BASE}/api/v1/rag/config`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(mergedSession),
+                credentials: "include",
+            }).catch(() => {});
+            setSelectedRetrievalPreset("Default");
+        }
+        setStatus({ type: "success", text: t("rag.statusKbActive", { name: kb.name }) });
+        setTimeout(() => setStatus({ type: "idle", text: "" }), 3000);
+    };
+
     const switchKb = async (id: string) => {
         if (id === activeKb?.id) return;
         const targetKb = kbRegistry?.bases[id];
-        const needsReset = targetKb && !isKbCompatible(targetKb);
+        if (!targetKb) return;
+
+        // Already pooled: switching is a local matter, so users can do it too.
+        if (poolStatus.loaded.includes(id)) {
+            await selectPooledKb(targetKb);
+            return;
+        }
+        // Not pooled, and only admins can load one. Refuse rather than select it —
+        // the pool would answer from a different KB without saying so.
+        if (!isAdmin) {
+            setStatus({ type: "error", text: t("rag.statusKbNotLoaded", { name: targetKb.name }) });
+            setTimeout(() => setStatus({ type: "idle", text: "" }), 5000);
+            return;
+        }
+
+        const needsReset = !isKbCompatible(targetKb);
         setStatus({ type: "loading", text: t("rag.statusSwitchingKb") });
         try {
             const qs = needsReset ? "?reset=true" : "";
@@ -728,38 +801,18 @@ export const RagConfigPanel: FunctionComponent = () => {
                 method: "POST", credentials: "include",
             });
             if (r.ok) {
-                const kb: KBInfo = await r.json();
-                setActiveKb(kb);
-                sessionStorage.setItem("lancy_selected_kb_id", kb.id);
-                sessionStorage.setItem("lancy_selected_kb_name", kb.name);
-                window.dispatchEvent(new CustomEvent("lancy-kb-changed", { detail: { kbId: kb.id } }));
-                const kbCfg = kbInfoToConfig(kb);
-                setKbConfig(kbCfg);
-                savedKbConfig.current = kbCfg;
-                const loaded = await fetchUserPresets(kb.id);
-                setUserRetrievalPresets(loaded.retrieval);
-                setUserKbPresets(loaded.kb);
-                // Apply the Default preset as the baseline for the new KB and persist immediately
-                const defaultPreset = loaded.retrieval.find((p) => p.name === "Default");
-                if (defaultPreset) {
-                    const mergedSession = { ...session, ...defaultPreset.data };
-                    setSession(mergedSession);
-                    savedSession.current = mergedSession;
-                    fetch(`${API_BASE}/api/v1/rag/config`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(mergedSession),
-                        credentials: "include",
-                    }).catch(() => {});
-                    setSelectedRetrievalPreset("Default");
-                }
+                // Now pooled and globally active — adopt it locally the same way, and
+                // record the new global pointer the activate just moved.
+                await selectPooledKb(await r.json());
                 setKbRegistry((prev) => prev ? { ...prev, active: id } : prev);
-                setStatus({ type: "success", text: t("rag.statusKbActive", { name: kb.name }) });
             } else {
                 setStatus({ type: "error", text: t("rag.statusError", { code: r.status }) });
+                setTimeout(() => setStatus({ type: "idle", text: "" }), 3000);
             }
-        } catch { setStatus({ type: "error", text: t("rag.statusConnError") }); }
-        setTimeout(() => setStatus({ type: "idle", text: "" }), 3000);
+        } catch {
+            setStatus({ type: "error", text: t("rag.statusConnError") });
+            setTimeout(() => setStatus({ type: "idle", text: "" }), 3000);
+        }
     };
 
     const createKb = async (name: string, data_dirs: string[]) => {
@@ -1164,14 +1217,21 @@ export const RagConfigPanel: FunctionComponent = () => {
                     >
                         {kbList.map((kb) => {
                             const compatible = isKbCompatible(kb);
+                            const pooled = poolStatus.loaded.includes(kb.id);
+                            // Admins can load or reset the pool, so anything is reachable
+                            // for them. Users can only reach what the pool already holds;
+                            // offering more would select a KB that cannot answer.
+                            const selectable = isAdmin || (compatible && pooled);
                             return (
                                 <option
                                     key={kb.id}
                                     value={kb.id}
-                                    disabled={!compatible && !isAdmin}
+                                    disabled={!selectable}
                                     style={!compatible && isAdmin ? { color: "#f87171" } : undefined}
                                 >
-                                    {kb.name}{!compatible && isAdmin ? " ⚠" : ""}
+                                    {kb.name}
+                                    {!compatible && isAdmin ? " ⚠" : ""}
+                                    {!isAdmin && !pooled ? ` (${t("rag.kbNotLoadedShort")})` : ""}
                                 </option>
                             );
                         })}
