@@ -3,6 +3,12 @@
 Starter files for `scripts/batch-analyze.py`. Copy them elsewhere and adapt to
 your KB and analysis task.
 
+> The web UI covers the same workflow without any files: **Explorer → Batch
+> Analysis** builds the prompt and schema from a question list, verifies the run,
+> and downloads the results as CSV. Use the script when the run should be
+> scheduled, driven from a DMS, or survive without a browser tab open. The UI can
+> export its `prompt.txt` and `schema.json` for exactly that hand-off.
+
 ## Files
 
 - **`docs.txt`** — one identifier per line. See "Which id to use?" below.

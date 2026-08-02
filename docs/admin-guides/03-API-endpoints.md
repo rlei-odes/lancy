@@ -787,6 +787,14 @@ curl -X POST http://localhost:3000/api/v1/rag/analyze-document \
 
 **Errors:** `422` on invalid request (both / neither identifier, missing fields), `404` if `kb_id` is set but not found, `502` if the LLM call fails or returns invalid JSON, `504` if the LLM exceeds the 110 s timeout.
 
+```
+GET /rag/analyze-prompt-template
+```
+
+Returns `{"template": "..."}` — the raw system prompt template (`batch_analyze.custom.md` if present, else `batch_analyze.default.md`) with its `{user_prompt}` and `{schema}` placeholders unsubstituted. The Batch Analysis UI tab renders it with both filled in so the user sees the complete prompt before running, without the frontend keeping its own copy that could drift from the file actually used. `404` if no template file is found.
+
+**Preflight support:** `POST /rag/document-stats` takes an optional `id_field` (`source_file` by default, or `document_id`) alongside its `source_files` list, so a batch keyed by upload-time ids can be size-checked the same way. Identifiers with no matching chunks come back as `chunk_count: 0`, which is how the UI distinguishes "missing from the KB" from "too large for the context budget" before spending any LLM call. Capped at 100 identifiers per request.
+
 ---
 
 ### Utility Endpoints

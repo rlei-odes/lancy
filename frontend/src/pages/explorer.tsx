@@ -12,8 +12,9 @@ import { RagConfigSidebar } from "@/components/sections/rag-config-sidebar";
 import { RetrievalProbe } from "@/components/sections/retrieval-probe";
 import { ChunkBrowser } from "@/components/sections/chunk-browser";
 import { KbAnalytics } from "@/components/sections/kb-analytics";
+import { BatchAnalysis } from "@/components/sections/batch-analysis";
 
-type Tab = "probe" | "browser" | "analytics";
+type Tab = "probe" | "browser" | "analytics" | "batch";
 
 export default function ExplorerPage() {
     const { cssClass } = useTheme();
@@ -25,6 +26,7 @@ export default function ExplorerPage() {
         probe: t("explorer.tabProbe"),
         browser: t("explorer.tabBrowser"),
         analytics: t("explorer.tabAnalytics"),
+        batch: t("explorer.tabBatch"),
     };
 
     return (
@@ -54,7 +56,7 @@ export default function ExplorerPage() {
 
                     {/* Tab strip */}
                     <div className="flex items-center gap-1 px-5 py-2 border-b border-border bg-muted/20 shrink-0">
-                        {(["probe", "browser", "analytics"] as Tab[]).map(tab => (
+                        {(["probe", "browser", "analytics", "batch"] as Tab[]).map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
@@ -76,6 +78,7 @@ export default function ExplorerPage() {
                             {activeTab === "probe" && <RetrievalProbe />}
                             {activeTab === "browser" && <ChunkBrowser active={activeTab === "browser"} />}
                             {activeTab === "analytics" && <KbAnalytics active={activeTab === "analytics"} />}
+                            {activeTab === "batch" && <BatchAnalysis />}
                         </div>
                     </div>
                 </div>

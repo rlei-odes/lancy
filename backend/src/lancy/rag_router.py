@@ -204,10 +204,16 @@ class MetadataFacetsResponse(BaseModel):
 
 class DocumentStatsRequest(BaseModel):
     source_files: list[str] = Field(..., min_length=1, max_length=100)
+    id_field: Literal["source_file", "document_id"] = "source_file"
+    """Metadata field the entries in `source_files` are matched against.
+
+    Defaults to source_file so the expand-context popover is unaffected; the batch
+    analysis UI passes document_id when the caller drives the batch by DMS ids.
+    """
 
 
 class DocumentStat(BaseModel):
-    source_file: str
+    source_file: str  # the identifier that was requested, per id_field
     chunk_count: int
     char_count: int
 
@@ -563,20 +569,21 @@ def create_rag_router(
 
     @router.post("/document-stats", response_model=DocumentStatsResponse)
     async def document_stats(req: DocumentStatsRequest) -> DocumentStatsResponse:
-        """Return chunk_count + char_count per requested source_file.
+        """Return chunk_count + char_count per requested identifier.
 
         Used by the expand-context popover to estimate LLM context budget usage
-        before the user commits. Character count is used as a cheap, model-
-        agnostic proxy for tokens (see the popover's ~/3.5 approximation).
+        before the user commits, and by the batch analysis UI to flag over-budget
+        documents before any LLM call is spent. Character count is used as a cheap,
+        model-agnostic proxy for tokens (see the popover's ~/3.5 approximation).
         """
         try:
             vs = vector_store_factory()
             if vs is None:
                 raise HTTPException(status_code=404, detail="No active KB.")
-            chunks = await vs.get_chunks_by_filter(filters={"source_file": req.source_files})
+            chunks = await vs.get_chunks_by_filter(filters={req.id_field: req.source_files})
             by_file: dict[str, tuple[int, int]] = {}
             for c in chunks:
-                sf = c.metadata.get("source_file", "")
+                sf = c.metadata.get(req.id_field, "")
                 cur = by_file.get(sf, (0, 0))
                 by_file[sf] = (cur[0] + 1, cur[1] + len(c.content or ""))
             return DocumentStatsResponse(
@@ -590,6 +597,19 @@ def create_rag_router(
         except Exception as exc:
             log.warning(f"document-stats error: {exc}")
             raise HTTPException(status_code=500, detail=str(exc))
+
+    @router.get("/analyze-prompt-template")
+    async def analyze_prompt_template() -> dict:
+        """Return the raw batch-analysis system prompt template.
+
+        The batch analysis UI renders this with {user_prompt}/{schema} substituted so
+        the user sees the complete prompt before running. Served from the backend
+        rather than duplicated in the frontend so a custom template shows up as-is.
+        """
+        tpl = _read_analyze_prompt()
+        if not tpl:
+            raise HTTPException(status_code=404, detail="batch_analyze prompt template not found")
+        return {"template": tpl}
 
     @router.post("/analyze-document", response_model=AnalyzeDocumentResponse)
     async def analyze_document(req: AnalyzeDocumentRequest, http: Request) -> AnalyzeDocumentResponse:
