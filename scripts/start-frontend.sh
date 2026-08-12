@@ -6,6 +6,8 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$REPO/logs"
 FRONTEND="$REPO/frontend"
 
+source "$REPO/scripts/lib/log-rotate.sh"
+
 mkdir -p "$LOG_DIR"
 
 # --- Already running? ---
@@ -29,13 +31,15 @@ if [ package-lock.json -nt node_modules/.package-lock.json ] 2>/dev/null || [ ! 
     echo "  Running npm install..."
     npm install -q
 fi
-> "$LOG_DIR/frontend.log"
+# Roll the previous run aside instead of truncating it — a crash you restart
+# out of is still readable in frontend.log.1.
+rotate_log "$LOG_DIR/frontend.log"
 if [ "$MODE" = "DEV" ]; then
-    node_modules/.bin/next dev > >(awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' >> "$LOG_DIR/frontend.log") 2>&1 &
+    node_modules/.bin/next dev > >(log_writer "$LOG_DIR/frontend.log") 2>&1 &
 else
     echo "  Building for production..."
-    node_modules/.bin/next build >> "$LOG_DIR/frontend.log" 2>&1
-    node_modules/.bin/next start > >(awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' >> "$LOG_DIR/frontend.log") 2>&1 &
+    node_modules/.bin/next build > >(log_writer "$LOG_DIR/frontend.log") 2>&1
+    node_modules/.bin/next start > >(log_writer "$LOG_DIR/frontend.log") 2>&1 &
 fi
 echo $! > "$LOG_DIR/frontend.pid"
 echo "  Frontend PID: $(cat $LOG_DIR/frontend.pid)"

@@ -7,6 +7,8 @@ LOG_DIR="$REPO/logs"
 VENV="$REPO/.venv"
 MODE="${1:-prod}"
 
+source "$REPO/scripts/lib/log-rotate.sh"
+
 mkdir -p "$LOG_DIR"
 
 # --- Venv check ---
@@ -70,12 +72,17 @@ fi
 
 # --- Backend ---
 echo "Starting backend (Ollama / mistral-nemo:12b) on port 8080..."
+# LOG_FILE is where the app's own rotating handler writes; backend.out catches
+# only what bypasses it (import errors, native library chatter, the traceback of
+# a hard crash). Two writers on one file would interleave and fight the
+# handler's rotation, so they stay separate.
+rotate_log "$LOG_DIR/backend.out"
 PYTHONPATH="$REPO/backend/src" \
 BACKEND=ollama \
 LOG_FILE="$LOG_DIR/backend.log" \
 HF_HUB_OFFLINE=1 \
   "$VENV/bin/python" -m lancy.main \
-  > /dev/null 2>&1 &
+  > >(log_writer "$LOG_DIR/backend.out") 2>&1 &
 echo $! > "$LOG_DIR/backend.pid"
 echo "  Backend PID: $(cat $LOG_DIR/backend.pid)"
 
@@ -86,18 +93,16 @@ if [ package-lock.json -nt node_modules/.package-lock.json ] 2>/dev/null || [ ! 
     echo "  Running npm install..."
     npm install -q
 fi
-> "$LOG_DIR/frontend.log"
+# Roll the previous run aside instead of truncating it — a crash you restart
+# out of is still readable in frontend.log.1.
+rotate_log "$LOG_DIR/frontend.log"
 if [ "$MODE" = "DEV" ]; then
-    FIFO="$LOG_DIR/frontend.fifo"
-    rm -f "$FIFO" && mkfifo "$FIFO"
-    awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' < "$FIFO" >> "$LOG_DIR/frontend.log" &
-    node_modules/.bin/next dev > "$FIFO" 2>&1 &
+    node_modules/.bin/next dev > >(log_writer "$LOG_DIR/frontend.log") 2>&1 &
     echo $! > "$LOG_DIR/frontend.pid"
-    rm -f "$FIFO"
 else
     echo "  Building for production..."
-    node_modules/.bin/next build >> "$LOG_DIR/frontend.log" 2>&1
-    node_modules/.bin/next start > >(awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' >> "$LOG_DIR/frontend.log") 2>&1 &
+    node_modules/.bin/next build > >(log_writer "$LOG_DIR/frontend.log") 2>&1
+    node_modules/.bin/next start > >(log_writer "$LOG_DIR/frontend.log") 2>&1 &
     echo $! > "$LOG_DIR/frontend.pid"
 fi
 echo "  Frontend PID: $(cat $LOG_DIR/frontend.pid)"
