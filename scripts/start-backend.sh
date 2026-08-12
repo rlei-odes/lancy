@@ -8,6 +8,8 @@ LOG_DIR="$REPO/logs"
 VENV="$REPO/.venv"
 PORT=8080
 
+source "$REPO/scripts/lib/log-rotate.sh"
+
 mkdir -p "$LOG_DIR"
 
 # --- Venv check ---
@@ -48,11 +50,20 @@ if ss -tunlp | grep -q ":$PORT "; then
 fi
 
 # --- Backend ---
+# backend.log belongs to the app's own rotating handler (see
+# backend/src/lancy/logging_config.py). Redirecting the process's stdout/stderr
+# there as well put two writers with independent file offsets on one file, so
+# they overwrote each other, and after a rotation the shell's fd kept writing to
+# the renamed backup. The raw streams get their own rotating file instead; they
+# carry what never reaches the handler — import errors, native library output,
+# and the traceback of a hard crash.
 echo "Starting Lancy backend on port $PORT..."
+rotate_log "$LOG_DIR/backend.out"
 PYTHONPATH="$REPO/backend/src" \
+  LOG_FILE="$LOG_DIR/backend.log" \
   HF_HUB_OFFLINE=1 \
   "$VENV/bin/python" -m lancy.main \
-  > "$LOG_DIR/backend.log" 2>&1 &
+  > >(log_writer "$LOG_DIR/backend.out") 2>&1 &
 BACKEND_PID=$!
 echo $BACKEND_PID > "$LOG_DIR/backend.pid"
 
@@ -61,15 +72,17 @@ sleep 3
 if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
     echo "ERROR: Backend failed to start. Last log output:"
     echo "---"
-    tail -20 "$LOG_DIR/backend.log"
+    # Both files: a failure early enough to precede logging setup shows up only
+    # in backend.out.
+    tail -20 "$LOG_DIR/backend.out" "$LOG_DIR/backend.log" 2>/dev/null || true
     echo "---"
-    echo "  Full log: $LOG_DIR/backend.log"
+    echo "  Full logs: $LOG_DIR/backend.log, $LOG_DIR/backend.out"
     rm -f "$LOG_DIR/backend.pid"
     exit 1
 fi
 
 echo "  Backend PID: $BACKEND_PID"
-echo "  Log:         $LOG_DIR/backend.log"
+echo "  Log:         $LOG_DIR/backend.log (raw output: $LOG_DIR/backend.out)"
 echo "  Stop:        scripts/stop-backend.sh"
 echo ""
 echo "Backend API: http://$(hostname -I | awk '{print $1}'):$PORT"
