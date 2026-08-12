@@ -14,8 +14,10 @@ import json
 import logging
 import sqlite3
 import threading
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 
 log = logging.getLogger("uvicorn")
 
@@ -45,6 +47,30 @@ def _configure_conn(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA foreign_keys=ON")
 
 
+@contextmanager
+def _connect(db_path: Path) -> Iterator[sqlite3.Connection]:
+    """Open a configured connection and guarantee it is closed again.
+
+    `with sqlite3.connect(...)` commits or rolls back the transaction but does
+    NOT close the connection — the handle then lives until the object happens to
+    be reclaimed. Relying on that is what put 87 open user_config.db handles in
+    one process: the database is in WAL mode, so each one costs two descriptors
+    (the db and its -wal), and a batch analysis run drove the process to its
+    1024-descriptor ceiling. From there every unrelated open() failed too.
+
+    Closing explicitly frees the descriptor regardless of what still references
+    the object. The inner `with conn` keeps the commit-on-success,
+    rollback-on-exception semantics every caller was already written against.
+    """
+    conn = sqlite3.connect(db_path)
+    try:
+        _configure_conn(conn)
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
 # ─── Backup ───────────────────────────────────────────────────────────────────
 
 
@@ -57,7 +83,9 @@ def _maybe_backup(db_path: Path) -> None:
         return
     bak = db_path.with_suffix(".db.bak")
     try:
-        with sqlite3.connect(db_path) as src, sqlite3.connect(bak) as dst:
+        # closing(), not `with sqlite3.connect(...)`: the latter would commit but
+        # leave both handles open. Backups run rarely, but the leak is the same one.
+        with closing(sqlite3.connect(db_path)) as src, closing(sqlite3.connect(bak)) as dst:
             src.backup(dst)
         log.info(f"SQLite backup written to {bak}")
     except Exception as exc:
@@ -96,8 +124,7 @@ def _migrate_presets_unique_index(conn: sqlite3.Connection) -> None:
 def init_db(db_path: Path) -> None:
     """Initialise the database, run migrations, and back up if due."""
     _maybe_backup(db_path)
-    with sqlite3.connect(db_path) as conn:
-        _configure_conn(conn)
+    with _connect(db_path) as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         # Enable incremental auto-vacuum. Existing DBs need a one-time VACUUM to convert.
         if conn.execute("PRAGMA auto_vacuum").fetchone()[0] != 2:  # 2 = INCREMENTAL
@@ -134,8 +161,7 @@ def init_db(db_path: Path) -> None:
 
 
 def get_user_retrieval(db_path: Path, user_id: str) -> dict | None:
-    with sqlite3.connect(db_path) as conn:
-        _configure_conn(conn)
+    with _connect(db_path) as conn:
         row = conn.execute(
             "SELECT config_json FROM user_config WHERE user_id = ?", (user_id,)
         ).fetchone()
@@ -145,8 +171,7 @@ def get_user_retrieval(db_path: Path, user_id: str) -> dict | None:
 def set_user_retrieval(db_path: Path, user_id: str, data: dict) -> None:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     with _sqlite_lock:
-        with sqlite3.connect(db_path) as conn:
-            _configure_conn(conn)
+        with _connect(db_path) as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO user_config (user_id, config_json, updated_at) "
                 "VALUES (?, ?, ?)",
@@ -166,8 +191,7 @@ def get_presets(db_path: Path, kb_id: str, user_id: str | None) -> dict:
     The `protected` field is included so the frontend can hide delete buttons and
     filter seeds out of save payloads.
     """
-    with sqlite3.connect(db_path) as conn:
-        _configure_conn(conn)
+    with _connect(db_path) as conn:
         rows = conn.execute("""
             SELECT name, data_json, protected FROM presets
             WHERE type = 'retrieval'
@@ -213,8 +237,7 @@ def save_presets(
     max_deletable = 1 if role == "admin" else 0
 
     with _sqlite_lock:
-        with sqlite3.connect(db_path) as conn:
-            _configure_conn(conn)
+        with _connect(db_path) as conn:
 
             # Delete only unprotected rows in this scope — never touch seeds
             conn.execute(
@@ -283,8 +306,7 @@ def seed_presets(db_path: Path, seeds_path: Path) -> None:
 
     inserted = 0
     with _sqlite_lock:
-        with sqlite3.connect(db_path) as conn:
-            _configure_conn(conn)
+        with _connect(db_path) as conn:
             for p in data.get("retrieval", []):
                 protected = p.get("protected", 1)
                 cur = conn.execute(
@@ -320,8 +342,7 @@ def seed_presets(db_path: Path, seeds_path: Path) -> None:
 
 def get_default_preset(db_path: Path) -> dict | None:
     """Return the data dict of the immutable Default retrieval preset, or None."""
-    with sqlite3.connect(db_path) as conn:
-        _configure_conn(conn)
+    with _connect(db_path) as conn:
         row = conn.execute(
             "SELECT data_json FROM presets "
             "WHERE type='retrieval' AND name='Default' AND protected=2 AND user_id IS NULL",
@@ -349,8 +370,7 @@ def migrate_json_presets(db_path: Path, db_dir: Path) -> None:
         kb_list = [] if isinstance(raw, list) else raw.get("kb", [])
 
         with _sqlite_lock:
-            with sqlite3.connect(db_path) as conn:
-                _configure_conn(conn)
+            with _connect(db_path) as conn:
                 for p in retrieval:
                     if isinstance(p, dict) and "name" in p and "data" in p:
                         cur = conn.execute(
