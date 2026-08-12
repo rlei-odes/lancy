@@ -1,4 +1,4 @@
-import React, { FunctionComponent, useLayoutEffect, useRef, useState } from "react";
+import React, { FunctionComponent, useLayoutEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { MessageItem } from "@/components/ui/message-item";
 import { Conversation } from "@/services/conversation";
@@ -9,12 +9,19 @@ export const MessageList: FunctionComponent = () => {
 
     const { t } = useTranslation("app");
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const [previousConversationId, setPreviousConversationId] = useState<Conversation["id"] | null>(null);
+    // A ref, not state: this is only read to compare against the current id, never
+    // rendered. As state it re-rendered the whole list on every thread change purely
+    // to record a value the render output does not use.
+    const previousConversationId = useRef<Conversation["id"] | null>(null);
 
     useLayoutEffect(() => {
-        setPreviousConversationId(activeConversationId);
-        const isSameConversationId = previousConversationId && previousConversationId === activeConversationId;
+        // Read before writing — scrolling smoothly means "same conversation as the
+        // previous render", which is what the state version captured by setting it
+        // first and then comparing against the not-yet-updated value.
+        const isSameConversationId =
+            previousConversationId.current && previousConversationId.current === activeConversationId;
         messagesEndRef.current?.scrollIntoView({ behavior: isSameConversationId ? "smooth" : "auto" });
+        previousConversationId.current = activeConversationId;
     }, [thread]);
 
     return (

@@ -144,6 +144,24 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
         setThread(getMessageThread(messages, cursor));
     };
 
+    // Declared above the startup effect that calls it: as a `const` further down it
+    // was read before its initialiser ran, so the effect captured whatever binding
+    // existed at that point rather than tracking later changes.
+    const _changeConversation = (conversationId: string) =>
+        conversationService.getMessages(conversationId).then((response) => {
+            if (response && response.length > 0) {
+                const cur = response[response.length - 1].id;
+                setCursor(cur);
+                setMessagesAndThread(response, cur);
+                setConversationId(conversationId);
+                setChatFilters([]);
+                // Fetch the conversation record for its frozen filters snapshot.
+                conversationService.get(conversationId).then((conv) => {
+                    setFrozenChatFilters(conv?.rag_config_snapshot?.filters ?? []);
+                });
+            }
+        });
+
     useEffect(() => {
         // Always call /auth/refresh on startup so the backend can migrate old cookies
         // to the current stable user_id (deterministic hash of APP_PASSWORD).
@@ -177,22 +195,6 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
 
     const changeConversation = (conversationId: string) => {
         _changeConversation(conversationId);
-    };
-
-    const _changeConversation = (conversationId: string) => {
-        return conversationService.getMessages(conversationId).then((response) => {
-            if (response && response.length > 0) {
-                const cur = response[response.length - 1].id;
-                setCursor(cur);
-                setMessagesAndThread(response, cur);
-                setConversationId(conversationId);
-                setChatFilters([]);
-                // Fetch the conversation record for its frozen filters snapshot.
-                conversationService.get(conversationId).then((conv) => {
-                    setFrozenChatFilters(conv?.rag_config_snapshot?.filters ?? []);
-                });
-            }
-        });
     };
 
     const changeThread = (cursor: Message["id"]) => {

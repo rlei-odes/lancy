@@ -1,5 +1,5 @@
 "use client";
-import { createContext, FunctionComponent, useContext, useEffect, useState } from "react";
+import { createContext, FunctionComponent, useContext, useEffect, useState, useSyncExternalStore } from "react";
 
 export enum Theme {
     SYSTEM = "system",
@@ -21,6 +21,17 @@ interface Props {
     children: React.ReactNode;
 }
 
+// The OS colour scheme is an external store, so it is subscribed to rather than
+// mirrored into state from an effect. Module scope keeps these identities stable
+// across renders, which useSyncExternalStore requires.
+const subscribeToColorScheme = (onChange: () => void) => {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+};
+const getColorSchemeSnapshot = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
+const getServerColorSchemeSnapshot = () => false;
+
 export const useTheme = () => useContext(ThemeContext);
 
 export const ThemeProvider: FunctionComponent<Props> = (props: Props) => {
@@ -34,41 +45,22 @@ export const ThemeProvider: FunctionComponent<Props> = (props: Props) => {
         return Theme.SYSTEM; // Default: follow system preference
     });
 
-    const getCssClass = (theme: Theme) => {
-        switch (theme) {
-            case Theme.LIGHT:
-                return "";
-            case Theme.DARK:
-                return "dark";
-            case Theme.SYSTEM:
-                const { matches } = window.matchMedia("(prefers-color-scheme: dark)");
-                return matches ? "dark" : "";
-            default:
-                return "";
-        }
-    };
+    const systemPrefersDark = useSyncExternalStore(
+        subscribeToColorScheme,
+        getColorSchemeSnapshot,
+        getServerColorSchemeSnapshot,
+    );
 
-    const [cssClass, setCssClass] = useState(getCssClass(theme));
+    // Fully derived, so there is no effect to keep in step. This also fixes a case the
+    // effect missed: it only wrote a new class on a media-query *change* event, so
+    // switching from an explicit theme back to SYSTEM kept the explicit class until the
+    // OS preference next flipped. The snapshot is re-read on every render instead.
+    const cssClass = theme === Theme.SYSTEM ? (systemPrefersDark ? "dark" : "") : theme === Theme.DARK ? "dark" : "";
 
     const changeTheme = (theme: Theme) => {
         setTheme(() => theme);
         window.localStorage.setItem("theme", theme);
     };
-
-    useEffect(() => {
-        const listener = (event: MediaQueryListEvent) => {
-            if (event.matches) {
-                setCssClass(getCssClass(Theme.DARK));
-            } else {
-                setCssClass(getCssClass(Theme.LIGHT));
-            }
-        };
-        if (theme === Theme.SYSTEM) {
-            window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", listener);
-            return () => window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", listener);
-        }
-        setCssClass(getCssClass(theme));
-    }, [theme, cssClass]);
 
     useEffect(() => {
         const body = document.querySelector("body");
