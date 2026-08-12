@@ -37,7 +37,7 @@ from lancy.database import (
     seed_presets,
     set_user_retrieval,
 )
-from lancy.feature0_baseline_rag import build_llm
+from lancy.feature0_baseline_rag import ANALYZE_LLMS
 
 log = logging.getLogger("uvicorn")
 
@@ -682,7 +682,9 @@ def create_rag_router(
             }
 
         try:
-            llm = build_llm(
+            # Cached: the batch UI drives one request per document, and a fresh
+            # client per request exhausted the process's file descriptors.
+            llm = ANALYZE_LLMS.get(
                 backend=cfg.llm_backend,
                 model_name=cfg.llm_model or None,
                 temperature=cfg.llm_temperature,
