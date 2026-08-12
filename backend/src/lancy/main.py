@@ -81,8 +81,8 @@ from conversational_toolkit.vectorstores.base import VectorStore
 
 from lancy.feature0_baseline_rag import (
     _ROOT,
+    AGENT_LLMS,
     build_embedding_model,
-    build_llm,
     clear_embedding_cache,
     get_shared_embedding_model,
     make_vector_store,
@@ -428,7 +428,10 @@ def _assemble_components(
     )
     ollama_host = cfg.ollama_host.strip() or None
     try:
-        llm = build_llm(
+        # Cached on the build arguments: this runs on every session config save,
+        # and each fresh client strands an httpx connection pool that nothing
+        # closes. A retrieval-only change reuses the existing clients outright.
+        llm = AGENT_LLMS.get(
             backend=cfg.llm_backend,
             model_name=cfg.llm_model or None,
             temperature=cfg.llm_temperature,
@@ -443,7 +446,7 @@ def _assemble_components(
         log.warning(
             f"LLM build failed ({exc}), falling back to ollama/mistral-nemo:12b"
         )
-        llm = build_llm(
+        llm = AGENT_LLMS.get(
             backend="ollama",
             model_name="mistral-nemo:12b",
             temperature=cfg.llm_temperature,
@@ -469,7 +472,7 @@ def _assemble_components(
         or getattr(cfg, "custom_api_key", "")
     )
     try:
-        utility_llm = build_llm(
+        utility_llm = AGENT_LLMS.get(
             backend=cfg.llm_backend,
             model_name=_utility_model_name,
             temperature=cfg.llm_temperature,

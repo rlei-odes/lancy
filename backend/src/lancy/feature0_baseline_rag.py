@@ -40,10 +40,12 @@ Usage:
 
 import asyncio
 import hashlib
+import inspect
+import json
 import os
 import re
 import threading
-from collections import Counter
+from collections import Counter, OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -473,6 +475,114 @@ def build_llm(
             raise ValueError(
                 f"Unsupported backend {backend!r}. Choose 'ollama', 'litellm', or 'custom'."
             )
+
+
+# ─── LLM client reuse ─────────────────────────────────────────────────────────
+#
+# Every build_llm() call constructs a backend client (AsyncOpenAI, or ollama's
+# AsyncClient) that owns an httpx connection pool nothing ever closes: the
+# toolkit's LLM classes expose no close/aclose, and a pooled keep-alive socket
+# stays registered with the event loop, so it is not reclaimed on its own either.
+#
+# That was survivable while clients were built at startup and on config changes,
+# but /analyze-document built one per request and the batch analysis UI issues
+# one request per document. A few hundred documents exhausted the process's file
+# descriptors, after which every unrelated open() failed too — the SQLite user
+# config, the JSON registries, the prompt templates.
+#
+# Identical build arguments yield an interchangeable client (nothing mutates an
+# LLM after construction), so caching on those arguments bounds the number of
+# clients by the number of distinct configurations in use rather than by request
+# volume.
+
+
+class LLMCache:
+    """Bounded, oldest-first cache of build_llm() results.
+
+    `close_evicted` records whether this cache's callers allow an evicted client
+    to be closed. That is only true where a client is used within one request and
+    never retained: the KB pool's agents hold theirs for the agent's lifetime, and
+    closing one out from under a live agent would break every chat it serves.
+    """
+
+    def __init__(self, maxsize: int, close_evicted: bool) -> None:
+        self._entries: OrderedDict[str, LLM] = OrderedDict()
+        self._maxsize = maxsize
+        self._close_evicted = close_evicted
+
+    def get(self, **kwargs: Any) -> LLM:
+        """Return a client for these build_llm() arguments, building one if needed.
+
+        Synchronous, and the lookup/build/insert never yields, so neither the
+        agent rebuild (which runs in an executor thread) nor two concurrent
+        requests can race into building duplicates.
+        """
+        key = json.dumps(kwargs, sort_keys=True, default=str)
+        llm = self._entries.get(key)
+        if llm is not None:
+            self._entries.move_to_end(key)
+            return llm
+
+        llm = build_llm(**kwargs)
+        self._entries[key] = llm
+        while len(self._entries) > self._maxsize:
+            _, evicted = self._entries.popitem(last=False)
+            if self._close_evicted:
+                _close_llm_soon(evicted)
+        return llm
+
+
+_pending_closes: set = set()
+
+
+def _close_llm_soon(llm: LLM) -> None:
+    """Schedule an evicted client's connection pool to be closed.
+
+    Closing has to happen on the event loop the client's sockets were opened on,
+    so this is a no-op without a running loop — which only arises on the agent
+    rebuild path, whose cache does not close evictions anyway.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    task = loop.create_task(_aclose_llm(llm))
+    # asyncio holds only a weak reference to tasks; without this the close can be
+    # garbage-collected before it runs.
+    _pending_closes.add(task)
+    task.add_done_callback(_pending_closes.discard)
+
+
+async def _aclose_llm(llm: Any) -> None:
+    """Best-effort release of a client's connection pool.
+
+    AsyncOpenAI exposes close(); ollama's AsyncClient keeps its httpx client
+    private, hence the last fallback. Failure is not worth surfacing — an
+    unclosed evicted client is merely the old behaviour.
+    """
+    client = getattr(getattr(llm, "_inner", llm), "client", None)  # unwrap DebugLLM
+    for target, name in ((client, "close"), (client, "aclose"), (getattr(client, "_client", None), "aclose")):
+        fn = getattr(target, name, None)
+        if fn is None:
+            continue
+        try:
+            result = fn()
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:
+            logger.debug(f"Could not close evicted LLM client: {exc}")
+        return
+
+
+# One client per distinct (session config, response schema) an /analyze-document
+# caller uses, so a batch run builds one and reuses it for every document. Its
+# clients never outlive the request that borrows them, so evictions can be closed.
+ANALYZE_LLMS = LLMCache(maxsize=4, close_evicted=True)
+
+# The agent + utility clients rebuilt on every session config save. Retrieval-only
+# changes (top_k, BM25, reranking) leave the LLM arguments untouched, so the common
+# rebuild now reuses the existing clients instead of stranding the previous pair.
+AGENT_LLMS = LLMCache(maxsize=4, close_evicted=False)
 
 
 def _split_chunk_by_tokens(chunk: Chunk, max_tokens: int) -> list[Chunk]:
