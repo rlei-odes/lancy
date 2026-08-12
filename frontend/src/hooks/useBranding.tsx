@@ -21,11 +21,13 @@ const BrandingContext = createContext<BrandingContextValue>({
 export const BrandingProvider: FunctionComponent<{ children: React.ReactNode }> = ({ children }) => {
     const [branding, setBranding] = useState<BrandingConfig | null>(null);
 
-    const load = useCallback(async () => {
-        try {
-            const res = await fetch("/api/v1/branding");
-            if (res.ok) setBranding(await res.json());
-        } catch {}
+    // A promise chain rather than async/await so the state update happens in a
+    // callback rather than in the effect's synchronous body.
+    const load = useCallback(() => {
+        fetch("/api/v1/branding")
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => { if (data) setBranding(data); })
+            .catch(() => {});
     }, []);
 
     useEffect(() => { load(); }, [load]);

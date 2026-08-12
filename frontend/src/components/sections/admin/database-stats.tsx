@@ -267,7 +267,7 @@ export const DatabaseStats: FunctionComponent = () => {
                         <p className="text-xs text-muted-foreground">
                             Both SQLite databases (<code className="font-mono">user_config.db</code> and <code className="font-mono">conversations.db</code>) are backed up automatically at startup if the file is older than 24 hours.
                             The backup is written to <code className="font-mono">&lt;name&gt;.db.bak</code> in the same directory, overwriting the previous backup.
-                            PostgreSQL backups are not managed by this application — use your database provider's tooling.
+                            PostgreSQL backups are not managed by this application — use your database provider&apos;s tooling.
                         </p>
                         {stats.conv_db.path && (
                             <p className="text-xs text-muted-foreground mt-1">

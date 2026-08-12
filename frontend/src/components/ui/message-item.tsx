@@ -26,22 +26,27 @@ export const MessageItem: FunctionComponent<MessageItemProps> = (props: MessageI
     const { agentName, agentAvatarUrl } = useBranding();
     const [isHover, setIsHover] = useState(false);
     const [followUp, setFollowUp] = useState(follow_up_questions);
+    const [syncedFollowUpProp, setSyncedFollowUpProp] = useState(follow_up_questions);
     const [isEdit, setIsEdit] = useState(false);
     const [editableContent, setEditableContent] = useState(content);
 
     const { sendMessage, sending, cursor } = useMessaging();
-    const [queryPhase, setQueryPhase] = useState<string>("idle");
+    const [polledPhase, setPolledPhase] = useState<string>("idle");
 
     const isLoading = id === LOADING_ID;
     const isError = id === ERROR_ID;
 
+    // Derived rather than reset in the effect: a message that is not loading has no
+    // phase to show, so there is nothing to unwind when polling stops.
+    const queryPhase = isLoading ? polledPhase : "idle";
+
     useEffect(() => {
-        if (!isLoading) { setQueryPhase("idle"); return; }
+        if (!isLoading) return;
         const interval = setInterval(async () => {
             try {
                 const res = await fetch("/api/v1/rag/query-status");
                 const data = await res.json();
-                setQueryPhase(data.phase ?? "idle");
+                setPolledPhase(data.phase ?? "idle");
             } catch { /* ignore */ }
         }, 500);
         return () => clearInterval(interval);
@@ -52,11 +57,15 @@ export const MessageItem: FunctionComponent<MessageItemProps> = (props: MessageI
 
     const isActionable = (isHover || isLastMessage) && !isLoading && !isError;
 
-    useEffect(() => {
-        if (follow_up_questions && follow_up_questions.length) {
-            setFollowUp(follow_up_questions);
-        }
-    }, [follow_up_questions]);
+    // Cannot be derived from the prop: clicking a follow-up clears the list (below),
+    // so this is state the user also owns. Re-syncing during render rather than in an
+    // effect is React's documented way to adjust state when a prop changes, and it
+    // avoids rendering once with the stale list first. Empty incoming lists are
+    // ignored exactly as the effect did — follow-ups arrive at the end of a stream.
+    if (follow_up_questions !== syncedFollowUpProp) {
+        setSyncedFollowUpProp(follow_up_questions);
+        if (follow_up_questions?.length) setFollowUp(follow_up_questions);
+    }
 
     const handleMouseEnter = useCallback(() => setIsHover(true), []);
     const handleMouseLeave = useCallback(() => setIsHover(false), []);

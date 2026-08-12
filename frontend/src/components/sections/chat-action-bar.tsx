@@ -160,6 +160,9 @@ const FilterPopover: FunctionComponent<FilterPopoverProps> = ({ kb, initial, onA
     useEffect(() => {
         for (const k of kb.chat_filters.keys) {
             if (k.widget !== "dropdown") continue;
+            // Deliberate: each dropdown is marked loading before its own request goes
+            // out, so the menu renders a spinner per key instead of appearing empty.
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- see above
             setFacets((f) => ({ ...f, [k.key]: { loading: true, values: null, distinct_count: 0 } }));
             const url = `/api/v1/rag/metadata-facets?key=${encodeURIComponent(k.key)}&kb_id=${encodeURIComponent(kb.id)}&threshold=120`;
             fetch(url, { credentials: "include" })

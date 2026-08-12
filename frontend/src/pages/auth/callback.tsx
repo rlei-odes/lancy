@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
+import Link from "next/link";
 import { UserManager } from "oidc-client-ts";
 
 export default function OIDCCallback() {
@@ -65,9 +66,9 @@ export default function OIDCCallback() {
                 {error ? (
                     <div className="text-center space-y-4 px-6">
                         <p className="text-red-400 text-sm">{error}</p>
-                        <a href="/login" className="text-blue-400 hover:underline text-sm block">
+                        <Link href="/login" className="text-blue-400 hover:underline text-sm block">
                             Back to login
-                        </a>
+                        </Link>
                     </div>
                 ) : (
                     <p className="text-gray-400 text-sm">Signing you in…</p>

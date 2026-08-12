@@ -287,6 +287,10 @@ export const KbAnalytics: FunctionComponent<{ active: boolean }> = ({ active }) 
 
     useEffect(() => {
         if (!selectedKb) return;
+        // Deliberate, as in usage-analytics: switching KB has to clear the previous
+        // KB's numbers and show the spinner before the request resolves. That is one
+        // render on a user action, not a cascade.
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- see above
         setLoading(true);
         setError(null);
         setNotFound(false);

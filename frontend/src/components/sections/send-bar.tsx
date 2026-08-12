@@ -26,8 +26,12 @@ export const SendBar: FunctionComponent = () => {
     );
 
     // Refresh past labels from localStorage whenever sessionLabel changes (catches newly saved labels)
+    // Cannot be derived: the chips below also delete and clear entries, so this state
+    // is written by the user as well as read from localStorage. Re-reading an external
+    // store on a dependency change is what an effect is for.
     useEffect(() => {
         if (typeof window !== "undefined") {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- see above
             setPastLabels(JSON.parse(localStorage.getItem("sessionLabelHistory") || "[]"));
         }
     }, [sessionLabel]);

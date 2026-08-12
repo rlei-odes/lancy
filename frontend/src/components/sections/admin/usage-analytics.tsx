@@ -83,6 +83,11 @@ export const UsageAnalytics: FunctionComponent = () => {
     const [days, setDays] = useState(180);
 
     useEffect(() => {
+        // Deliberate: the spinner has to appear when `days` changes and before the
+        // request resolves, which is one render, not a cascade. Deriving it instead
+        // would mean reworking these four states into a single request-keyed object
+        // for no user-visible gain.
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- see above
         setLoading(true);
         setError(null);
         Promise.all([fetchUsageStats(days), fetchPerfStats(days)])

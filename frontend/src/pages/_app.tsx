@@ -1,6 +1,5 @@
 import "@/styles/globals.css";
 import type { AppProps } from "next/app";
-import { useEffect, useState } from "react";
 import { Translation } from "@/lib/lang/i18n";
 import { MessagingProvider } from "@/hooks/useMessaging";
 import { useRouter } from "next/router";
@@ -17,16 +16,13 @@ const inter = Inter({ subsets: ["latin"] });
 
 export default function App({ Component, pageProps }: AppProps) {
     const router = useRouter();
-    const [render, setRender] = useState(false);
 
-    useEffect(() => {
-        if (!router.isReady) return;
-        setRender(true);
-    }, [router.isReady]);
-
+    // Nothing renders until the router has its query populated. This mirrored
+    // router.isReady into state via an effect, which only delayed the same result
+    // by a render; isReady is already reactive, so read it directly.
     const isAuthPage = router.pathname === "/login" || router.pathname.startsWith("/auth/");
 
-    return render ? (
+    return router.isReady ? (
         <BrandingProvider>
             <MediaQueryProvider waitMs={200}>
                 <ThemeProvider>
