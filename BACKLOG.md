@@ -572,6 +572,21 @@ Done: Extract ingestion pipeline from `main.py` into `ingestion.py`. Done: KBPoo
 
 **Not in scope:** wrapping `build_server` shared state in a class — larger refactor, more risk, deferred.
 
+### Refactor: Split rag-config-panel.tsx
+
+At 1,938 lines this is by far the largest file in the frontend — roughly 10× the average component and nearly 3× the next largest (`batch-analysis.tsx`, 770). It grows by design: CLAUDE.md names it as the home for every session-configurable setting, so each new RAG parameter lands here.
+
+Split on the seams that already exist rather than on a line count. Four concerns currently share the file:
+
+- **KB selector** — stateful, permission-sensitive, and already the source of one bug (`39160a6`: non-admins could not switch KB, and the panel displayed a KB the pool was not serving). The strongest candidate to extract first.
+- **Preset load/save** — `/rag/presets/{kbId}` fetch and persist, plus the protection rules the backend enforces.
+- **Ollama model discovery** — `/rag/ollama-models` fetching and the host/effective-host resolution around it.
+- **Field rendering** — the `FieldRow` grid that makes up the bulk of the line count.
+
+**Worth doing now that tests exist:** `frontend/tests/middleware-auth.test.ts` and `lang-parity.test.ts` cover the adjacent behaviour, so a split is far safer than it would have been before. Add a test for the KB selector's pool-awareness before extracting it, so the `39160a6` bug cannot reappear during the move.
+
+**Not in scope:** changing any behaviour. This is a pure move — the panel should render and behave identically before and after.
+
 ### Performance: Source Display Lag After Streaming
 
 After the LLM finishes streaming, there is a noticeable delay before sources appear in the UI. Two contributing factors:
