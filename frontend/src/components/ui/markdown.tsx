@@ -32,7 +32,7 @@ const DELIM_CELL = /^\s*:?-{3,}:?\s*$/;
 //   | A | B | |---|---| | 1 | 2 |
 // Rebuild the rows, but only when the cell counts line up exactly — splitting a
 // row apart on a guess is worse than showing the raw text.
-function reflowFlattenedTable(line: string): string | null {
+export function reflowFlattenedTable(line: string): string | null {
     const trimmed = line.trim();
     if (!trimmed.startsWith("|") || !trimmed.endsWith("|") || !trimmed.includes("---")) return null;
 
@@ -61,7 +61,7 @@ function reflowFlattenedTable(line: string): string | null {
 
 // Tables that already have their newlines are left untouched: their individual
 // lines fail the reconstruction above and pass straight through.
-function reflowFlattenedTables(content: string): string {
+export function reflowFlattenedTables(content: string): string {
     if (!content.includes("|")) return content;
 
     const out: string[] = [];
@@ -83,7 +83,7 @@ function reflowFlattenedTables(content: string): string {
 // Convert (filename.pdf) plain-text references to markdown links,
 // but only for filenames that actually exist in the provided sources.
 const DOC_REF_RE = /\(([^()\s][^()]*\.(pdf|xlsx|xls|docx|doc|md|txt|csv))\)/gi;
-function linkifyDocRefs(content: string, sources?: Source[]): string {
+export function linkifyDocRefs(content: string, sources?: Source[]): string {
     const knownFiles = new Set(
         (sources ?? []).map((s) => s.metadata?.source_file as string).filter(Boolean)
     );
