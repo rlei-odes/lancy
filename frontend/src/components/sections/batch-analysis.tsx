@@ -82,13 +82,13 @@ function newRow(): QuestionRow {
  *  to line the QUESTIONS block up with the schema, and a fixed `questionN` does that
  *  without anything for the user to get wrong. Readability is handled at export time
  *  by exportColumn(). */
-function fieldName(index: number): string {
+export function fieldName(index: number): string {
     return `question${index + 1}`;
 }
 
 /** `question3_how_many_towers_are_menti` — the export header only. Keeps the number so
  *  columns stay in question order, appends a slug so the CSV is readable on its own. */
-function exportColumn(row: QuestionRow, index: number): string {
+export function exportColumn(row: QuestionRow, index: number): string {
     const slug = row.question
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "_")
@@ -98,7 +98,7 @@ function exportColumn(row: QuestionRow, index: number): string {
     return slug ? `${fieldName(index)}_${slug}` : fieldName(index);
 }
 
-function parseChoices(raw: string): string[] {
+export function parseChoices(raw: string): string[] {
     const seen = new Set<string>();
     return raw
         .split(",")
@@ -108,7 +108,7 @@ function parseChoices(raw: string): string[] {
 
 /** Every property is required and additionalProperties is false — OpenAI-compatible
  *  backends reject anything looser under strict mode. */
-function buildSchema(rows: QuestionRow[]): Record<string, unknown> {
+export function buildSchema(rows: QuestionRow[]): Record<string, unknown> {
     const properties: Record<string, unknown> = {};
     for (const [i, r] of rows.entries()) {
         const base: Record<string, unknown> = { description: r.question.trim() };
@@ -133,13 +133,13 @@ function buildSchema(rows: QuestionRow[]): Record<string, unknown> {
 
 /** The schema carries the answer format (enum values, types), so the prompt stays
  *  the plain question text — no generated format hints to translate. */
-function buildPrompt(rows: QuestionRow[]): string {
+export function buildPrompt(rows: QuestionRow[]): string {
     return rows.map((r, i) => `${fieldName(i)}: ${r.question.trim()}`).join("\n");
 }
 
 /** Problems the builder can still produce. Anything not listed here is structurally
  *  impossible, which is why there is no schema linting step. */
-function validateRows(rows: QuestionRow[]): Issue[] {
+export function validateRows(rows: QuestionRow[]): Issue[] {
     const issues: Issue[] = [];
     if (rows.length === 0) issues.push({ code: "noQuestions" });
     for (const [i, r] of rows.entries()) {
@@ -155,7 +155,7 @@ function validateRows(rows: QuestionRow[]): Issue[] {
 
 /** Mirrors read_id_list() in scripts/batch-analyze.py: blanks and '#' comments are
  *  dropped, repeats collapse to the first occurrence. */
-function parseIdList(text: string): { ids: string[]; duplicates: number } {
+export function parseIdList(text: string): { ids: string[]; duplicates: number } {
     const ids: string[] = [];
     const seen = new Set<string>();
     let duplicates = 0;
@@ -171,14 +171,14 @@ function parseIdList(text: string): { ids: string[]; duplicates: number } {
 
 // ─── Export helpers ───────────────────────────────────────────────────────────
 
-function csvCell(v: unknown): string {
+export function csvCell(v: unknown): string {
     const s = v === null || v === undefined ? "" : String(v);
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 /** `keys` index the result rows, `headers` are what the file shows — they differ because
  *  the schema fields stay `questionN` while the export spells the question out. */
-function toCsv(keys: string[], headers: string[], rows: ResultRow[]): string {
+export function toCsv(keys: string[], headers: string[], rows: ResultRow[]): string {
     const lines = [headers.map(csvCell).join(",")];
     for (const row of rows) lines.push(keys.map((k) => csvCell(row[k])).join(","));
     return lines.join("\n");

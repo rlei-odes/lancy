@@ -791,10 +791,6 @@ Next.js spawns child worker processes not covered by the PID file. After `./stop
 
 The Re-index ↺ button (reset=True) now shows an inline confirmation dialog before proceeding. When the store is non-empty, the dialog displays the current chunk and file count ("This will permanently delete N chunks from M files…"). All four UI languages supported.
 
----
-
-## [Lancy v0.2.29] — 2026-04-16 · rlei-odes
-
 ### Fixed — Markdown and Plain-Text Ingestion
 
 `MarkdownChunker._pdf2markdown` was missing `**kwargs`, causing all `.md` and `.txt` files to fail with `unexpected keyword argument 'do_ocr'` and produce 0 chunks. Added `**kwargs` to absorb PDF-specific parameters passed by the parent `make_chunks`.
