@@ -690,18 +690,32 @@ export const RagConfigPanel: FunctionComponent = () => {
                     // Detect completion: same pattern as indexing-status.tsx
                     if (!d.indexing && d.finished_at && d.finished_at !== prevFinishedAt.current) {
                         prevFinishedAt.current = d.finished_at;
-                        if (d.last_result) {
+                        const finished = new Date(d.finished_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                        // A failed run leaves last_result null, so the block below never
+                        // ran and the panel showed nothing at all. Outcome decides first.
+                        if (d.outcome === "failed") {
+                            setStatus({
+                                type: "error",
+                                text: `${t("rag.statusIndexFailed", { error: d.error || "" })} · ${finished}`,
+                            });
+                            await fetchKbRegistry();
+                        } else if (d.outcome === "cancelled") {
+                            setStatus({
+                                type: "error",
+                                text: `${t("rag.statusIndexCancelled")} · ${finished}`,
+                            });
+                            await fetchKbRegistry();
+                        } else if (d.last_result) {
                             const { chunks_indexed, files_processed, files_skipped_store, files_skipped_batch } = d.last_result;
                             const skippedStore: number = files_skipped_store ?? 0;
                             const skippedBatch: number = files_skipped_batch ?? 0;
                             const skipParts: string[] = [];
                             if (skippedStore > 0) skipParts.push(`${skippedStore} ${t("rag.skipReasonStore")}`);
                             if (skippedBatch > 0) skipParts.push(`${skippedBatch} ${t("rag.skipReasonBatch")}`);
-                            const finishedTime = new Date(d.finished_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
                             const base = skipParts.length > 0
                                 ? t("rag.statusIndexedWithSkips", { chunks: chunks_indexed, files: files_processed, skipped: skipParts.join(", ") })
                                 : t("rag.statusIndexed", { chunks: chunks_indexed, files: files_processed });
-                            setStatus({ type: "success", text: `${base} · ${finishedTime}` });
+                            setStatus({ type: "success", text: `${base} · ${finished}` });
                             await fetchKbRegistry();
                         }
                     }

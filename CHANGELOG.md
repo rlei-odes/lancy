@@ -19,6 +19,16 @@ Surfaced while repointing a pgvector KB at a replacement database host. The rein
 
 **Files:** `backend/src/lancy/main.py` (widen the `except` in `rebuild_callback`), `tests/test_reindex_error_handling.py` (new).
 
+### Added — Failed and cancelled indexing runs are reported
+
+Containment left the failure invisible: a failed run reports the same zero counts as one that legitimately had nothing to index. `/reindex-status` gains `outcome` (`""` / `ok` / `cancelled` / `failed`) and `error`, recorded in `run_ingestion` so every caller is covered, and cleared at the start of each run so a stale result cannot label the next one.
+
+`error` carries the exception *class name* only — never the message. The endpoint has no auth gate and the sidebar polls it for every session, and exception text can embed the connection string. The failure path also advances `finished_at`, without which the frontend — which detects completion by watching that value change — left the spinner stopping with no banner at all.
+
+Cancellation is now distinct from a successful no-op run, which matters when a half-populated KB would otherwise read as complete. The sidebar shows a red failure or amber cancelled banner; the RAG panel shows the same, warning that a cancelled KB may be incomplete.
+
+**Files:** `backend/src/lancy/ingestion.py` (record outcome on all paths in `run_ingestion` and `ingest_uploaded_file`), `backend/src/lancy/rag_router.py` (`outcome`/`error` on `IndexStatus`), `frontend/src/components/sections/sidebar/indexing-status.tsx`, `frontend/src/components/sections/rag-config-panel.tsx`, `frontend/src/lib/lang/{en,de,fr,it}.ts`, `tests/test_reindex_error_handling.py`.
+
 ---
 
 ## [Lancy v0.3.10] — 2026-07-31 · rlei-odes

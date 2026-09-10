@@ -179,6 +179,13 @@ _index_status: dict = {
     "finished_at": "",
     "last_result": None,
     "queued": 0,
+    # How the last run ended: "" (never run) | "ok" | "cancelled" | "failed".
+    # Without this a failed run is indistinguishable from one that legitimately
+    # indexed nothing, since both report zero counts.
+    "outcome": "",
+    # Exception class name only — never the message. /reindex-status is polled by
+    # every logged-in session, and exception text can carry the connection string.
+    "error": "",
 }
 _cancel_requested: bool = False
 
@@ -375,6 +382,8 @@ async def run_ingestion(
             "kb_name": kb.name,
             "finished_at": "",
             "last_result": None,
+            "outcome": "",
+            "error": "",
         }
     )
 
@@ -738,10 +747,21 @@ async def run_ingestion(
             except Exception as exc:
                 log.warning(f"Failed to write KB stats for '{kb.id}': {exc}")
 
+        _index_status["outcome"] = "ok"
         return chunks_so_far, files_processed, n_skipped_store, n_skipped_batch
     except _IndexingCancelled:
         log.info("Indexing cancelled by user request.")
+        _index_status["outcome"] = "cancelled"
         return 0, 0, 0, 0
+    except Exception as exc:
+        # The caller turns this into a zero-count ReindexResult and returns early,
+        # so it never reaches the code that advances finished_at. Set it here or the
+        # frontend — which detects completion by watching finished_at change — would
+        # see the spinner stop with no banner at all.
+        _index_status["outcome"] = "failed"
+        _index_status["error"] = type(exc).__name__
+        _index_status["finished_at"] = datetime.now(timezone.utc).isoformat()
+        raise
     finally:
         _cancel_requested = False
         _index_status["indexing"] = False
@@ -814,6 +834,8 @@ async def ingest_uploaded_file(
         "kb_name": kb.name,
         "finished_at": "",
         "last_result": None,
+        "outcome": "",
+        "error": "",
     })
 
     loop = asyncio.get_event_loop()
@@ -1043,6 +1065,7 @@ async def ingest_uploaded_file(
         )
         _index_status["last_result"] = result.model_dump()
         _index_status["finished_at"] = datetime.now(timezone.utc).isoformat()
+        _index_status["outcome"] = "ok"
         log.info(
             f"Upload ingest complete: {len(chunks)} chunks from '{file_path.name}' "
             f"(document_id='{document_id}')"
@@ -1056,6 +1079,9 @@ async def ingest_uploaded_file(
             _event_written = True
     except Exception as exc:
         log.error(f"Upload ingestion failed for '{file_path.name}': {exc!r}")
+        _index_status["outcome"] = "failed"
+        _index_status["error"] = type(exc).__name__
+        _index_status["finished_at"] = datetime.now(timezone.utc).isoformat()
         if db_engine is not None and not _event_written:
             _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
             await _write_ingest_event(

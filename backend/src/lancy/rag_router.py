@@ -126,6 +126,8 @@ class IndexStatus(BaseModel):
     finished_at: str = ""  # ISO timestamp set when indexing completes
     last_result: ReindexResult | None = None  # result of the last completed reindex
     queued: int = 0  # files waiting in the upload queue
+    outcome: str = ""  # "" (never run) | "ok" | "cancelled" | "failed"
+    error: str = ""  # exception class name when outcome == "failed"; never the message
 
 
 # ─── Retrieval probe ──────────────────────────────────────────────────────────

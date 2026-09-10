@@ -1,5 +1,5 @@
 import React, { FunctionComponent, useEffect, useRef, useState } from "react";
-import { CheckCircle2, Loader2, Square } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Square, XCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useRole } from "@/hooks/useRole";
 
@@ -22,6 +22,8 @@ interface IndexStatus {
     last_result?: { reset: boolean } | null;
     queued: number;
     captioning_enabled: boolean;
+    outcome?: string; // "" | "ok" | "cancelled" | "failed"
+    error?: string; // exception class name when outcome === "failed"
 }
 
 export const IndexingStatus: FunctionComponent = () => {
@@ -175,6 +177,26 @@ export const IndexingStatus: FunctionComponent = () => {
     if (showDone && status?.finished_at) {
         const time = new Date(status.finished_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         const kbLabel = status.kb_name ? ` · ${status.kb_name}` : "";
+
+        // A failed run reports the same zero counts as one that had nothing to do,
+        // so the outcome decides the banner — not last_result.
+        if (status.outcome === "failed") {
+            return (
+                <div className="mx-2 mb-1 px-3 py-2 rounded-md bg-red-950/60 border border-red-800/50 text-xs text-red-200 flex items-center gap-1.5">
+                    <AlertTriangle className="h-3 w-3 shrink-0 text-red-400" />
+                    <span>{t("rag.indexingFailed", { kb: kbLabel, time, error: status.error || "" })}</span>
+                </div>
+            );
+        }
+        if (status.outcome === "cancelled") {
+            return (
+                <div className="mx-2 mb-1 px-3 py-2 rounded-md bg-amber-950/60 border border-amber-800/50 text-xs text-amber-200 flex items-center gap-1.5">
+                    <XCircle className="h-3 w-3 shrink-0 text-amber-400" />
+                    <span>{t("rag.indexingCancelled", { kb: kbLabel, time })}</span>
+                </div>
+            );
+        }
+
         const doneKey = status.last_result?.reset === true
             ? "rag.indexingDoneFull"
             : status.last_result?.reset === false
