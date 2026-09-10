@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.3.11] — 2026-09-10 · rlei-odes
+
+### Fixed — Ingestion failures escaped the reindex background task
+
+`rebuild_callback` caught only `RuntimeError` around `run_ingestion`. A vector store that cannot be reached raises `ConnectionRefusedError` — an `OSError` — so pointing a pgvector KB at an unreachable host produced a full uvicorn "Exception in ASGI application" traceback per attempt instead of a handled failure. The handler now catches `Exception` and logs via `log.exception`, keeping a traceback rooted at the ingestion failure rather than the ASGI middleware stack.
+
+Cancellation is unaffected: `/reindex-cancel` sets a flag that raises the private `_IndexingCancelled`, which `run_ingestion` handles internally and never propagates to this handler. `asyncio.CancelledError` derives from `BaseException` and still propagates.
+
+Surfaced while repointing a pgvector KB at a replacement database host. The reindex remains invisible to the UI on failure — `IndexStatus` has no error field, so a failed run is indistinguishable from one that indexed nothing. That is tracked separately.
+
+**Test:** `tests/test_reindex_error_handling.py` drives the real `POST /api/v1/rag/reindex` route through `TestClient`, which runs background tasks inline and re-raises whatever escapes them, so it covers the path that actually broke. `run_ingestion` is monkeypatched to raise, parametrised over the failure shapes a dead database produces (`ConnectionRefusedError`, no-route `OSError`, `TimeoutError`) plus `RuntimeError` and `ValueError`. Verified non-vacuous: with the old `except RuntimeError` restored, five of six cases fail and only the `RuntimeError` case passes.
+
+**Files:** `backend/src/lancy/main.py` (widen the `except` in `rebuild_callback`), `tests/test_reindex_error_handling.py` (new).
+
+---
+
 ## [Lancy v0.3.10] — 2026-07-31 · rlei-odes
 
 ### Added — Batch document analysis

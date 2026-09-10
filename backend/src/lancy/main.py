@@ -824,8 +824,13 @@ def build_server():
             chunks_n, files_n, skipped_store_n, skipped_batch_n = await run_ingestion(
                 kb, reset, db_dir=_DB_DIR, cfg=cfg, db_engine=_db_engine
             )
-        except RuntimeError as exc:
-            log.error(f"Ingestion failed for KB '{kb.name}': {exc}")
+        # Runs as a Starlette BackgroundTask, where an escaping exception is only
+        # surfaced as an unhandled ASGI error — so every failure is contained here.
+        # An unreachable vector store raises OSError (asyncpg's ConnectionRefusedError),
+        # not RuntimeError, which is how it used to escape. Cancellation does not pass
+        # through here: run_ingestion handles _IndexingCancelled internally.
+        except Exception as exc:
+            log.exception(f"Ingestion failed for KB '{kb.name}': {exc}")
             return ReindexResult(
                 chunks_indexed=0, files_processed=0,
                 files_skipped=0, files_skipped_store=0, files_skipped_batch=0,
