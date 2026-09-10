@@ -95,6 +95,26 @@ EMBEDDING_DIMS: dict[str, int] = {
 _DEFAULT_EMBEDDING_DIM = 768
 
 
+def safe_conn_str(conn: str) -> str:
+    """A database connection string with the password masked, for logging.
+
+    Never log a connection string raw or truncated. The prefix ahead of the
+    password is a fixed length — "postgresql+asyncpg://" plus the username and a
+    colon — so slicing it (the previous `conn[:40]`) reliably exposed the first
+    characters of the password instead of hiding them.
+
+    An unparseable string yields a placeholder rather than falling back to the
+    original, which would reintroduce the leak for exactly the malformed inputs
+    that are most worth logging.
+    """
+    try:
+        from sqlalchemy.engine import make_url
+
+        return make_url(conn).render_as_string(hide_password=True)
+    except Exception:
+        return "<unparseable connection string>"
+
+
 def make_vector_store(
     vs_type: str,
     db_path: Path | None,
@@ -119,7 +139,7 @@ def make_vector_store(
         engine = create_async_engine(conn, pool_pre_ping=True)
         dim = EMBEDDING_DIMS.get(embedding_model_name, _DEFAULT_EMBEDDING_DIM)
         logger.info(
-            f"PGVectorStore: table={table_name!r} dim={dim} conn={conn[:40]}..."
+            f"PGVectorStore: table={table_name!r} dim={dim} conn={safe_conn_str(conn)}"
         )
         return PGVectorStore(engine=engine, table_name=table_name, embeddings_size=dim)
     else:

@@ -49,7 +49,7 @@ def idle(monkeypatch):
     "exc",
     [
         # asyncpg on a host with nothing listening on 5432
-        ConnectionRefusedError(111, "Connect call failed ('192.168.1.202', 5432)"),
+        ConnectionRefusedError(111, "Connect call failed ('10.0.0.1', 5432)"),
         # host unreachable / DNS gone — the other shapes of a dead DB host
         OSError(113, "No route to host"),
         TimeoutError("connection timed out"),
@@ -126,7 +126,7 @@ def _run(kb) -> tuple:
 
 def test_failure_records_outcome_error_and_finished_at(kb, stale_status, monkeypatch):
     _raise_from_vector_store(
-        monkeypatch, ConnectionRefusedError(111, "Connect call failed ('192.168.1.202', 5432)")
+        monkeypatch, ConnectionRefusedError(111, "Connect call failed ('10.0.0.1', 5432)")
     )
 
     with pytest.raises(ConnectionRefusedError):
@@ -137,7 +137,7 @@ def test_failure_records_outcome_error_and_finished_at(kb, stale_status, monkeyp
     # Class name only. The message names the host and port, and for a SQLAlchemy
     # error would carry the connection URL.
     assert s["error"] == "ConnectionRefusedError"
-    assert "192.168.1.202" not in s["error"]
+    assert "10.0.0.1" not in s["error"]
     # Must advance past the stale value or the frontend never notices the run ended.
     assert s["finished_at"] != "1999-01-01T00:00:00+00:00"
     assert s["finished_at"]

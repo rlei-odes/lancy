@@ -29,6 +29,16 @@ Cancellation is now distinct from a successful no-op run, which matters when a h
 
 **Files:** `backend/src/lancy/ingestion.py` (record outcome on all paths in `run_ingestion` and `ingest_uploaded_file`), `backend/src/lancy/rag_router.py` (`outcome`/`error` on `IndexStatus`), `frontend/src/components/sections/sidebar/indexing-status.tsx`, `frontend/src/components/sections/rag-config-panel.tsx`, `frontend/src/lib/lang/{en,de,fr,it}.ts`, `tests/test_reindex_error_handling.py`.
 
+### Fixed — Database passwords were written to the log
+
+Two log lines truncated a connection string instead of redacting it, which is not the same thing: the prefix ahead of the password has a fixed length, so the slice landed inside the password. `PGVectorStore: … conn={conn[:40]}` printed roughly the first eight characters of the pgvector password, and `Conversation DB: PostgreSQL ({_database_url[:40]}…)` more than that, since `postgresql://` is shorter than `postgresql+asyncpg://`.
+
+New `safe_conn_str()` in `feature0_baseline_rag.py` renders via SQLAlchemy's `make_url(...).render_as_string(hide_password=True)`, giving `postgresql+asyncpg://dbuser:***@dbhost:5432/dbname` — driver, user, host, port and database all still visible for diagnosis. An unparseable string returns a placeholder rather than falling back to the original, which would have leaked for exactly the malformed input most worth logging.
+
+Rotating an exposed password is still required separately: `backend.log` rotates but keeps five backups, so previously written fragments persist on disk.
+
+**Files:** `backend/src/lancy/feature0_baseline_rag.py` (new `safe_conn_str`, used in `make_vector_store`), `backend/src/lancy/main.py` (conversation DB log line), `tests/test_conn_string_redaction.py` (new).
+
 ---
 
 ## [Lancy v0.3.10] — 2026-07-31 · rlei-odes

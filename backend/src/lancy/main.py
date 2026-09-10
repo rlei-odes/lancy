@@ -86,6 +86,7 @@ from lancy.feature0_baseline_rag import (
     clear_embedding_cache,
     get_shared_embedding_model,
     make_vector_store,
+    safe_conn_str,
     _make_retriever,
 )
 from lancy.llm_debug import DebugLLM, configure as _configure_llm_debug
@@ -601,7 +602,7 @@ def build_server():
         _react_db = PostgreSQLReactionDatabase(_db_engine)
         _src_db = PostgreSQLSourceDatabase(_db_engine)
         _user_db = PostgreSQLUserDatabase(_db_engine)
-        log.info(f"Conversation DB: PostgreSQL ({_database_url[:40]}...)")
+        log.info(f"Conversation DB: PostgreSQL ({safe_conn_str(_database_url)})")
     else:
         from sqlalchemy.ext.asyncio import create_async_engine as _cae
         _db_engine = _cae(f"sqlite+aiosqlite:///{_DB_DIR}/conversations.db")
