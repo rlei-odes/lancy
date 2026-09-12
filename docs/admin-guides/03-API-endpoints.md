@@ -307,6 +307,20 @@ GET /kb
 
 Returns the full KB registry including the currently active KB id.
 
+**Secrets are masked.** Every endpoint that returns a `KBInfo` (this one, Create,
+Update and Activate) masks the two credential fields:
+
+| Field | Returned as |
+|-------|-------------|
+| `vs_connection_string` | password replaced by `***`, e.g. `postgresql://dbuser:***@dbhost:5432/dbname` — host, user, port and database stay readable |
+| `embedding_custom_api_key` | `********` when set, `""` when not |
+
+The stored registry always keeps the real values; masking applies only to
+responses. On a write, a field whose value still equals the mask it was served
+means "unchanged" and the stored secret is kept — so a client may GET a KB, edit
+one unrelated field and PUT the whole object back without destroying the
+credential. Sending a different value replaces the secret; sending `""` clears it.
+
 **Response:** `KBRegistry`
 
 ```json

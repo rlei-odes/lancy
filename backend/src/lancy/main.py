@@ -228,6 +228,53 @@ _UUID_RE = re.compile(
 _query_status: dict = {"active": False, "phase": "idle"}
 
 
+def _classify_stream_error(exc: BaseException, vector_store: Any, llm_model: str) -> str:
+    """The message shown to the user when answer_stream fails.
+
+    Module level so the classification is testable without building an agent.
+    """
+    error_text = str(exc)
+    error_lower = error_text.lower()
+
+    # Walk the exception chain — pgvector/asyncpg errors are often re-raised
+    # through llama-index, leaving the outer module unrelated to the DB driver.
+    mods: list[str] = []
+    cur: BaseException | None = exc
+    seen: set[int] = set()
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        mods.append(type(cur).__module__ or "")
+        cur = cur.__cause__ or cur.__context__
+    chain_mods = " ".join(mods)
+
+    db_module_hit = any(s in chain_mods for s in ("sqlalchemy", "asyncpg", "psycopg"))
+    db_text_hit = any(s in error_lower for s in (
+        "asyncpg", "psycopg", "pgvector", "postgres",
+        "could not connect", "could not translate host name", "connect call failed",
+    ))
+    # A refused pgvector connection surfaces as a bare OSError from asyncpg —
+    # module "builtins", and its text varies by platform ("Connection refused"
+    # vs "Connect call failed (host, port)"), so neither check above is
+    # reliable. The LLM client never raises one unwrapped: httpx/openai always
+    # re-raise as their own type. So an unwrapped OSError points at the vector
+    # store, not the LLM.
+    llm_module_hit = any(s in chain_mods for s in ("httpx", "openai", "ollama", "litellm"))
+    bare_os_error = isinstance(exc, OSError) and not llm_module_hit
+
+    if db_module_hit or db_text_hit or bare_os_error:
+        # ChromaDB is an on-disk store, so its failures are file errors (also
+        # OSError) — naming PostgreSQL there would misdirect.
+        store = type(vector_store).__name__ if vector_store else ""
+        if "Chroma" in store:
+            return "Retrieval failed. Could not read the ChromaDB store on disk."
+        return "Retrieval failed. Is the vector database (PostgreSQL) running?"
+    if "not found" in error_lower and "404" in error_text:
+        return f"LLM model not found. Run: ollama pull {llm_model}"
+    if "connection" in error_lower or "refused" in error_lower:
+        return "Cannot reach the LLM. Is it running?"
+    return f"LLM error: {error_text}"
+
+
 class CustomRAG(RAG):
     def __init__(
         self,
@@ -259,42 +306,9 @@ class CustomRAG(RAG):
         except Exception as exc:
             # Yield the error as a visible message so the frontend doesn't spin forever.
             # Common cases: model not pulled, Ollama not running, pgvector unreachable.
-            error_text = str(exc)
-            error_lower = error_text.lower()
-
-            # Walk the exception chain — pgvector/asyncpg errors are often re-raised
-            # through llama-index, leaving the outer module unrelated to the DB driver.
-            def _chain_modules(e: BaseException) -> str:
-                mods, cur, seen = [], e, set()
-                while cur is not None and id(cur) not in seen:
-                    seen.add(id(cur))
-                    mods.append(type(cur).__module__ or "")
-                    cur = cur.__cause__ or cur.__context__
-                return " ".join(mods)
-
-            chain_mods = _chain_modules(exc)
-            db_module_hit = any(s in chain_mods for s in ("sqlalchemy", "asyncpg", "psycopg"))
-            db_text_hit = any(s in error_lower for s in (
-                "asyncpg", "psycopg", "pgvector", "postgres",
-                "could not connect", "could not translate host name", "connect call failed",
-            ))
-            # A refused pgvector connection surfaces as a bare OSError from
-            # asyncpg — module "builtins", and its text varies by platform
-            # ("Connection refused" vs "Connect call failed (host, port)"), so
-            # neither check above is reliable. The LLM client never raises one
-            # unwrapped: httpx/openai always re-raise as their own type. So an
-            # unwrapped OSError points at the vector store, not the LLM.
-            llm_module_hit = any(s in chain_mods for s in ("httpx", "openai", "ollama", "litellm"))
-            bare_os_error = isinstance(exc, OSError) and not llm_module_hit
-
-            if db_module_hit or db_text_hit or bare_os_error:
-                msg = "Retrieval failed. Is the vector database (PostgreSQL) running?"
-            elif "not found" in error_lower and "404" in error_text:
-                msg = f"LLM model not found. Run: ollama pull {self.llm.model}"
-            elif "connection" in error_lower or "refused" in error_lower:
-                msg = "Cannot reach the LLM. Is it running?"
-            else:
-                msg = f"LLM error: {error_text}"
+            msg = _classify_stream_error(
+                exc, self.vector_store, getattr(self.llm, "model", "")
+            )
             log.error(f"Stream error: {exc}")
             yield AgentAnswer(content=[MessageContent(type="text", text=msg)])
         finally:

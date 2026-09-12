@@ -31,7 +31,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from lancy.feature0_baseline_rag import _CHUNKERS, _IMAGE_EXTENSIONS
+from lancy.feature0_baseline_rag import _CHUNKERS, _IMAGE_EXTENSIONS, safe_conn_str
 from lancy.kb_pool import EmbeddingConflict
 
 _SUPPORTED_UPLOAD_EXTS = set(_CHUNKERS) | _IMAGE_EXTENSIONS
@@ -92,6 +92,43 @@ class KBInfo(KBCreate):
 class KBRegistry(BaseModel):
     active: str
     bases: dict[str, KBInfo]
+
+
+# ─── Secret masking ───────────────────────────────────────────────────────────
+# The registry doubles as the API response model, so without this every caller
+# of GET /kb would receive the pgvector password and the embedding API key in
+# clear text. Masking happens on the way out only — the stored registry always
+# keeps the real values.
+
+_API_KEY_MASK = "********"
+
+
+def _redact(kb: KBInfo) -> KBInfo:
+    """A copy of `kb` with secrets masked, for API responses."""
+    out = kb.model_copy()
+    if out.vs_connection_string:
+        # Keeps host/user/database readable in the UI; hides only the password.
+        out.vs_connection_string = safe_conn_str(out.vs_connection_string)
+    if out.embedding_custom_api_key:
+        out.embedding_custom_api_key = _API_KEY_MASK
+    return out
+
+
+def _unmask(cfg: KBCreate, existing: KBInfo) -> KBCreate:
+    """Restore stored secrets the caller echoed back unchanged.
+
+    The edit form round-trips whatever GET returned, so a masked value coming
+    back means "unchanged" — writing it through would destroy the credential.
+    """
+    out = cfg.model_copy()
+    if (
+        existing.vs_connection_string
+        and out.vs_connection_string == safe_conn_str(existing.vs_connection_string)
+    ):
+        out.vs_connection_string = existing.vs_connection_string
+    if out.embedding_custom_api_key == _API_KEY_MASK:
+        out.embedding_custom_api_key = existing.embedding_custom_api_key
+    return out
 
 
 # ─── Callback types ───────────────────────────────────────────────────────────
@@ -176,7 +213,11 @@ def create_kb_router(
 
     @router.get("/kb", response_model=KBRegistry)
     async def list_kbs() -> KBRegistry:
-        return _load()
+        reg = _load()
+        return KBRegistry(
+            active=reg.active,
+            bases={kb_id: _redact(kb) for kb_id, kb in reg.bases.items()},
+        )
 
     @router.post("/kb", response_model=KBInfo)
     async def create_kb(cfg: KBCreate) -> KBInfo:
@@ -187,7 +228,7 @@ def create_kb_router(
         reg.bases[slug] = kb
         _save(reg)
         log.info(f"Created KB '{kb.name}' (id={slug})")
-        return kb
+        return _redact(kb)
 
     @router.put("/kb/{kb_id}", response_model=KBInfo)
     async def update_kb(kb_id: str, cfg: KBCreate) -> KBInfo:
@@ -201,12 +242,12 @@ def create_kb_router(
             chunks=existing.chunks,
             files=existing.files,
             last_indexed=existing.last_indexed,
-            **cfg.model_dump(),
+            **_unmask(cfg, existing).model_dump(),
         )
         reg.bases[kb_id] = updated
         _save(reg)
         log.info(f"Updated KB '{kb_id}'")
-        return updated
+        return _redact(updated)
 
     @router.delete("/kb/{kb_id}")
     async def delete_kb(kb_id: str) -> dict:
@@ -263,7 +304,7 @@ def create_kb_router(
                 f"{exc} Use ?reset=true to clear the pool first.",
             )
         log.info(f"Activated KB '{kb.name}' (id={kb_id}, reset={reset})")
-        return kb
+        return _redact(kb)
 
     @router.post("/kb/{kb_id}/deactivate")
     async def deactivate_kb(kb_id: str) -> dict:
