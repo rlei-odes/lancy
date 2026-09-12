@@ -278,8 +278,16 @@ class CustomRAG(RAG):
                 "asyncpg", "psycopg", "pgvector", "postgres",
                 "could not connect", "could not translate host name", "connect call failed",
             ))
+            # A refused pgvector connection surfaces as a bare OSError from
+            # asyncpg — module "builtins", and its text varies by platform
+            # ("Connection refused" vs "Connect call failed (host, port)"), so
+            # neither check above is reliable. The LLM client never raises one
+            # unwrapped: httpx/openai always re-raise as their own type. So an
+            # unwrapped OSError points at the vector store, not the LLM.
+            llm_module_hit = any(s in chain_mods for s in ("httpx", "openai", "ollama", "litellm"))
+            bare_os_error = isinstance(exc, OSError) and not llm_module_hit
 
-            if db_module_hit or db_text_hit:
+            if db_module_hit or db_text_hit or bare_os_error:
                 msg = "Retrieval failed. Is the vector database (PostgreSQL) running?"
             elif "not found" in error_lower and "404" in error_text:
                 msg = f"LLM model not found. Run: ollama pull {self.llm.model}"
