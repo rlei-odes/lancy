@@ -1002,7 +1002,25 @@ POST /v1/chat/completions
 
 The primary entrypoint for programmatic RAG queries. This is what Open WebUI, LibreChat, and any OpenAI-compatible client use to query the knowledge base.
 
-Supports both streaming (`stream: true`) and non-streaming responses. The `model` field is accepted but ignored — the active KB is always used.
+Supports both streaming (`stream: true`) and non-streaming responses.
+
+**Choosing a knowledge base.** The `model` field selects which KB answers:
+
+| `model` | Effect |
+|---------|--------|
+| `rag-assistant` (default) | Whichever KB is currently active |
+| a KB id, e.g. `wb-local` | That KB answers |
+| anything else | `404` with `code: "model_not_found"` |
+
+Only KBs **already loaded in the pool** are addressable — exactly those listed by
+`GET /v1/models`. A KB that is registered but not loaded (greyed out in the KB
+selector, typically because it uses a different embedding model) is refused
+rather than loaded on demand: loading it could evict the pool and disrupt users
+in the web UI. An API caller can never change which KB the UI is pointed at.
+
+**Generation settings are not accepted.** `temperature` and `max_tokens` belong
+to the KB's own configuration. Clients that send them anyway are not rejected —
+the fields are ignored, not honoured.
 
 **Request:**
 
@@ -1039,4 +1057,7 @@ curl -s -X POST "http://localhost:3000/v1/chat/completions" \
 GET /v1/models
 ```
 
-Returns the available KBs as an OpenAI model list, allowing clients to switch KBs by selecting a model.
+Returns the loaded KBs as an OpenAI model list, allowing clients to switch KBs by
+selecting a model. The first entry is always `rag-assistant` (the active KB);
+each remaining entry is one loaded KB, carrying its `id` and display `name`.
+Unloaded KBs are deliberately absent — they are not addressable.

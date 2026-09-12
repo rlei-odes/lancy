@@ -232,6 +232,10 @@ class KBPool:
     def emb(self) -> Any:
         return self._emb
 
+    def entries(self) -> list[LoadedKB]:
+        """Every KB currently in the pool."""
+        return list(self._pool.values())
+
     def status(self) -> dict:
         emb_key = (
             {"backend": self._emb_key[0], "model": self._emb_key[1]}
@@ -301,14 +305,30 @@ class DispatchingAgent:
         async for chunk in entry.agent.answer_stream(query_with_context):
             yield chunk
 
-    async def answer(self, query_with_context: Any) -> Any:
+    def loaded_kbs(self) -> list[Any]:
+        """The KBInfo of every KB currently in the pool.
+
+        This is the whole set an external caller may address. Reaching an
+        unloaded KB would mean loading it, which on an embedding mismatch
+        evicts the pool — so an API call could otherwise disrupt UI users.
+        """
+        return [entry.kb for entry in self._pool.entries()]
+
+    async def answer(self, query_with_context: Any, kb_id: str | None = None) -> Any:
         """Non-streaming counterpart of answer_stream.
 
         The OpenAI-compatible router calls this. It went missing when this class
         replaced the plain agent, which has it from the Agent base — so both
         paths now resolve the KB through _entry_for and cannot drift apart again.
+
+        `kb_id` addresses one loaded KB directly. It resolves through the pool's
+        own lookup, which never loads or activates, so it can neither evict the
+        pool nor change what the UI is pointed at.
         """
-        entry = await self._entry_for(query_with_context)
+        if kb_id is not None:
+            entry = self._pool.get(kb_id)
+        else:
+            entry = await self._entry_for(query_with_context)
         if entry is None:
             return self._no_kb_answer()
         return await entry.agent.answer(query_with_context)

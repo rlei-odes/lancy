@@ -42,15 +42,27 @@ def chunk(title, source_file):
     )
 
 
-class FakeAgent:
-    """Stands in for DispatchingAgent: records the query, returns a fixed answer."""
+class FakeKB:
+    def __init__(self, kb_id, name):
+        self.id = kb_id
+        self.name = name
 
-    def __init__(self, sources=None):
+
+class FakeAgent:
+    """Stands in for DispatchingAgent: records the call, returns a fixed answer."""
+
+    def __init__(self, sources=None, loaded=("kb-one",)):
         self.sources = sources or []
         self.seen = None
+        self.seen_kb_id = "<unset>"
+        self.loaded = [FakeKB(k, k.upper()) for k in loaded]
 
-    async def answer(self, query_with_context):
+    def loaded_kbs(self):
+        return self.loaded
+
+    async def answer(self, query_with_context, kb_id=None):
         self.seen = query_with_context
+        self.seen_kb_id = kb_id
         return AgentAnswer(
             content=[MessageContent(type="text", text=ANSWER)],
             role=Roles.ASSISTANT,
@@ -141,9 +153,79 @@ def test_earlier_turns_become_history_without_the_query():
 
 
 def test_a_request_without_a_user_message_is_rejected():
-    body = ask(FakeAgent(), messages=[{"role": "assistant", "content": "hi"}]).json()
+    response = ask(FakeAgent(), messages=[{"role": "assistant", "content": "hi"}])
 
-    assert "error" in body
+    assert response.status_code == 400
+    assert "error" in response.json()
+
+
+# ─── choosing a knowledge base ────────────────────────────────────────────────
+# An external caller must reach loaded KBs only. Loading one on demand can evict
+# the pool when its embedding model differs, which would break the UI's users.
+
+
+def test_the_default_model_means_the_active_kb():
+    agent = FakeAgent()
+
+    ask(agent, model="rag-assistant")
+
+    assert agent.seen_kb_id is None
+
+
+def test_a_loaded_kb_can_be_addressed_by_id():
+    agent = FakeAgent(loaded=("kb-one", "kb-two"))
+
+    ask(agent, model="kb-two")
+
+    assert agent.seen_kb_id == "kb-two"
+
+
+def test_an_unloaded_kb_is_refused():
+    """The KBs greyed out in the selector must not be reachable."""
+    agent = FakeAgent(loaded=("kb-one",))
+
+    response = ask(agent, model="kb-unloaded")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "model_not_found"
+
+
+def test_a_refused_kb_is_never_queried():
+    """Refusal has to happen before the agent is touched at all."""
+    agent = FakeAgent(loaded=("kb-one",))
+
+    ask(agent, model="kb-unloaded")
+
+    assert agent.seen is None
+
+
+def test_models_lists_the_loaded_kbs_and_the_active_alias():
+    agent = FakeAgent(loaded=("kb-one", "kb-two"))
+
+    data = client(agent).get("/v1/models").json()["data"]
+
+    assert [m["id"] for m in data] == ["rag-assistant", "kb-one", "kb-two"]
+
+
+def test_models_does_not_advertise_unloaded_kbs():
+    agent = FakeAgent(loaded=("kb-one",))
+
+    ids = [m["id"] for m in client(agent).get("/v1/models").json()["data"]]
+
+    assert "kb-unloaded" not in ids
+
+
+# ─── generation settings belong to the KB ─────────────────────────────────────
+
+
+def test_temperature_and_max_tokens_are_accepted_but_not_honoured():
+    """Real clients always send these; they must not 422, and must not apply."""
+    agent = FakeAgent()
+
+    response = ask(agent, temperature=0.9, max_tokens=64)
+
+    assert response.status_code == 200
+    assert not hasattr(agent.seen, "temperature")
 
 
 # ─── sources ──────────────────────────────────────────────────────────────────
@@ -177,23 +259,30 @@ def test_an_answer_without_sources_gets_no_source_block():
 
 
 class FakeEntry:
-    def __init__(self, agent):
+    def __init__(self, agent, kb_id="kb1"):
         self.agent = agent
+        self.kb = FakeKB(kb_id, kb_id.upper())
 
 
 class FakePool:
-    def __init__(self, entry=None):
-        self.entry = entry
+    """Mirrors the real pool's contract: get() never loads, it only looks up."""
+
+    def __init__(self, entries=()):
+        self.by_id = {e.kb.id: e for e in entries}
+        self.loads = []
 
     def get(self, kb_id):
-        return self.entry
+        return self.by_id.get(kb_id)
 
     def get_active(self):
-        return self.entry
+        return next(iter(self.by_id.values()), None)
+
+    def entries(self):
+        return list(self.by_id.values())
 
 
-def dispatching(entry=None):
-    return DispatchingAgent(FakePool(entry), conv_db=None, active_kb_id_fn=lambda: "kb1")
+def dispatching(*entries):
+    return DispatchingAgent(FakePool(entries), conv_db=None, active_kb_id_fn=lambda: "kb1")
 
 
 @pytest.mark.parametrize("method", ["answer", "answer_stream"])
@@ -233,9 +322,36 @@ def test_answer_delegates_to_the_resolved_kb():
 
 def test_answer_reports_when_no_kb_is_loaded():
     """Must return an answer, not raise — the router has no error handling."""
-    result = asyncio.run(dispatching(entry=None).answer(_Query()))
+    result = asyncio.run(dispatching().answer(_Query()))
 
     assert "No knowledge base is loaded" in result.content[0].text
+
+
+def test_an_explicit_kb_id_selects_that_kb():
+    one, two = FakeAgent(), FakeAgent()
+    agent = dispatching(FakeEntry(one, "kb-one"), FakeEntry(two, "kb-two"))
+
+    asyncio.run(agent.answer(_Query(), kb_id="kb-two"))
+
+    assert two.seen is not None
+    assert one.seen is None
+
+
+def test_an_unloaded_kb_id_does_not_fall_back_to_the_active_kb():
+    """Falling back would silently answer from the wrong corpus."""
+    inner = FakeAgent()
+    agent = dispatching(FakeEntry(inner, "kb-one"))
+
+    result = asyncio.run(agent.answer(_Query(), kb_id="kb-missing"))
+
+    assert inner.seen is None
+    assert "No knowledge base is loaded" in result.content[0].text
+
+
+def test_loaded_kbs_reports_what_the_pool_holds():
+    agent = dispatching(FakeEntry(FakeAgent(), "kb-one"), FakeEntry(FakeAgent(), "kb-two"))
+
+    assert [kb.id for kb in agent.loaded_kbs()] == ["kb-one", "kb-two"]
 
 
 class _Query:
