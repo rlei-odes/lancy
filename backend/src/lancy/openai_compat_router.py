@@ -12,6 +12,18 @@ Streaming: stream=true returns Server-Sent Events (SSE) in OpenAI chunk format.
 Note: the LLM call is not truly streamed at the token level; the full response
 is generated first and then forwarded as a single SSE chunk (plus stop chunk).
 This is transparent to clients.
+
+Beyond the OpenAI schema this endpoint accepts two extra request fields, sent
+through the SDK's `extra_body`:
+
+    filters         {metadata_key: value} — restricts retrieval to matching
+                    chunks. Scalars match by equality, lists match as IN,
+                    several keys are ANDed.
+    expand_context  [source_file, …] — skips retrieval and answers from every
+                    chunk of the named documents.
+
+Both are additive: a client that omits them gets the standard behaviour, so
+compatibility with generic OpenAI clients is unaffected.
 """
 
 import json
@@ -40,10 +52,20 @@ class ChatMessage(BaseModel):
 ACTIVE_KB_MODEL = "rag-assistant"
 
 
+# Metadata filter values: scalars match by equality, lists match as IN.
+FilterScalar = str | int | float | bool
+FilterValue = FilterScalar | list[FilterScalar]
+
+
 class ChatCompletionRequest(BaseModel):
     model: str = Field(ACTIVE_KB_MODEL, max_length=200)
     messages: list[ChatMessage] = Field(..., min_length=1, max_length=200)
     stream: bool = False
+    # ── Lancy extensions ──────────────────────────────────────────────────────
+    # Not part of the OpenAI schema. Clients send them via `extra_body`; clients
+    # that know nothing about them simply omit them and get the standard path.
+    filters: dict[str, FilterValue] | None = Field(None, max_length=20)
+    expand_context: list[str] | None = Field(None, max_length=50)
     # `temperature` and `max_tokens` are deliberately absent: generation settings
     # belong to the KB's own configuration, not to the caller. Pydantic ignores
     # unknown fields, so clients that always send them still work — they just no
@@ -124,9 +146,33 @@ def create_openai_compat_router(agent) -> APIRouter:
                 },
             )
 
+        # expand_context skips retrieval entirely, so filters would never be
+        # applied. Say so rather than accepting a request we silently won't honour.
+        if req.expand_context and req.filters:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": {
+                        "message": (
+                            "'filters' cannot be combined with 'expand_context': "
+                            "expand_context bypasses retrieval, so no filter applies. "
+                            "Send one or the other."
+                        ),
+                        "type": "invalid_request_error",
+                        "param": "filters",
+                    }
+                },
+            )
+
         # ── RAG call ──────────────────────────────────────────────────────
         answer = await agent.answer(
-            QueryWithContext(query=query, history=history), kb_id=kb_id
+            QueryWithContext(
+                query=query,
+                history=history,
+                filters=req.filters,
+                expand_context=req.expand_context,
+            ),
+            kb_id=kb_id,
         )
         content = answer.content[0].text if answer.content else ""
 

@@ -215,6 +215,77 @@ def test_models_does_not_advertise_unloaded_kbs():
     assert "kb-unloaded" not in ids
 
 
+# ─── filters and expand_context ───────────────────────────────────────────────
+# Extra request fields, sent via the OpenAI SDK's extra_body. They must reach
+# QueryWithContext unchanged, and must not disturb clients that omit them.
+
+
+def test_filters_reach_the_agent_unchanged():
+    agent = FakeAgent()
+
+    ask(agent, filters={"year": 2024, "department": ["legal", "finance"]})
+
+    assert agent.seen.filters == {"year": 2024, "department": ["legal", "finance"]}
+
+
+def test_expand_context_reaches_the_agent_unchanged():
+    agent = FakeAgent()
+
+    ask(agent, expand_context=["report.pdf", "minutes.docx"])
+
+    assert agent.seen.expand_context == ["report.pdf", "minutes.docx"]
+
+
+def test_omitting_both_leaves_the_standard_path_untouched():
+    """A generic OpenAI client sends neither — retrieval must be unfiltered."""
+    agent = FakeAgent()
+
+    ask(agent)
+
+    assert agent.seen.filters is None
+    assert agent.seen.expand_context is None
+
+
+def test_filters_combine_with_kb_selection():
+    agent = FakeAgent(loaded=("kb-one", "kb-two"))
+
+    ask(agent, model="kb-two", filters={"year": 2024})
+
+    assert agent.seen_kb_id == "kb-two"
+    assert agent.seen.filters == {"year": 2024}
+
+
+def test_combining_filters_with_expand_context_is_refused():
+    """expand_context bypasses retrieval, so the filter would never apply."""
+    agent = FakeAgent()
+
+    response = ask(agent, filters={"year": 2024}, expand_context=["report.pdf"])
+
+    assert response.status_code == 400
+    assert "expand_context" in response.json()["error"]["message"]
+
+
+def test_a_refused_combination_is_never_queried():
+    agent = FakeAgent()
+
+    ask(agent, filters={"year": 2024}, expand_context=["report.pdf"])
+
+    assert agent.seen is None
+
+
+@pytest.mark.parametrize(
+    "filters",
+    [
+        {"year": {"nested": "object"}},
+        {"tags": [["nested", "list"]]},
+    ],
+    ids=["nested-object", "nested-list"],
+)
+def test_filter_values_must_be_scalars_or_flat_lists(filters):
+    """Filter values land in a SQL metadata comparison; keep the shape flat."""
+    assert ask(FakeAgent(), filters=filters).status_code == 422
+
+
 # ─── generation settings belong to the KB ─────────────────────────────────────
 
 

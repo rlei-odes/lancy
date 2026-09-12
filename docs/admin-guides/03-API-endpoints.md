@@ -1022,6 +1022,63 @@ in the web UI. An API caller can never change which KB the UI is pointed at.
 to the KB's own configuration. Clients that send them anyway are not rejected —
 the fields are ignored, not honoured.
 
+#### Lancy extensions
+
+Two extra request fields go beyond the OpenAI schema. Both are optional and
+additive: a client that omits them gets the standard behaviour, so generic
+OpenAI clients keep working unchanged. With the OpenAI SDK they are sent through
+`extra_body`; with curl they are just top-level JSON fields.
+
+| Field | Type | Effect |
+|-------|------|--------|
+| `filters` | `{key: value}` | Restricts retrieval to chunks whose metadata matches. Scalars match by equality, lists match as IN, multiple keys are ANDed. Max 20 keys; values must be scalars or flat lists. |
+| `expand_context` | `[source_file, …]` | Skips retrieval entirely and answers from **every** chunk of the named documents. Max 50 entries. |
+
+The two are mutually exclusive — `expand_context` bypasses retrieval, so a filter
+could never apply. Sending both returns `400` rather than silently ignoring the
+filter.
+
+Values are not validated against the KB's contents: an unknown metadata value or
+`source_file` simply matches nothing, and the model answers with no context. Use
+`GET /rag/metadata-facets` to discover filterable keys and values, and
+`POST /rag/document-stats` for the indexed `source_file` names.
+
+**Filtered query:**
+
+```bash
+curl -s -X POST "http://localhost:3000/v1/chat/completions" \
+  -H "Authorization: Bearer <APP_PASSWORD>" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "wb-local",
+        "messages": [{"role": "user", "content": "What changed in Q1?"}],
+        "filters": {"year": 2024, "department": ["legal", "finance"]}
+      }'
+```
+
+**Full-document query:**
+
+```bash
+curl -s -X POST "http://localhost:3000/v1/chat/completions" \
+  -H "Authorization: Bearer <APP_PASSWORD>" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "wb-local",
+        "messages": [{"role": "user", "content": "Summarise this report."}],
+        "expand_context": ["Q1_report.pdf"]
+      }'
+```
+
+**From the OpenAI Python SDK:**
+
+```python
+client.chat.completions.create(
+    model="wb-local",
+    messages=[{"role": "user", "content": "What changed in Q1?"}],
+    extra_body={"filters": {"year": 2024}},
+)
+```
+
 **Request:**
 
 ```json
