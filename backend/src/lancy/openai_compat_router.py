@@ -97,7 +97,7 @@ def create_openai_compat_router(agent) -> APIRouter:
 
         # Append source references
         if answer.sources:
-            sources_lines = ["\n\n---\n**Quellen:**"]
+            sources_lines = ["\n\n---\n**Sources:**"]
             seen = set()
             for src in answer.sources:
                 label = f"{src.title} ({src.metadata.get('source_file', '?')})"

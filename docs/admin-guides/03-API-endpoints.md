@@ -1029,7 +1029,7 @@ curl -s -X POST "http://localhost:3000/v1/chat/completions" \
 
 **Streaming note:** `stream: true` returns SSE in OpenAI chunk format, but the LLM response is fully generated before forwarding — it is not token-by-token streamed. This is transparent to clients.
 
-**Sources:** appended to the response content as a markdown block (`---\n**Quellen:**\n- …`). There is no separate structured sources field in this endpoint; use the native `/rag/retrieve` endpoint if you need structured chunk metadata.
+**Sources:** appended to the response content as a markdown block (`---\n**Sources:**\n- …`). There is no separate structured sources field in this endpoint; use the native `/rag/retrieve` endpoint if you need structured chunk metadata.
 
 ---
 

@@ -274,24 +274,44 @@ class DispatchingAgent:
                 pass
         return self._active_kb_id_fn()
 
-    async def answer_stream(self, query_with_context: Any):
-        from conversational_toolkit.agents.base import AgentAnswer
-        from conversational_toolkit.llms.base import MessageContent
-
+    async def _entry_for(self, query_with_context: Any) -> Any:
+        """The pool entry serving this query, or None if nothing is loaded."""
         kb_id = await self._resolve_kb_id(
             getattr(query_with_context, "conversation_id", None)
         )
-        entry = self._pool.get(kb_id) or self._pool.get_active()
+        return self._pool.get(kb_id) or self._pool.get_active()
+
+    @staticmethod
+    def _no_kb_answer() -> Any:
+        from conversational_toolkit.agents.base import AgentAnswer
+        from conversational_toolkit.llms.base import MessageContent
+
+        return AgentAnswer(
+            content=[MessageContent(
+                type="text",
+                text="No knowledge base is loaded. Please activate one first.",
+            )]
+        )
+
+    async def answer_stream(self, query_with_context: Any):
+        entry = await self._entry_for(query_with_context)
         if entry is None:
-            yield AgentAnswer(
-                content=[MessageContent(
-                    type="text",
-                    text="No knowledge base is loaded. Please activate one first.",
-                )]
-            )
+            yield self._no_kb_answer()
             return
         async for chunk in entry.agent.answer_stream(query_with_context):
             yield chunk
+
+    async def answer(self, query_with_context: Any) -> Any:
+        """Non-streaming counterpart of answer_stream.
+
+        The OpenAI-compatible router calls this. It went missing when this class
+        replaced the plain agent, which has it from the Agent base — so both
+        paths now resolve the KB through _entry_for and cannot drift apart again.
+        """
+        entry = await self._entry_for(query_with_context)
+        if entry is None:
+            return self._no_kb_answer()
+        return await entry.agent.answer(query_with_context)
 
     @property
     def utility_llm(self) -> Any:
