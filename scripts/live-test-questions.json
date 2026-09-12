@@ -1,0 +1,86 @@
+{
+  "_comment": [
+    "Questions fired at the throwaway KBs the live test builds. Derived from",
+    "data/EVALUATION_qa_ground_truth.md, which documents the expected answer and",
+    "the failure mode for each one.",
+    "",
+    "expect_all     every string must appear in the answer (case-insensitive)",
+    "expect_any     at least one must appear",
+    "forbid         none may appear",
+    "expect_sources source_file names expected in the cited sources",
+    "",
+    "Note on 'forbid': it is mostly empty on purpose. A correct answer often has",
+    "to name the wrong figure in order to reject it ('the superseded 4.1 kg CO2e",
+    "value must not be cited'), so forbidding those strings would flag good",
+    "answers. Hallucination is judged by reading the report, not by string match.",
+    "",
+    "Content results never fail the run. They are reported for you to read."
+  ],
+  "questions": [
+    {
+      "id": "Q1_portfolio_scope",
+      "question": "Does PrimePack AG offer a product called the \"Lara Pallet\"?",
+      "why": "The product must be reported as absent. Failure mode: the model invents a description by extrapolating from other pallet documents.",
+      "expect_all": ["lara"],
+      "expect_any": ["not part", "not offered", "does not", "do not", "no product", "no specific mention", "no information", "not contain", "missing", "nicht"],
+      "forbid": [],
+      "expect_sources": ["ART_product_catalog.pdf"]
+    },
+    {
+      "id": "Q2_claim_verification",
+      "question": "Can the 68% CO2 reduction claim for the tesapack ECO & ULTRA STRONG ecoLogo (product 50-102) be included in a customer sustainability response?",
+      "why": "The figure is a supplier self-declaration, not a verified EPD. Failure mode: presenting 68% as independently verified, or carbon neutrality as achieved.",
+      "expect_all": [],
+      "expect_any": ["self-declared", "not independently verified", "not been independently", "caveat", "level b", "level c"],
+      "forbid": [],
+      "expect_sources": ["ART_supplier_brochure_tesa_ECO.pdf", "ART_internal_procurement_policy.pdf"]
+    },
+    {
+      "id": "Q3_missing_data",
+      "question": "What verified environmental data is available for the LogyLight pallet (product 32-104)?",
+      "why": "No verified data exists. Failure mode: extrapolating figures from the Logypal 1 EPD.",
+      "expect_all": [],
+      "expect_any": ["not yet available", "not available", "no verified", "none", "in preparation", "commissioned"],
+      "forbid": [],
+      "expect_sources": ["ART_logylight_incomplete_datasheet.pdf"]
+    },
+    {
+      "id": "Q4_pfas",
+      "question": "Are any of PrimePack AG's tape products confirmed to be PFAS-free?",
+      "why": "No supplier declarations received. Failure mode: inferring PFAS-free status from 'free of intentionally added solvents'.",
+      "expect_all": ["pfas"],
+      "expect_any": ["not received", "no declaration", "not confirmed", "escalate", "open", "no tape"],
+      "forbid": [],
+      "expect_sources": ["ART_internal_procurement_policy.pdf"]
+    },
+    {
+      "id": "Q5_source_conflict",
+      "question": "Which GWP figure should be cited for the Relicyc Logypal 1 pallet (product 32-103), and why?",
+      "why": "The 2023 verified EPD supersedes the 2021 internal datasheet. Failure mode: citing 4.1 kg CO2e as current without noting it is superseded.",
+      "expect_all": ["epd"],
+      "expect_any": ["superseded", "2023", "verified", "third-party"],
+      "forbid": [],
+      "expect_sources": ["EPD_pallet_relicyc_logypal1.pdf"]
+    }
+  ],
+  "retrieval_probes": [
+    {
+      "id": "expand_context",
+      "mode": "expand_context",
+      "question": "Summarise what this document covers.",
+      "documents": ["ART_product_catalog.pdf"],
+      "why": "Skips retrieval and answers from every chunk of the named document.",
+      "expect_any": ["pallet", "product", "catalog"],
+      "expect_sources": ["ART_product_catalog.pdf"]
+    },
+    {
+      "id": "filter_by_group",
+      "mode": "filters",
+      "question": "What does this material say about environmental product declarations?",
+      "filters": {"livetest_group": "epd"},
+      "why": "Retrieval must stay inside the documents tagged livetest_group=epd at upload time.",
+      "expect_any": ["epd", "environmental", "declaration"],
+      "expect_sources": ["EPD_pallet_relicyc_logypal1.pdf"]
+    }
+  ]
+}

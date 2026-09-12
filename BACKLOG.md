@@ -543,7 +543,7 @@ Last swept: **2026-07-11** — full refresh of top-level pins in `requirements.t
 1. Rebuild the venv: `rm -rf .venv && python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt`
 2. `pip list --outdated`
 3. Bump top-level pins within their current major. Ignore transitive deps — they ride with their parents.
-4. Ingestion + retrieval smoke test after install.
+4. Ingestion + retrieval smoke test after install: `scripts/live-test.py` against a running dev stack. Creates throwaway KBs, ingests the demo corpus, asks the `data/EVALUATION_qa_ground_truth.md` questions, deletes them again, and writes a report to `logs/`. Read the Answers section — the checks prove the pipeline replied, not that it replied well.
 
 **Held on purpose (don't bump on sight):**
 

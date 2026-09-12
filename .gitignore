@@ -55,6 +55,9 @@ prompts/chat_only.custom.md
 prompts/expand_context.custom.md
 prompts/batch_analyze.custom.md
 
+# Live test config — holds a bearer token and a pgvector connection string
+scripts/live-test.config.json
+
 # Customer data
 data */
 epub/

@@ -1,0 +1,46 @@
+{
+  "_comment": [
+    "Copy to scripts/live-test.config.json (gitignored) and fill in.",
+    "",
+    "The live test runs against a RUNNING dev deployment. It creates throwaway",
+    "KBs, ingests documents into them, asks questions, then deletes them again.",
+    "Never point it at anything you care about.",
+    "",
+    "base_url        the frontend proxy, so middleware auth is exercised too",
+    "bearer_token    APP_PASSWORD or ADMIN_PASSWORD from frontend/.env",
+    "pgvector        needed only to CREATE a pgvector test KB — the connection",
+    "                string is a field of the KB config, posted to the API. The",
+    "                test never opens a database connection itself. Since the KB",
+    "                API masks stored secrets it cannot be read back, so put it",
+    "                here. Set enabled=false to skip the pgvector pass entirely."
+  ],
+
+  "base_url": "http://localhost:3000",
+  "bearer_token": "",
+
+  "request_timeout_s": 300,
+  "ingest_timeout_s": 900,
+
+  "documents_dir": "data",
+  "documents": [
+    {"file": "ART_product_catalog.pdf", "group": "artificial"},
+    {"file": "ART_internal_procurement_policy.pdf", "group": "artificial"},
+    {"file": "ART_supplier_brochure_tesa_ECO.pdf", "group": "artificial"},
+    {"file": "ART_logylight_incomplete_datasheet.pdf", "group": "artificial"},
+    {"file": "ART_relicyc_logypal1_datasheet_2021.pdf", "group": "artificial"},
+    {"file": "ART_response_inquiry_frische_felder.md", "group": "artificial"},
+    {"file": "EPD_pallet_relicyc_logypal1.pdf", "group": "epd"}
+  ],
+
+  "questions_file": "scripts/live-test-questions.json",
+
+  "stores": {
+    "chromadb": {"enabled": true},
+    "pgvector": {
+      "enabled": true,
+      "connection_string": "postgresql://dbuser:password@dbhost:5432/dbname"
+    }
+  },
+
+  "keep_test_kbs": false
+}
