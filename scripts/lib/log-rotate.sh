@@ -92,7 +92,13 @@ log_writer() {
                 SIZE = 0
             }
         }
-    '
+    ' >/dev/null 2>&1
+    # Everything awk produces goes to LOG, so its own stdout and stderr have no
+    # use — but they are inherited, and the writer outlives the start script as
+    # part of the daemon. Over SSH that inherited pair is the connection's
+    # channel: `ssh host "bash ~/start-backend.sh"` then never returns, because
+    # the channel has no EOF while the writer holds it, however long ago the
+    # script exited. Closing them here is what lets the caller go.
 }
 
 # Executed rather than sourced: rotate the file named on the command line.
