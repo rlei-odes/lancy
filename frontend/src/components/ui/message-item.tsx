@@ -144,7 +144,12 @@ export const MessageItem: FunctionComponent<MessageItemProps> = (props: MessageI
                             {retrieval_stats.reranker_fallback && (
                                 <>
                                     <span className="opacity-40">·</span>
-                                    <span>fallback</span>
+                                    <span
+                                        className="text-amber-500/70"
+                                        title="The reranking model returned an unusable response. Sources are in the retriever's original order."
+                                    >
+                                        rerank failed — original order
+                                    </span>
                                 </>
                             )}
                         </>

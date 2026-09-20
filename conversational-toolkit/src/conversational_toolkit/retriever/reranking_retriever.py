@@ -8,7 +8,8 @@ Design note: configure the base retriever with 'top_k = candidate_pool_size' (e.
 If the LLM call fails or returns unparseable JSON the retriever falls back to the original ranking from the base retriever, so the pipeline never breaks.
 """
 
-import json
+import asyncio
+import re
 from textwrap import dedent
 from typing import Any
 
@@ -16,7 +17,53 @@ from loguru import logger
 
 from conversational_toolkit.llms.base import LLM, LLMMessage, MessageContent, Roles
 from conversational_toolkit.retriever.base import Retriever
+from conversational_toolkit.utils.retriever import reciprocal_rank_fusion
 from conversational_toolkit.vectorstores.base import ChunkMatch, ChunkRecord
+
+
+def _extract_ranking(text: str) -> list[int]:
+    """Pull the ranking out of whatever the model produced.
+
+    Small models — the ones most likely to be pointed at reranking — wrap the
+    list in a second array, add markdown fences, append commentary full of
+    bracketed indices, or get cut off mid-list by the token cap. Each of those
+    still carries a usable order, so scan forward from the "ranking" key and
+    collect integers until the list (or the object) closes: nesting flattens,
+    a truncated tail is kept, and trailing prose is never reached.
+
+    Raises ValueError when there is no ranking at all — the caller then falls
+    back to the base retriever's order, which is honest and reported as such.
+    """
+    match = re.search(r'"ranking"\s*:\s*\[', text)
+    if match is None:
+        raise ValueError('no "ranking" list in response')
+
+    depth, digits, found = 0, "", []
+    for char in text[match.end() - 1:]:
+        if char == "[":
+            depth += 1
+            continue
+        if char.isdigit():
+            digits += char
+            continue
+        if digits:
+            found.append(int(digits))
+            digits = ""
+        if char == "]":
+            depth -= 1
+            if depth == 0:
+                break
+        elif char == "}":
+            # The object closed with the list still open (a nested-array slip).
+            # Whatever follows is prose, and its [3]-style markers are not ranks.
+            break
+    if digits:  # truncated before any closing bracket
+        found.append(int(digits))
+
+    ranking = list(dict.fromkeys(found))  # a repeat would return one chunk twice
+    if not ranking:
+        raise ValueError("empty ranking")
+    return ranking
 
 
 class RerankingRetriever(Retriever[ChunkMatch]):
@@ -41,6 +88,28 @@ class RerankingRetriever(Retriever[ChunkMatch]):
     async def retrieve(self, query: str, filters: dict[str, Any] | None = None) -> list[ChunkMatch]:
         """Fetch candidates from the base retriever and rerank them with the LLM."""
         candidates: list[ChunkRecord] = await self.retriever.retrieve(query, filters=filters)  # type: ignore[assignment]
+        return await self._rerank(query, candidates)
+
+    async def retrieve_multi(
+        self, queries: list[str], rank_query: str, filters: dict[str, Any] | None = None
+    ) -> list[ChunkMatch]:
+        """Retrieve for several query variants, fuse them, then rerank once.
+
+        Expanded queries and a HyDE document exist to widen recall, not to be
+        ranked against: calling `retrieve` per variant would spend one LLM call
+        each and rank every pool in isolation, so a chunk found only by one
+        variant never competes with the others. The fused pool is ranked
+        against `rank_query` — the user's actual question — in a single call,
+        and capped at the base retriever's `top_k` so the prompt does not grow
+        with the number of variants.
+        """
+        per_query = await asyncio.gather(
+            *[self.retriever.retrieve(q, filters=filters) for q in queries]
+        )
+        candidates = reciprocal_rank_fusion(list(per_query))[: self.retriever.top_k]
+        return await self._rerank(rank_query, candidates)
+
+    async def _rerank(self, query: str, candidates: list[ChunkRecord]) -> list[ChunkMatch]:
         if not candidates:
             return []
 
@@ -95,6 +164,12 @@ class RerankingRetriever(Retriever[ChunkMatch]):
             {numbered}
 
             Output format: {{"ranking": [most_relevant_index, second_index, ...]}}
+
+            Rules:
+            - Output the JSON object and nothing else: no explanation, no reasoning,
+              no self-correction, no markdown fences.
+            - "ranking" is a flat list of integers. Do not nest it in another list.
+            - Each index from 0 to {len(candidates) - 1} appears exactly once.
         """).strip()
 
         messages = [
@@ -102,7 +177,11 @@ class RerankingRetriever(Retriever[ChunkMatch]):
                 role=Roles.SYSTEM,
                 content=[
                     MessageContent(
-                        type="text", text="You are an expert at assessing document relevance. Output only valid JSON."
+                        type="text",
+                        text=(
+                            "You are an expert at assessing document relevance. "
+                            "Reply with a single JSON object and nothing else."
+                        ),
                     )
                 ],
             ),
@@ -112,10 +191,9 @@ class RerankingRetriever(Retriever[ChunkMatch]):
         try:
             response = await self.llm.generate(messages)
             text = response.content[0].text or ""
-            # Some models wrap JSON in markdown fences — extract the object directly.
-            start, end = text.find("{"), text.rfind("}")
-            data = json.loads(text[start : end + 1] if start != -1 and end != -1 else text)
-            ranking: list[int] = [int(i) for i in data["ranking"] if 0 <= int(i) < len(candidates)]
+            ranking: list[int] = [i for i in _extract_ranking(text) if 0 <= i < len(candidates)]
+            if not ranking:
+                raise ValueError("no valid candidate index in ranking")
             # Append any missing indices at the end (graceful fallback for partial rankings)
             seen = set(ranking)
             ranking += [i for i in range(len(candidates)) if i not in seen]

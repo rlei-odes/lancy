@@ -104,7 +104,6 @@ from lancy.admin_router import create_admin_router, run_auto_cleanup
 from lancy.auth_router import create_auth_router
 from lancy.branding_router import create_branding_router
 from lancy.kb_router import KBInfo, create_kb_router
-from lancy.kb_stats import write_kb_stats
 from lancy.openai_compat_router import create_openai_compat_router
 from lancy.rag_router import (
     ChunkResult,
@@ -501,7 +500,11 @@ def _assemble_components(
             temperature=cfg.llm_temperature,
             ollama_host=ollama_host,
             num_ctx=cfg.num_ctx,
-            max_tokens=512 if cfg.llm_backend != "ollama" else None,
+            # Output-only budget. Utility outputs are short by nature: a ranking
+            # of N indices costs ~4 tokens each, so the largest allowed candidate
+            # pool (100) lands near 400. 1024 clears that with headroom; a model
+            # that needs more has started emitting prose, which no cap can fix.
+            max_tokens=1024 if cfg.llm_backend != "ollama" else None,
             custom_base_url=_util_base_url,
             custom_api_key=_util_api_key,
         )

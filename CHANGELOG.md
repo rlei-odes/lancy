@@ -7,6 +7,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Lancy v0.3.11] — 2026-09-10 · rlei-odes
 
+### Fixed — Answers cut off mid-sentence, reranking ran once per query variant
+
+- An unescaped `"` in the model's prose closed the answer JSON string early, truncating the answer while sources and follow-ups still rendered. The system prompt now forbids that character.
+- Query expansion and HyDE each triggered their own reranking LLM call, ranking every variant in isolation. Variants are now fused first and the merged pool is ranked once, against the user's question rather than the HyDE document.
+- The ranking parser salvages nested, fenced, truncated and commented responses instead of discarding them; the reranking prompt forbids commentary; the utility token cap is 1024.
+- A failed reranking now reads "rerank failed — original order" instead of "fallback".
+
 ### Fixed — Knowledge bases could collide or answer from the wrong corpus
 
 - Duplicate KB names are rejected with 409 on create and rename, instead of being disambiguated into a `-2` id that looks identical in the dropdown.
@@ -21,9 +28,6 @@ Cancellation is unaffected: `/reindex-cancel` sets a flag that raises the privat
 
 Surfaced while repointing a pgvector KB at a replacement database host. The reindex remains invisible to the UI on failure — `IndexStatus` has no error field, so a failed run is indistinguishable from one that indexed nothing. That is tracked separately.
 
-**Test:** `tests/test_reindex_error_handling.py` drives the real `POST /api/v1/rag/reindex` route through `TestClient`, which runs background tasks inline and re-raises whatever escapes them, so it covers the path that actually broke. `run_ingestion` is monkeypatched to raise, parametrised over the failure shapes a dead database produces (`ConnectionRefusedError`, no-route `OSError`, `TimeoutError`) plus `RuntimeError` and `ValueError`. Verified non-vacuous: with the old `except RuntimeError` restored, five of six cases fail and only the `RuntimeError` case passes.
-
-**Files:** `backend/src/lancy/main.py` (widen the `except` in `rebuild_callback`), `tests/test_reindex_error_handling.py` (new).
 
 ### Added — Failed and cancelled indexing runs are reported
 
@@ -33,8 +37,6 @@ Containment left the failure invisible: a failed run reports the same zero count
 
 Cancellation is now distinct from a successful no-op run, which matters when a half-populated KB would otherwise read as complete. The sidebar shows a red failure or amber cancelled banner; the RAG panel shows the same, warning that a cancelled KB may be incomplete.
 
-**Files:** `backend/src/lancy/ingestion.py` (record outcome on all paths in `run_ingestion` and `ingest_uploaded_file`), `backend/src/lancy/rag_router.py` (`outcome`/`error` on `IndexStatus`), `frontend/src/components/sections/sidebar/indexing-status.tsx`, `frontend/src/components/sections/rag-config-panel.tsx`, `frontend/src/lib/lang/{en,de,fr,it}.ts`, `tests/test_reindex_error_handling.py`.
-
 ### Fixed — Database passwords were written to the log
 
 Two log lines truncated a connection string instead of redacting it, which is not the same thing: the prefix ahead of the password has a fixed length, so the slice landed inside the password. `PGVectorStore: … conn={conn[:40]}` printed roughly the first eight characters of the pgvector password, and `Conversation DB: PostgreSQL ({_database_url[:40]}…)` more than that, since `postgresql://` is shorter than `postgresql+asyncpg://`.
@@ -43,7 +45,6 @@ New `safe_conn_str()` in `feature0_baseline_rag.py` renders via SQLAlchemy's `ma
 
 Rotating an exposed password is still required separately: `backend.log` rotates but keeps five backups, so previously written fragments persist on disk.
 
-**Files:** `backend/src/lancy/feature0_baseline_rag.py` (new `safe_conn_str`, used in `make_vector_store`), `backend/src/lancy/main.py` (conversation DB log line), `tests/test_conn_string_redaction.py` (new).
 
 ---
 
@@ -71,8 +72,6 @@ New `POST /api/v1/rag/analyze-document` endpoint, a `scripts/batch-analyze.py` h
 
 **UI run** — the loop runs in the browser, one document at a time, so each request stays inside the existing 110 s backend timeout and no job store or polling is needed. Live progress with an ETA derived from observed per-document time, a stop button, an unload warning, re-runs that skip already-processed ids, and CSV/JSON download available at any point including mid-run. Closing the tab ends the run — the script remains the right tool for scheduled or DMS-driven batches. Available to all roles; the tab carries a note that a batch keeps the model busy and slows chat for everyone else while it lasts.
 
-**Files:** `backend/src/lancy/rag_router.py` (new `AnalyzeDocumentRequest`/`AnalyzeDocumentResponse` + `/analyze-document` endpoint, `/analyze-prompt-template` endpoint, `id_field` on `DocumentStatsRequest`), `prompts/batch_analyze.default.md` (new), `.gitignore` (add `batch_analyze.custom.md`), `scripts/batch-analyze.py` (new), `scripts/examples/batch-analyze/` (new — README + example docs/prompt/schema), `frontend/src/components/sections/batch-analysis.tsx` (new), `frontend/src/pages/explorer.tsx` (fourth tab), `frontend/src/lib/lang/{en,de,fr,it}.ts` (new `batch*` strings), `docs/admin-guides/03-API-endpoints.md` (documented under RAG → Batch Document Analysis).
-
 ### Fixed — KB selection for non-admin sessions
 
 Non-admin users could not switch knowledge base, and the panel could name a KB the backend was not actually querying.
@@ -83,7 +82,6 @@ More seriously, `fetchKbRegistry()` fired an activate on mount and discarded the
 
 Two related backend bugs are **not** fixed here and are recorded in BACKLOG under Known Bugs: `activate_kb()` persists `registry.active` before the pool load succeeds, and an unloaded `kb_id` is silently answered from a different KB.
 
-**Files:** `frontend/src/components/sections/rag-config-panel.tsx` (pool-aware `switchKb` + new `selectPooledKb`, mount-path resolution, selector gating), `frontend/src/lib/lang/{en,de,fr,it}.ts` (new `statusKbNotLoaded` / `kbNotLoadedShort`), `BACKLOG.md` (two new Known Bugs entries).
 
 ### Fixed — Markdown tables and lists flattened during chunking
 
@@ -95,7 +93,6 @@ Chunking collapsed every newline inside a block to a space, so a markdown table 
 
 Chunks already in an index stay flattened until re-ingested, so the renderer reconstructs pipe tables at display time. Column count comes from the delimiter row and rows are rebuilt only when every group of cells lines up exactly; anything ambiguous is left as raw text rather than split on a guess. Tables that already have their newlines are untouched. Across the 224 pipe-containing chunks of the default KB this turns 1 rendered table into 254, altering no chunk that already rendered one.
 
-**Files:** `conversational-toolkit/src/conversational_toolkit/chunking/pdf_chunker.py` (block-aware `_normalize_newlines`), `conversational-toolkit/src/conversational_toolkit/chunking/markdown_chunker.py` (normalisation suppressed for authored sources), `frontend/src/components/ui/markdown.tsx` (new `reflowFlattenedTable` / `reflowFlattenedTables`, applied in the render pipeline).
 
 ---
 
@@ -157,8 +154,6 @@ New pill in the `ChatActionBar` (next to the filter action) lets the user skip t
 - `ChatActionBar` now always renders (previously hidden when no filters configured) so the chat-only toggle is available on every KB regardless of admin filter setup.
 - i18n added in `en`, `de`, `fr`, `it`.
 
-**Files:** `prompts/chat_only.default.md` (new), `.gitignore` (add `chat_only.custom.md`), `backend/src/lancy/main.py` (`_load_chat_only_prompt` + `CustomRAG` constructor arg), `conversational-toolkit/agents/rag.py` (`chat_only_system_prompt` param + `_answer_stream_chat_only` method), `conversational-toolkit/agents/base.py` (`QueryWithContext.chat_only`), `conversational-toolkit/conversation_database/controller.py` (`MessageInput.chat_only` + pass-through), `frontend/services/message.ts`, `frontend/hooks/useMessaging.tsx`, `frontend/components/sections/chat-action-bar.tsx`, `frontend/lib/lang/{en,de,fr,it}.ts`.
-
 ### Added — "Expand context" action (answer from full documents, not top-k chunks)
 
 Third pill in the `ChatActionBar` lets the user pick one or more documents from the last answer's retrieved sources and re-ask their next question with the LLM instructed to read those documents **in full** — all chunks, not just the top-k retrieval subset. Useful for whole-document analysis ("summarise this manual", "what does this contract say about X in total?") where the top-k slice would miss context.
@@ -190,7 +185,6 @@ Third pill in the `ChatActionBar` lets the user pick one or more documents from 
 - `useMessaging` gains `expandContextFiles` (armed for next send, cleared after) and `lastExpandContextFiles` (persistent within the conversation for re-arm). Both reset on `createNewConversation`.
 - i18n added in `en`, `de`, `fr`, `it` under `expandContext.*`; existing `fieldNumCtxHint` rewritten to be backend-agnostic across all four locales.
 
-**Files:** `prompts/expand_context.default.md` (new), `.gitignore` (add `expand_context.custom.md`), `backend/src/lancy/main.py` (`_load_expand_context_prompt` + CustomRAG args), `backend/src/lancy/rag_router.py` (`/document-stats` endpoint + models), `conversational-toolkit/agents/rag.py` (`_answer_stream_expand_context` + constructor args), `conversational-toolkit/agents/base.py` (`QueryWithContext.expand_context`), `conversational-toolkit/conversation_database/controller.py` (`MessageInput.expand_context` + pass-through), `conversational-toolkit/vectorstores/{base,chromadb,postgres}.py` ($in support), `frontend/services/message.ts`, `frontend/hooks/useMessaging.tsx`, `frontend/components/sections/chat-action-bar.tsx`, `frontend/components/sections/rag-config-panel.tsx` (`NumberInput.editable` + unconditional `num_ctx`), `frontend/lib/lang/{en,de,fr,it}.ts`.
 
 ---
 
@@ -220,8 +214,6 @@ Once the first message is sent, the filters freeze: the chips render read-only w
 
 **Files**
 
-- Backend: `rag_router.py` (facets endpoint + response model), `kb_router.py` (`ChatFilterKey`/`ChatFiltersConfig` on `KBCreate`), `feature0_baseline_rag.py` (`TaskPrefixRetriever` signature), and the conversational-toolkit retrievers (`base`, `vectorstore_retriever`, `bm25_retriever`, `hybrid_retriever`, `reranking_retriever`, `context_window_retriever`), `agents/base.py` + `agents/rag.py` (`QueryWithContext.filters`), `conversation_database/controller.py` (`MessageFilter`, first-vs-continuation resolution), plus `vectorstores/base.py`/`chromadb.py`/`postgres.py` (new abstract `get_metadata_values(key)`).
-- Frontend: new `chat-action-bar.tsx`; extended `rag-config-panel.tsx`, `send-bar.tsx`, `useMessaging.tsx`, `services/message.ts`, `services/conversation.ts`. Translations in all four locales (`en`, `de`, `fr`, `it`).
 
 **Limitations (scoped for later)**
 

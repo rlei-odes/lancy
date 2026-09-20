@@ -14,7 +14,6 @@ second rather than once per document.
 """
 
 import importlib.util
-import sys
 from pathlib import Path
 
 import pytest

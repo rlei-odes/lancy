@@ -63,7 +63,7 @@ class RAG(Agent):
         # Required for expand_context mode: fetches all chunks matching the picked source_files.
         self.vector_store = vector_store
 
-    async def answer_stream(  # noqa: PLR0912
+    async def answer_stream(  # noqa: PLR0912, PLR0915
         self,
         query_with_context: QueryWithContext,
         phase_callback: Callable[[str], None] | None = None,
@@ -109,6 +109,12 @@ class RAG(Agent):
                 retriever.phase_callback = phase_callback
 
         async def _retrieve_one(retriever) -> list[ChunkRecord]:
+            # A reranking retriever fuses the variants itself and ranks the merged
+            # pool in one LLM call, against the user's question rather than the
+            # HyDE document. Ranking per variant would cost one call each and
+            # never compare a chunk found by one variant against another's.
+            if isinstance(retriever, RerankingRetriever):
+                return await retriever.retrieve_multi(queries, rank_query=query, filters=filters)
             results = await asyncio.gather(*[retriever.retrieve(q, filters=filters) for q in queries])
             return reciprocal_rank_fusion(list(results))[: retriever.top_k]
 
