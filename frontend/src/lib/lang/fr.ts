@@ -280,6 +280,7 @@ export const app = {
         presetRetrievalLabel: "Récupération",
         presetKbLabel: "Config. base",
         statusPresetSaved: " «{{name}}» enregistré.",
+        statusPresetProtected: "«{{name}}» est défini par l'administration et ne peut pas être remplacé. Enregistrez sous un autre nom.",
         statusError: "Erreur : {{code}}",
         effectInstant: "Aucune modification non enregistrée dans cette section",
         effectReindex: "Modifications non enregistrées — cliquer sur Appliquer pour sauvegarder",

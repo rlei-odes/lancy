@@ -280,6 +280,7 @@ export const app = {
         presetRetrievalLabel: "Retrieval",
         presetKbLabel: "KB-Konfiguration",
         statusPresetSaved: "Preset «{{name}}» gespeichert.",
+        statusPresetProtected: "«{{name}}» wird von einer Administratorin oder einem Administrator vorgegeben und kann nicht überschrieben werden. Unter einem anderen Namen speichern.",
         statusError: "Fehler: {{code}}",
         effectInstant: "Keine ungespeicherten Änderungen in diesem Bereich",
         effectReindex: "Ungespeicherte Änderungen — «Anwenden» klicken zum Speichern",

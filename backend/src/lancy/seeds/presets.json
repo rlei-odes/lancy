@@ -2,7 +2,7 @@
   "retrieval": [
     {
       "name": "Default",
-      "protected": 2,
+      "protected": 1,
       "data": {
         "retriever_top_k": 5,
         "rrf_k": 60,

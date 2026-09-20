@@ -85,9 +85,22 @@ async def query_expansion(query: str, llm: LLM, expansion_number: int = 2) -> li
         ),
     ]
 
-    generated_queries = ((await llm.generate(conversation)).content[0].text or "").strip().split("\n")
+    raw = ((await llm.generate(conversation)).content[0].text or "").strip().split("\n")
+    lines = [line.strip() for line in raw if line.strip()]
+    # `expansion_number` is a request to the model, not a constraint on it: every
+    # line returned here becomes its own embedding call and vector search, so a
+    # model that repeats itself multiplies the retrieval work without bound (a
+    # repetition loop once turned expansion=1 into 204 queries and exhausted the
+    # vector store's connection pool). Deduplicate before truncating, or a loop
+    # spends the whole budget searching the same text twice.
+    generated_queries = list(dict.fromkeys(lines))[:expansion_number]
 
     loguru.logger.debug(f"Original query for expansion: {query}")
+    if len(lines) > len(generated_queries):
+        loguru.logger.warning(
+            f"Query expansion asked for {expansion_number} queries and got {len(lines)} "
+            f"({len(set(lines))} unique) — keeping the first {len(generated_queries)}."
+        )
     for i, generated_query in enumerate(generated_queries, start=1):
         loguru.logger.debug(f"Generated query {i}: {generated_query}")
 

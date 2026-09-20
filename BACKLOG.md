@@ -138,14 +138,15 @@ The metadata schema (title, author, document_id, document_class, etc.) and uploa
 
 ## UI & Settings
 
-### KB Form — Remaining Pool-Sync Gaps
+### Reindex Can Silently Drop a KB from the Pool
 
-The Edit/Apply path now refreshes the pool when the embedding changes (2026-05). Two smaller gaps remain — both are likely no longer user-visible since the Edit/Apply fix covers the main flow, but worth keeping on the list:
+The reindex post-step ([main.py:866-878](backend/src/lancy/main.py#L866-L878)) unloads the KB, then reloads it into the pool. When the reload raises `EmbeddingConflict` — the KB's embedding no longer matches the one the pool is locked to — the reload is skipped with a neutral log warning and the KB is left **out of the pool entirely**, because the unload already happened.
 
-- **Mount-time session restore** ([rag-config-panel.tsx:476-480](frontend/src/components/sections/rag-config-panel.tsx#L476-L480)) fires `activate` without `?reset=true` and swallows the 409, so the active KB and the pool entry can disagree silently. Fix: mirror `switchKb`'s compatibility check, or always pass `?reset=true` on session restore.
-- **Reindex post-step** ([main.py:706+](backend/src/lancy/main.py#L706)) currently logs a neutral warning on `EmbeddingConflict` instead of crashing, but doesn't reset the pool to load the just-ingested KB. Fix: fall back to `pool.reset(...)` on conflict.
+The reindex itself reports plain success. The user has just re-indexed a KB and every conversation bound to it now answers *"Knowledge base 'X' is not loaded on the server"* (since v0.3.11 — before that it silently answered from whichever KB was active), with nothing in the UI connecting that to the reindex they just ran.
 
-Also: the word "reset" is overloaded — `activate?reset=true` is an in-memory pool swap (no data loss), while reindex `reset=true` is a destructive re-embed. UI labelling should distinguish these.
+**Not the fix:** falling back to `pool.reset(...)`. That evicts every other KB from the pool, disrupting other users mid-query to serve one admin's reindex. The current behaviour deliberately leaves the on-disk vectors intact and defers the pool switch — see the comment at that site.
+
+**Fix:** surface the state instead. `ReindexResult` needs a field for "indexed, but not loaded into the pool", and the reindex toast should say so and point at the activate-with-reset action. Pairs with the `IndexStatus`-has-no-error-field gap noted in the v0.3.11 changelog entry.
 
 ### Align Design of Left and Right Sidebar, Main Chat Page
 
@@ -223,6 +224,16 @@ Especially with Neighbour Chunk Expansion, we have many variables that control h
 **Blocker:** ChromaDB has no native metadata prefix-search — a full scan is required. pgvector's SQL `LIKE` query would make this trivial. Worth revisiting when pgvector support matures.
 
 ---
+
+### An Admin Switching KB Rewrites the Shared Retrieval Baseline
+
+`selectPooledKb` POSTs the merged session to `/rag/config` on every KB switch. For an admin `_save_config` writes `rag_config.json` — the baseline every user inherits — so switching KB silently resets its retrieval fields to Default's. A no-op while the baseline equals Default; it reverts the admin's own deliberate Apply otherwise.
+
+The POST cannot simply be dropped: it is what makes the loaded preset take effect, since session config is server-side. The root is that an admin has no session of their own — `_save_config` sends user writes to a private SQLite row and admin writes to the global file, so every setting an admin touches is global by construction.
+
+**Fix:** give admins a session row like users have, and reserve `rag_config.json` for an explicit Apply.
+
+**Minor, same area:** `saveAsPreset` does not await the save and shows the success toast unconditionally; `persistUserPresets` ignores exceptions and non-ok responses. No reachable trigger today (protected names are rejected up front, the presets route is not admin-gated, KB preset controls are disabled for users), so this is robustness, not a live bug.
 
 ### Preset UI — End-to-End Review and UX Improvement
 
@@ -500,47 +511,25 @@ No urgent updates. The following are worth revisiting when there is a concrete r
 - **Tailwind CSS v3 → v4** — v4 replaces `tailwind.config.js` with a CSS-first config. Real migration effort, not a version bump. Only worth doing if a v4-specific feature is needed.
 - **React 18 → 19** — React 19 is stable. Low urgency.
 - **`@types/node: ^20` → `^22`** — trivial bump.
-
-Observed on a clean `npm install` (2026-05): 2 moderate severity vulnerabilities reported; deprecated `glob@10.5.0` pulled in as a transitive dep. Both originate from indirect dependencies, not anything in `package.json` directly — they resolve by bumping the direct deps that pull them in.
-
-Further candidates noticed during a package.json audit:
-
-- **`next: ^15.5.18` → 16.x** — Next 16 is current. Note that `eslint-config-next` is already at `^16.1.6` while `next` itself is on 15, which is a mismatch worth fixing during the bump.
+- **`next` → 16.x** — `eslint-config-next` is already on 16 while `next` is on 15. Fix the mismatch during the bump.
 - **`lucide-react: ^0.321.0`** — far behind; current is in the 0.4xx range.
 - **`i18next: ^24.x`** — newer major available.
-- **`mini-css-extract-plugin` + explicit `webpack: ^5.99.5` in devDeps** — Next 15/16 manages its own webpack. These look like leftovers that can probably be removed entirely. Verify before deleting.
+- **`mini-css-extract-plugin` + explicit `webpack` in devDeps** — Next manages its own webpack. Probable leftovers; verify before deleting.
 
-Minor/patch updates within existing major versions (`^` ranges in `package.json`) are picked up automatically by `npm update` and can be run periodically without concern.
+Dependabot does not open these: they are all majors.
 
 #### Python
-
-Last swept: **2026-07-11** — full refresh of top-level pins in `requirements.txt` and `backend/pyproject.toml`. See CHANGELOG for the version-by-version list.
-
-**Routine for the next sweep:**
-
-1. Rebuild the venv: `rm -rf .venv && python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt`
-2. `pip list --outdated`
-3. Bump top-level pins within their current major. Ignore transitive deps — they ride with their parents.
-4. Ingestion + retrieval smoke test after install: `scripts/live-test.py` against a running dev stack. Creates throwaway KBs, ingests the demo corpus, asks the `data/EVALUATION_qa_ground_truth.md` questions, deletes them again, and writes a report to `logs/`. Read the Answers section — the checks prove the pipeline replied, not that it replied well.
 
 **Held on purpose (don't bump on sight):**
 
 - **`ruff`** — dev-only, but each 0.x "major" ships new lint rules that fire and produce a noisy diff. Bump as a dedicated hygiene commit, then clean up whatever new rules trigger. Do NOT bundle with a dep sweep.
 - **`torch` / `nvidia-*` / `cuda-toolkit`** — the CUDA runtime stack ships with torch as pip wheels. Do NOT upgrade individual `nvidia-*` wheels — pip's resolver will refuse, or worse, silently mismatch CUDA symbols. To get newer CUDA: bump `torch` itself, which is a bigger project (torch version → CUDA compute capability → GPU driver requirements → sentence-transformers / docling compat). Only do this with a concrete motivator (newer GPU, specific CUDA feature).
 
-**Waiting on parents to bless a major (do not touch as transitive):**
-
-- `huggingface_hub 0.x → 1.x` and `transformers 4.x → 5.x` — pinned by `sentence-transformers` (currently on 4.x line). Will move when st releases a 1.x-compatible version.
-- `starlette 0.x → 1.x` — pinned by `fastapi`.
-- `semchunk 3.x → 4.x` — pinned by `docling`.
-- `magika 0.x → 1.x` — pinned by `markitdown`.
-- `rich 14.x → 15.x` — pinned by `typer` / `pydantic`.
-
 **Local guard rails to keep in sync:**
 
-`conversational-toolkit/pyproject.toml` has explicit upper caps on `fastapi`, `httpx`, `python-jose`, `loguru`, `numpy`. When bumping a top-level pin above one of these caps, loosen the toolkit cap in the same commit. As of 2026-07-11 only `fastapi` had needed loosening.
+`conversational-toolkit/pyproject.toml` caps `fastapi`, `httpx`, `python-jose`, `loguru` and `numpy` from above. Bumping a top-level pin past one of these caps fails to resolve until the toolkit cap is loosened in the same commit. `fastapi` and `httpx` currently sit one minor below theirs, so they are the ones that will hit it first.
 
-**Historical footnote:** `docling`, `chromadb`, and `ollama` were previously called out as "packages to watch". `docling` and `chromadb` were bumped through many minors in one round (2.75 → 2.112 and 1.4.1 → 1.5.9) without incident on this codebase's narrow API surface (`PdfPipelineOptions.do_ocr` / `.generate_picture_images`; the `ChromaDBVectorStore` wrapper). `ollama` client is a thin HTTP wrapper — bump alongside Ollama server upgrades.
+**After a sweep:** run `scripts/live-test.py` against a running dev stack. It creates throwaway KBs, ingests the demo corpus, asks the `data/EVALUATION_qa_ground_truth.md` questions, deletes them again, and writes a report to `logs/`. Read the Answers section — the checks prove the pipeline replied, not that it replied well.
 
 ### Refactor: Reduce Size of main.py
 

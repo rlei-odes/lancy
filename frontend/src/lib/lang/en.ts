@@ -285,6 +285,7 @@ export const app = {
         presetRetrievalLabel: "Retrieval",
         presetKbLabel: "KB Config",
         statusPresetSaved: "Preset «{{name}}» saved.",
+        statusPresetProtected: "«{{name}}» is set by an administrator and cannot be overwritten. Save under a different name.",
         statusError: "Error: {{code}}",
         effectInstant: "No unsaved changes in this section",
         effectReindex: "Unsaved changes — click Apply to save",

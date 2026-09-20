@@ -280,6 +280,7 @@ export const app = {
         presetRetrievalLabel: "Recupero",
         presetKbLabel: "Config. KB",
         statusPresetSaved: "Preset «{{name}}» salvato.",
+        statusPresetProtected: "«{{name}}» è impostato dall'amministrazione e non può essere sovrascritto. Salva con un altro nome.",
         statusError: "Errore: {{code}}",
         effectInstant: "Nessuna modifica non salvata in questa sezione",
         effectReindex: "Modifiche non salvate — cliccare Applica per salvare",

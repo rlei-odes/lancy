@@ -255,10 +255,22 @@ def save_presets(
                 ).fetchone()
                 if seed and seed[0] > max_deletable:
                     continue
+                # An admin editing a seeded preset updates the global row it came
+                # from. A KB-scoped copy would leave the seed in place, and
+                # get_presets lists global rows first — so the edit would never be
+                # read. Keeping the seed's protection level means the edited row
+                # stays admin-only instead of dropping to 0 until the next restart.
+                admin_edits_seed = seed is not None and role == "admin"
                 conn.execute(
                     "INSERT OR REPLACE INTO presets (user_id, kb_id, type, name, data_json, protected) "
-                    "VALUES (?, ?, 'retrieval', ?, ?, 0)",
-                    (scope_user_id, kb_id, p["name"], json.dumps(p["data"])),
+                    "VALUES (?, ?, 'retrieval', ?, ?, ?)",
+                    (
+                        scope_user_id,
+                        None if admin_edits_seed else kb_id,
+                        p["name"],
+                        json.dumps(p["data"]),
+                        seed[0] if admin_edits_seed else 0,
+                    ),
                 )
 
             # KB presets: admin only
@@ -277,10 +289,15 @@ def save_presets(
                     ).fetchone()
                     if seed and seed[0] > max_deletable:
                         continue
-                    conn.execute(
+                    conn.execute(  # same scope rule as retrieval presets above
                         "INSERT OR REPLACE INTO presets (user_id, kb_id, type, name, data_json, protected) "
-                        "VALUES (NULL, ?, 'kb', ?, ?, 0)",
-                        (kb_id, p["name"], json.dumps(p["data"])),
+                        "VALUES (NULL, ?, 'kb', ?, ?, ?)",
+                        (
+                            None if seed else kb_id,
+                            p["name"],
+                            json.dumps(p["data"]),
+                            seed[0] if seed else 0,
+                        ),
                     )
 
             conn.commit()
@@ -345,7 +362,7 @@ def get_default_preset(db_path: Path) -> dict | None:
     with _connect(db_path) as conn:
         row = conn.execute(
             "SELECT data_json FROM presets "
-            "WHERE type='retrieval' AND name='Default' AND protected=2 AND user_id IS NULL",
+            "WHERE type='retrieval' AND name='Default' AND user_id IS NULL AND kb_id IS NULL",
         ).fetchone()
     return json.loads(row[0]) if row else None
 

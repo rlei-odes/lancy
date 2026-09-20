@@ -536,10 +536,10 @@ export const RagConfigPanel: FunctionComponent = () => {
             const candidate = savedKbId && reg.bases[savedKbId] ? savedKbId : reg.active;
             let resolvedKbId = candidate;
 
-            // Membership is checked against the pool itself, never against reg.active:
-            // POST /activate persists reg.active before the pool load is attempted, so a
-            // load that fails (409 on an embedding conflict) leaves the registry naming a
-            // KB the pool never took.
+            // Membership is checked against the pool itself, never against reg.active.
+            // The registry records only activations that took (the backend saves it after
+            // the pool load succeeds), but it is still not proof of membership: a reindex
+            // or a deactivate can drop a KB from the pool without touching reg.active.
             if (!pool.loaded.includes(candidate)) {
                 // Not in the pool — try to get it there. Unlike before, the outcome
                 // decides what we display: non-admins get 403 and an embedding
@@ -1116,6 +1116,17 @@ export const RagConfigPanel: FunctionComponent = () => {
     const saveAsPreset = useCallback((type: "retrieval" | "kb") => {
         const name = saveAsName.trim();
         if (!name || !activeKb) return;
+        // Saving over a preset the caller may not write is discarded by the
+        // backend without an error, so catch it here rather than report success.
+        // Level 1 is admin-owned, level 2 is immutable for everyone.
+        const clash = (type === "retrieval" ? allRetrievalPresets : allKbPresets)
+            .find((p) => p.name === name);
+        const level = clash?.protected ?? 0;
+        if (level === 2 || (level === 1 && !isAdmin)) {
+            setStatus({ type: "error", text: t("rag.statusPresetProtected", { name }) });
+            setTimeout(() => setStatus({ type: "idle", text: "" }), 4000);
+            return;
+        }
         if (type === "retrieval") {
             const retrievalData = Object.fromEntries(RETRIEVAL_FIELD_KEYS.map((k) => [k, session[k]])) as RetrievalFields;
             const updated = [...userRetrievalPresets.filter((p) => p.name !== name), { name, data: retrievalData }];
@@ -1132,7 +1143,8 @@ export const RagConfigPanel: FunctionComponent = () => {
         setShowSaveAs(null);
         setStatus({ type: "success", text: t("rag.statusPresetSaved", { name }) });
         setTimeout(() => setStatus({ type: "idle", text: "" }), 2500);
-    }, [saveAsName, session, kbConfig, userRetrievalPresets, userKbPresets, activeKb, t]);
+    }, [saveAsName, session, kbConfig, userRetrievalPresets, userKbPresets, activeKb, t,
+        allRetrievalPresets, allKbPresets, isAdmin]);
 
     const deletePreset = useCallback((type: "retrieval" | "kb", name: string) => {
         if (!activeKb) return;
