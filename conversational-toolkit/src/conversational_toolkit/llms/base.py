@@ -71,8 +71,14 @@ class LLM(ABC):
         self.tools: list[Tool] | None = []
 
     @abstractmethod
-    async def generate(self, conversation: list[LLMMessage]) -> LLMMessage:
-        """Return a single complete response for the given conversation."""
+    async def generate(self, conversation: list[LLMMessage], max_tokens: int | None = None) -> LLMMessage:
+        """Return a single complete response for the given conversation.
+
+        `max_tokens` overrides the instance budget for this call only. Callers
+        that know how long the answer must be (a fixed-length list, a single
+        line) use it to bound a degenerate repetition loop, which otherwise
+        runs to the instance budget and is paid for in latency.
+        """
         pass
 
     @abstractmethod

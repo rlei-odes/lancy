@@ -67,7 +67,10 @@ class OllamaLLM(LLM):
             f"Ollama LLM loaded: {model_name}; temperature: {temperature}; seed: {seed}; tools: {tools}; response_format: {response_format}; keep_alive: {keep_alive}"
         )
 
-    async def generate(self, conversation: list[LLMMessage]) -> LLMMessage:
+    async def generate(self, conversation: list[LLMMessage], max_tokens: int | None = None) -> LLMMessage:
+        options: dict = {"num_ctx": self.num_ctx, "temperature": self.temperature, "seed": self.seed}
+        if max_tokens is not None:
+            options["num_predict"] = max_tokens  # Ollama's name for the completion cap
         completion: ChatResponse = await self.client.chat(
             model=self.model,
             messages=[message_to_ollama(msg) for msg in conversation],
@@ -75,7 +78,7 @@ class OllamaLLM(LLM):
             tools=[tool.json_schema() for tool in self.tools] if self.tools else None,
             stream=False,
             keep_alive=self.keep_alive,
-            options={"num_ctx": self.num_ctx, "temperature": self.temperature, "seed": self.seed},
+            options=options,
         )
         logger.debug(f"Completion: {completion}")
         return LLMMessage(

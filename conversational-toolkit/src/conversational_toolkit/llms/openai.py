@@ -95,16 +95,17 @@ class OpenAILLM(LLM):
             f"OpenAI LLM loaded: {model_name}; temperature: {temperature}; seed: {seed}; tools: {tools}; tool_choice: {tool_choice}; response_format: {response_format}; max_tokens: {max_tokens}"
         )
 
-    async def generate(self, conversation: list[LLMMessage]) -> LLMMessage:
+    async def generate(self, conversation: list[LLMMessage], max_tokens: int | None = None) -> LLMMessage:
         """Generate a completion for the given conversation."""
 
         messages_as_openai = [message_to_openai(msg) for msg in conversation]
+        budget = max_tokens if max_tokens is not None else self.max_tokens
         completion = await self.client.chat.completions.create(
             model=self.model,
             messages=messages_as_openai,
             temperature=self.temperature,
             seed=self.seed,
-            max_tokens=self.max_tokens if self.max_tokens is not None else omit,
+            max_tokens=budget if budget is not None else omit,
             tools=(
                 cast(
                     list[ChatCompletionToolParam],

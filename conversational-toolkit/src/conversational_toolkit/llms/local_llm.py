@@ -28,7 +28,7 @@ class LocalLLM(LLM):
         self.max_tokens = max_tokens
         logger.debug(f"Local LLM loaded: {model_name}; temperature: {temperature}; seed: {seed}")
 
-    async def generate(self, conversation: list[LLMMessage]) -> LLMMessage:
+    async def generate(self, conversation: list[LLMMessage], max_tokens: int | None = None) -> LLMMessage:
         """Generate a completion for the given conversation."""
         # Convert Pydantic models to plain dicts to avoid OpenAI SDK serialisation issues
         # (TypeError: argument 'by_alias': 'NoneType' cannot be converted to PyBool)
@@ -44,8 +44,9 @@ class LocalLLM(LLM):
         }
         if self.response_format:
             kwargs["response_format"] = self.response_format
-        if self.max_tokens is not None:
-            kwargs["max_tokens"] = self.max_tokens
+        budget = max_tokens if max_tokens is not None else self.max_tokens
+        if budget is not None:
+            kwargs["max_tokens"] = budget
 
         t_start = time.monotonic()
         completion = await self.client.chat.completions.create(**kwargs)  # type: ignore

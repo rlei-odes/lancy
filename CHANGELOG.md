@@ -7,6 +7,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Lancy v0.3.11] — 2026-09-10 · rlei-odes
 
+### Fixed — Query expansion could flood retrieval with hundreds of searches
+
+- Query expansion returned every line the model produced instead of the number requested. A repetition loop turned one requested query into 204, each its own vector search, which exhausted the store's connection pool and failed the answer. Lines are now deduplicated and capped, with a warning when the model overshoots.
+- The expansion prompt asked for a fixed count and a mix of languages in the same breath, which is what triggered the loop. It now states the count once, forbids repeats, and no longer spends a query on a language the corpus may not contain.
+- LLM calls can bound their own output, so a runaway costs a fraction of a second instead of the utility model's whole budget.
+
 ### Fixed — Answers cut off mid-sentence, reranking ran once per query variant
 
 - An unescaped `"` in the model's prose closed the answer JSON string early, truncating the answer while sources and follow-ups still rendered. The system prompt now forbids that character.

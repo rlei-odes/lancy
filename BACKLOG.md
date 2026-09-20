@@ -193,6 +193,12 @@ Show neighbours in the sources panel when the user expands a citation. The retri
 
 ---
 
+### Corpus Language Setting per KB
+
+HyDE and query expansion both generate text that is embedded and matched against the corpus, so they work best in the corpus language. Neither knows what that is. The expansion prompt used to ask for a mix of languages and spent one of its slots translating an English question for an English corpus; it now follows the query's language, which is a guess, not knowledge.
+
+**Proposal:** a `corpus_language` field on the KB, set by the admin, threaded into the HyDE and query-expansion prompts. Default "same as the query" for mixed corpora.
+
 ### RAG Settings: LLM Call Calculation
 
 Especially with Neighbour Chunk Expansion, we have many variables that control how many chunks could get sent to the helper LLM and the main model. We should have a text-based preview telling the user the maximum value for each. If no helper model is selected, it should show that all reranking etc. calls go to the main model. The stats are: number of calls, max. number of chunks, for each.

@@ -59,11 +59,20 @@ async def make_query_standalone(llm: LLM, history: list[LLMMessage], query: str)
 
 
 async def query_expansion(query: str, llm: LLM, expansion_number: int = 2) -> list[str]:
+    # "Produce N queries total: some ... some ..." asked for one thing and
+    # several in the same breath, and nothing told the model when to stop — at
+    # N=1 that reliably sent it into a repetition loop. The count is stated once
+    # now, with an explicit stop. The language spread is gone too: it cost one of
+    # N slots on a translation of a question whose corpus is in one language.
     template_query_expansion = """
-        Generate multiple search queries related to: {query}
-        Produce {expansion_number} queries total: some in the same language as the input query, some in English.
-        This dual-language approach maximizes retrieval coverage across multilingual document collections.
-        OUTPUT ({expansion_number} queries, one per line, no numbering or explanation):
+        Generate alternative search queries for: {query}
+
+        Rules:
+        - Output exactly {expansion_number} line(s), one query per line.
+        - No numbering, labels, quotes or explanation.
+        - Each query must differ meaningfully from the others and from the original.
+        - Write in the same language as the original query.
+        - Stop after {expansion_number} line(s).
     """
     conversation = [
         LLMMessage(
@@ -71,7 +80,7 @@ async def query_expansion(query: str, llm: LLM, expansion_number: int = 2) -> li
             content=[
                 MessageContent(
                     type="text",
-                    text="You are a focused assistant that generates multiple relevant search queries from a single input query. Output only the queries, one per line, with no numbering, labels, or explanation.",
+                    text="You are a focused assistant that rewrites a search query into a fixed number of alternatives. Output only the queries, one per line, with no numbering, labels, or explanation. Never repeat a query.",
                 )
             ],
         ),
@@ -85,7 +94,11 @@ async def query_expansion(query: str, llm: LLM, expansion_number: int = 2) -> li
         ),
     ]
 
-    raw = ((await llm.generate(conversation)).content[0].text or "").strip().split("\n")
+    # A query line runs ~8-12 tokens, so this is generous for the answer asked
+    # for and still caps a runaway at a fraction of a second rather than the
+    # utility LLM's full budget (one loop cost ~19s of a ~42s answer).
+    budget = 32 * expansion_number + 32
+    raw = ((await llm.generate(conversation, max_tokens=budget)).content[0].text or "").strip().split("\n")
     lines = [line.strip() for line in raw if line.strip()]
     # `expansion_number` is a request to the model, not a constraint on it: every
     # line returned here becomes its own embedding call and vector search, so a

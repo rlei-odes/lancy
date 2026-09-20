@@ -29,8 +29,12 @@ from conversational_toolkit.utils.retriever import query_expansion
 class FakeLLM:
     def __init__(self, reply: str) -> None:
         self.reply = reply
+        self.max_tokens: int | None = None
+        self.prompt = ""
 
-    async def generate(self, messages, **kwargs):
+    async def generate(self, messages, max_tokens=None, **kwargs):
+        self.max_tokens = max_tokens
+        self.prompt = " ".join(c.text or "" for m in messages for c in m.content if c.type == "text")
         return LLMMessage(
             role=Roles.ASSISTANT, content=[MessageContent(type="text", text=self.reply)]
         )
@@ -87,3 +91,46 @@ def test_surrounding_whitespace_is_stripped():
 
 def test_an_empty_response_yields_no_queries():
     assert expand("", n=3) == []
+
+
+# ─── the model is not allowed to run away in the first place ──────────────────
+# Truncating the result still pays for the tokens: the runaway above took ~19s
+# of a ~42s answer to produce 1024 tokens, of which one line was used.
+
+
+def ask(n: int) -> FakeLLM:
+    llm = FakeLLM("alpha")
+    asyncio.run(query_expansion("original question", llm, n))
+    return llm
+
+
+def test_the_generation_is_bounded():
+    """Without a per-call bound this inherits the utility LLM's whole budget."""
+    llm = ask(1)
+
+    assert llm.max_tokens is not None
+    assert llm.max_tokens < 512
+
+
+def test_the_bound_leaves_room_for_the_queries_asked_for():
+    """A bound that truncates a legitimate answer would be its own bug."""
+    llm = ask(10)
+
+    assert llm.max_tokens >= 10 * 8
+
+
+def test_the_bound_grows_with_the_number_of_queries():
+    assert ask(10).max_tokens > ask(1).max_tokens
+
+
+# ─── the prompt gives the model a reachable target ────────────────────────────
+
+
+def test_the_prompt_asks_for_one_unambiguous_count():
+    """"Produce 1 queries total: some ... some ..." is what started the loop."""
+    assert "exactly 1" in ask(1).prompt
+
+
+def test_the_prompt_does_not_ask_for_other_languages():
+    """An English question against an English corpus spent a slot on Spanish."""
+    assert "English" not in ask(3).prompt
