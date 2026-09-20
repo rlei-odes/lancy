@@ -40,12 +40,6 @@ Surfaced by the chat pre-filter feature (v0.3.7) — the empty filter pill at `/
 
 Note: the Explorer back arrow was changed to `router.back()` in v0.3.7 as a surgical mitigation for the main navigation path that surfaced this.
 
-### Duplicate KB Name Allowed at Creation
-
-The KB create form does not check for name collisions. Submitting a name that already exists is accepted; the backend slugifies the name to an id and, if the slug collides, silently appends a numeric suffix (or overwrites — needs verification). Either way the user ends up with two KBs that look the same in the dropdown but are distinct on disk.
-
-**Fix:** validate uniqueness on the frontend (compare against `kbRegistry.bases` keys / names) before submitting, and have the backend return a 409 on collision instead of disambiguating silently.
-
 ### pgvector Incompatible with High-Dimension Embedding Models (Qwen3-Embedding-8B/4B)
 
 pgvector's HNSW index has a hard cap of 2000 dimensions — a Postgres/pgvector limitation, not something Lancy's code controls. Qwen3-Embedding-8B (4096 dims) and -4B (2560 dims) both exceed it. `create_table()` in `conversational_toolkit/vectorstores/postgres.py` unconditionally creates an HNSW index, so ingestion fails at `CREATE INDEX ... USING hnsw` with `asyncpg.exceptions.ProgramLimitExceededError` for any pgvector KB using either model — even though `05-embedding-models.md` documents Qwen3-Embedding-8B as a supported/recommended option. Only the 0.6B variant (1024 dims) currently works with pgvector's HNSW index; ChromaDB is unaffected (no such dimension cap).
@@ -57,22 +51,6 @@ Discovered while deploying with pgvector + Qwen3-Embedding-8B via Ollama: got pa
 2. Make HNSW index creation optional per-KB for pgvector, falling back to a brute-force sequential scan when the model's dimension exceeds pgvector's cap. Keeps full 8B quality; loses ANN speed at large scale (likely fine at small/medium KB sizes).
 3. Investigate pgvector's `halfvec` type — it may have a higher indexable dimension ceiling and could close this gap without truncation. Not yet checked.
 4. Document the 1024-dim ceiling as the practical limit for pgvector + Ollama embeddings, and steer pgvector deployments toward smaller embedding models.
-
-### `registry.active` Persisted Before the Pool Load Succeeds
-
-`activate_kb()` in `kb_router.py` sets `reg.active = kb_id` and calls `_save(reg)` *before* awaiting `activate_callback`. When the callback raises `EmbeddingConflict` the endpoint correctly returns 409, but `kb_registry.json` has already been written and now names a KB that was never loaded into the pool. The mismatch survives restarts: on boot `main.py` loads `registry.active` into the pool, which fails again for the same embedding reason, leaving the registry and the pool permanently disagreeing.
-
-Discovered while investigating why an LDAP user's KB selector showed `md_profile` while answers came from `md-vorschriften-stale` (`GET /kb/pool` reported only the latter as loaded). The frontend no longer trusts `registry.active` for display — it checks pool membership instead — but the backend still writes the inconsistent state.
-
-**Fix:** move `_save(reg)` after `await activate_callback(...)` so the registry only records an activation that actually took. Consider whether `reg.active` should be reverted explicitly on failure, or simply left untouched.
-
-### Unloaded `kb_id` Silently Answers from a Different KB
-
-`DispatchingAgent.answer_stream()` in `kb_pool.py` resolves its KB with `self._pool.get(kb_id) or self._pool.get_active()`. A conversation whose persisted `kb_id` is not in the pool is therefore answered from whatever KB *is* active, with no error, no warning, and no indication in the response. The user believes they are querying one knowledge base and receives answers from another.
-
-This is reachable in normal operation, because conversation `kb_id` is persisted in the DB while pool membership is not: a backend restart loads only `registry.active`, so every conversation bound to any other KB silently falls back. Observed in production alongside the bug above.
-
-**Fix:** decide the intended contract before changing it. Options: (a) raise/return an explicit error telling the user the KB is not loaded, (b) attempt an on-demand `pool.load()` for a compatible KB and only fail if it conflicts, or (c) keep the fallback but surface it clearly in the response and the sources panel. (b) is the most useful and pairs with the missing non-admin pool-load path — a compatible KB can join the pool without disturbing other users, and `EmbeddingConflict` already rejects incompatible ones.
 
 ---
 

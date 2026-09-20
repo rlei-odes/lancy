@@ -263,6 +263,7 @@ export const app = {
         kbNotLoadedShort: "not loaded",
         statusCreatingKb: "Creating knowledge base...",
         statusKbCreated: "KB «{{name}}» created. Not yet indexed.",
+        statusKbNameTaken: "A knowledge base named «{{name}}» already exists.",
         statusKbUpdated: "Knowledge base updated.",
         confirmDelete: "Delete knowledge base «{{name}}» and its vector store?",
         statusDeletingKb: "Deleting knowledge base...",

@@ -416,7 +416,9 @@ def test_an_unloaded_kb_id_does_not_fall_back_to_the_active_kb():
     result = asyncio.run(agent.answer(_Query(), kb_id="kb-missing"))
 
     assert inner.seen is None
-    assert "No knowledge base is loaded" in result.content[0].text
+    # The message names the missing KB rather than claiming none is loaded —
+    # kb-one is loaded, so the generic sentence would be a false diagnosis.
+    assert "kb-missing" in result.content[0].text
 
 
 def test_loaded_kbs_reports_what_the_pool_holds():

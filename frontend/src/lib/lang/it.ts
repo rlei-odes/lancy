@@ -258,6 +258,7 @@ export const app = {
         kbNotLoadedShort: "non caricata",
         statusCreatingKb: "Creazione base di conoscenza...",
         statusKbCreated: "BdC «{{name}}» creata. Non ancora indicizzata.",
+        statusKbNameTaken: "Esiste già una base di conoscenza con il nome «{{name}}».",
         statusKbUpdated: "Base di conoscenza aggiornata.",
         confirmDelete: "Eliminare la base di conoscenza «{{name}}» e il suo vector store?",
         statusDeletingKb: "Eliminazione base di conoscenza...",

@@ -278,29 +278,39 @@ class DispatchingAgent:
                 pass
         return self._active_kb_id_fn()
 
-    async def _entry_for(self, query_with_context: Any) -> Any:
-        """The pool entry serving this query, or None if nothing is loaded."""
+    async def _entry_for(self, query_with_context: Any) -> tuple[Any, str]:
+        """The pool entry serving this query, plus the KB id it was asked for.
+
+        There is deliberately no fallback to the active KB: answering a
+        conversation bound to KB X out of KB Y is indistinguishable, to the
+        user, from a correct answer.
+        """
         kb_id = await self._resolve_kb_id(
             getattr(query_with_context, "conversation_id", None)
         )
-        return self._pool.get(kb_id) or self._pool.get_active()
+        return self._pool.get(kb_id), kb_id
 
-    @staticmethod
-    def _no_kb_answer() -> Any:
+    def _no_kb_answer(self, kb_id: str | None = None) -> Any:
+        """A KB missing from the pool is a different diagnosis from an empty pool.
+
+        Naming the KB is the point: "no knowledge base is loaded" is false and
+        unhelpful when the others are loaded and only this one is missing.
+        """
         from conversational_toolkit.agents.base import AgentAnswer
         from conversational_toolkit.llms.base import MessageContent
 
-        return AgentAnswer(
-            content=[MessageContent(
-                type="text",
-                text="No knowledge base is loaded. Please activate one first.",
-            )]
+        text = (
+            f"Knowledge base '{kb_id}' is not loaded on the server. "
+            "Ask an administrator to activate it."
+            if kb_id and self._pool.get_active() is not None
+            else "No knowledge base is loaded. Please activate one first."
         )
+        return AgentAnswer(content=[MessageContent(type="text", text=text)])
 
     async def answer_stream(self, query_with_context: Any):
-        entry = await self._entry_for(query_with_context)
+        entry, kb_id = await self._entry_for(query_with_context)
         if entry is None:
-            yield self._no_kb_answer()
+            yield self._no_kb_answer(kb_id)
             return
         async for chunk in entry.agent.answer_stream(query_with_context):
             yield chunk
@@ -328,9 +338,9 @@ class DispatchingAgent:
         if kb_id is not None:
             entry = self._pool.get(kb_id)
         else:
-            entry = await self._entry_for(query_with_context)
+            entry, kb_id = await self._entry_for(query_with_context)
         if entry is None:
-            return self._no_kb_answer()
+            return self._no_kb_answer(kb_id)
         return await entry.agent.answer(query_with_context)
 
     @property

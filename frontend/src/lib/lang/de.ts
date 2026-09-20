@@ -258,6 +258,7 @@ export const app = {
         kbNotLoadedShort: "nicht geladen",
         statusCreatingKb: "Wissensdatenbank wird erstellt...",
         statusKbCreated: "WDB «{{name}}» erstellt. Noch nicht indexiert.",
+        statusKbNameTaken: "Eine Wissensdatenbank mit dem Namen «{{name}}» existiert bereits.",
         statusKbUpdated: "Wissensdatenbank aktualisiert.",
         confirmDelete: "Wissensdatenbank «{{name}}» und ihren Vector Store löschen?",
         statusDeletingKb: "Wissensdatenbank wird gelöscht...",

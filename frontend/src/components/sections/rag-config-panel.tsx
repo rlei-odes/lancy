@@ -308,6 +308,11 @@ function findMatchingKbPreset(cfg: KBConfig, presets: KBPreset[]): string {
 
 // ─── KB form ──────────────────────────────────────────────────────────────────
 
+// Mirrors `_name_key` in kb_router.py. The backend rejects a collision with 409;
+// checking here keeps the form open with a message instead of a round trip.
+const kbNameKey = (name: string) =>
+    name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "kb";
+
 interface KBFormProps {
     initial?: { name: string; data_dirs: string[] };
     onSubmit: (name: string, data_dirs: string[]) => void;
@@ -829,7 +834,20 @@ export const RagConfigPanel: FunctionComponent = () => {
         }
     };
 
+    // Leaves the form open so the name can be corrected in place.
+    const kbNameTaken = (name: string, ignoreId?: string) => {
+        const key = kbNameKey(name);
+        const clash = Object.entries(kbRegistry?.bases ?? {})
+            .some(([id, kb]) => id !== ignoreId && kbNameKey(kb.name) === key);
+        if (clash) {
+            setStatus({ type: "error", text: t("rag.statusKbNameTaken", { name }) });
+            setTimeout(() => setStatus({ type: "idle", text: "" }), 4000);
+        }
+        return clash;
+    };
+
     const createKb = async (name: string, data_dirs: string[]) => {
+        if (kbNameTaken(name)) return;
         setStatus({ type: "loading", text: t("rag.statusCreatingKb") });
         setKbForm(null);
         try {
@@ -844,7 +862,8 @@ export const RagConfigPanel: FunctionComponent = () => {
                 await fetchKbRegistry();
                 await switchKb(kb.id);
             } else {
-                setStatus({ type: "error", text: t("rag.statusError", { code: r.status }) });
+                const err = await r.json().catch(() => ({}));
+                setStatus({ type: "error", text: err.detail || t("rag.statusError", { code: r.status }) });
             }
         } catch { setStatus({ type: "error", text: t("rag.statusConnError") }); }
         setTimeout(() => setStatus({ type: "idle", text: "" }), 4000);
@@ -874,6 +893,7 @@ export const RagConfigPanel: FunctionComponent = () => {
 
     const updateKb = async (name: string, data_dirs: string[]) => {
         if (!activeKb) return;
+        if (kbNameTaken(name, activeKb.id)) return;
         setKbForm(null);
         const prevKbConfig = savedKbConfig.current;
         try {
@@ -890,6 +910,9 @@ export const RagConfigPanel: FunctionComponent = () => {
                     : prev);
                 setStatus({ type: "success", text: t("rag.statusKbUpdated") });
                 await refreshPoolForEmbeddingChange(prevKbConfig, kbConfig, kb.id);
+            } else {
+                const err = await r.json().catch(() => ({}));
+                setStatus({ type: "error", text: err.detail || t("rag.statusError", { code: r.status }) });
             }
         } catch { /* ignore */ }
         setTimeout(() => setStatus({ type: "idle", text: "" }), 3000);

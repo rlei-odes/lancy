@@ -7,6 +7,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Lancy v0.3.11] — 2026-09-10 · rlei-odes
 
+### Fixed — Knowledge bases could collide or answer from the wrong corpus
+
+- Duplicate KB names are rejected with 409 on create and rename, instead of being disambiguated into a `-2` id that looks identical in the dropdown.
+- `registry.active` is written only after the pool load succeeds, so a failed activation no longer points every conversation at an unloaded KB.
+- A conversation whose KB is not in the pool is told so by name, instead of being silently answered from whatever KB is active.
+
 ### Fixed — Ingestion failures escaped the reindex background task
 
 `rebuild_callback` caught only `RuntimeError` around `run_ingestion`. A vector store that cannot be reached raises `ConnectionRefusedError` — an `OSError` — so pointing a pgvector KB at an unreachable host produced a full uvicorn "Exception in ASGI application" traceback per attempt instead of a handled failure. The handler now catches `Exception` and logs via `log.exception`, keeping a traceback rooted at the ingestion failure rather than the ASGI middleware stack.

@@ -141,13 +141,32 @@ UploadCallback = Callable[[Path, KBInfo, dict], Awaitable[None]]
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
+def _name_key(name: str) -> str:
+    """Normalised form of a KB name — also the base `_slug` derives its id from."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "kb"
+
+
 def _slug(name: str, existing: set[str]) -> str:
-    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "kb"
+    # The suffix loop still matters after the uniqueness check below: a rename
+    # leaves the id untouched, so a name can be free while its base is not.
+    base = _name_key(name)
     slug, n = base, 2
     while slug in existing:
         slug = f"{base}-{n}"
         n += 1
     return slug
+
+
+def _name_taken(name: str, reg: KBRegistry, ignore: str | None = None) -> bool:
+    """True if another KB already carries this name (compared normalised).
+
+    Without this the two would differ only by a `-2` id suffix and look
+    identical in the KB dropdown, which renders the name.
+    """
+    key = _name_key(name)
+    return any(
+        kb_id != ignore and _name_key(kb.name) == key for kb_id, kb in reg.bases.items()
+    )
 
 
 # ─── Router factory ───────────────────────────────────────────────────────────
@@ -222,6 +241,8 @@ def create_kb_router(
     @router.post("/kb", response_model=KBInfo)
     async def create_kb(cfg: KBCreate) -> KBInfo:
         reg = _load()
+        if _name_taken(cfg.name, reg):
+            raise HTTPException(409, f"A Knowledge Base named '{cfg.name}' already exists")
         slug = _slug(cfg.name, set(reg.bases.keys()))
         vs_path = str(db_dir / f"vs_{slug}")
         kb = KBInfo(id=slug, vs_path=vs_path, **cfg.model_dump())
@@ -235,6 +256,8 @@ def create_kb_router(
         reg = _load()
         if kb_id not in reg.bases:
             raise HTTPException(404, f"KB '{kb_id}' not found")
+        if _name_taken(cfg.name, reg, ignore=kb_id):
+            raise HTTPException(409, f"A Knowledge Base named '{cfg.name}' already exists")
         existing = reg.bases[kb_id]
         updated = KBInfo(
             id=kb_id,
@@ -293,8 +316,6 @@ def create_kb_router(
         reg = _load()
         if kb_id not in reg.bases:
             raise HTTPException(404, f"KB '{kb_id}' not found")
-        reg.active = kb_id
-        _save(reg)
         kb = reg.bases[kb_id]
         try:
             await activate_callback(kb, reset)
@@ -303,6 +324,14 @@ def create_kb_router(
                 409,
                 f"{exc} Use ?reset=true to clear the pool first.",
             )
+        # Recorded only once the pool actually holds the KB. `_active_kb_id()` in
+        # main.py re-reads this value per query, so an activation written ahead of
+        # a failure re-points every conversation at a KB that is not loaded.
+        # Re-read first: the callback itself writes the registry via update_stats,
+        # and the copy loaded above is stale by now.
+        reg = _load()
+        reg.active = kb_id
+        _save(reg)
         log.info(f"Activated KB '{kb.name}' (id={kb_id}, reset={reset})")
         return _redact(kb)
 
