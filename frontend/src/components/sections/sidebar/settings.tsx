@@ -178,7 +178,7 @@ function RoleSeparationSection() {
                                 type="password"
                                 value={adminPw}
                                 onChange={(e) => setAdminPw(e.target.value)}
-                                className="w-full rounded-md bg-muted border border-border text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                className="w-full rounded-md bg-muted border border-border text-foreground px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-ring"
                                 placeholder="min. 8 characters"
                             />
                         </div>
@@ -188,7 +188,7 @@ function RoleSeparationSection() {
                                 type="password"
                                 value={adminPwConfirm}
                                 onChange={(e) => setAdminPwConfirm(e.target.value)}
-                                className="w-full rounded-md bg-muted border border-border text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                className="w-full rounded-md bg-muted border border-border text-foreground px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-ring"
                                 placeholder="repeat password"
                             />
                         </div>

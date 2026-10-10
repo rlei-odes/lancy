@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.4.1] — 2026-10-10 · rlei-odes
+
+### Changed — Tailwind CSS v4
+
+- The frontend moved to Tailwind CSS v4. Configuration is now CSS-first in `globals.css`; `tailwind.config.ts`, `autoprefixer` and `tailwindcss-animate` are gone, replaced by `@tailwindcss/postcss` and `tw-animate-css`. This drops Tailwind v3's build subtree, and with it the unpatchable `braces` advisory it carried.
+
+---
+
 ## [Lancy v0.4.0] — 2026-10-10 · rlei-odes
 
 ### Added — Document piles

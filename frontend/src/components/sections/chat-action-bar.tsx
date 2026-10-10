@@ -217,7 +217,7 @@ const FilterPopover: FunctionComponent<FilterPopoverProps> = ({ kb, initial, onA
                                     <select
                                         value={current}
                                         onChange={(e) => setValue(k.key, e.target.value)}
-                                        className="w-full bg-muted border border-border text-foreground text-xs rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                                        className="w-full bg-muted border border-border text-foreground text-xs rounded px-2 py-1 focus:outline-hidden focus:border-blue-400"
                                     >
                                         <option value="">{t("chatFilters.anyValue")}</option>
                                         {facet.values.map((v) => (
@@ -237,7 +237,7 @@ const FilterPopover: FunctionComponent<FilterPopoverProps> = ({ kb, initial, onA
                                     value={current}
                                     onChange={(e) => setValue(k.key, e.target.value)}
                                     placeholder={t("chatFilters.textPlaceholder")}
-                                    className="w-full bg-muted border border-border text-foreground text-xs rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                                    className="w-full bg-muted border border-border text-foreground text-xs rounded px-2 py-1 focus:outline-hidden focus:border-blue-400"
                                 />
                             )}
                         </div>

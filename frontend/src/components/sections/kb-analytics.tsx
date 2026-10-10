@@ -84,7 +84,7 @@ function ChartCard({ title, icon, children }: {
     children: React.ReactNode;
 }) {
     return (
-        <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+        <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted/30">
                 {icon}
                 <span className="text-sm font-medium">{title}</span>
@@ -246,7 +246,7 @@ function SummaryPanel({ stats }: { stats: KbStats }) {
         { label: t("explorer.analyticsP95"), value: `${formatNum(stats.p95_chunk_chars)} ${t("explorer.analyticsChars")}` },
     ];
     return (
-        <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+        <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted/30">
                 <BarChart2 className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-medium">{t("explorer.analyticsSummaryTitle")}</span>
@@ -312,7 +312,7 @@ export const KbAnalytics: FunctionComponent<{ active: boolean }> = ({ active }) 
     return (
         <div className="flex flex-col gap-6 w-full">
             {/* KB selector */}
-            <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+            <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
                 <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted/30">
                     <Library className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-medium">{t("explorer.analyticsKbLabel")}</span>
@@ -332,7 +332,7 @@ export const KbAnalytics: FunctionComponent<{ active: boolean }> = ({ active }) 
                     <select
                         value={selectedKb}
                         onChange={(e) => setSelectedKb(e.target.value)}
-                        className="text-xs [font-family:inherit] bg-muted border border-border text-foreground rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
+                        className="text-xs [font-family:inherit] bg-muted border border-border text-foreground rounded px-2 py-1 focus:outline-hidden focus:border-blue-400 transition-colors"
                     >
                         {kbOptions.map((kb) => (
                             <option key={kb.id} value={kb.id}>{kb.name}</option>

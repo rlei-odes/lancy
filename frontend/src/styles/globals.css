@@ -1,6 +1,71 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* v4 replacement for the v3-only `tailwindcss-animate` plugin. It ships plain
+   CSS, so it is imported rather than loaded with `@plugin`. */
+@import "tw-animate-css";
+
+/* `.dark` is set on <body> by the useTheme hook, not on <html>, so the variant
+   has to match the element itself as well as its descendants. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* v4's default border colour is `currentcolor`. The rule below restores the
+   grey default the elements here were written against; `*` is immediately
+   overridden by `border-border` further down, so this governs the pseudo-
+   elements. Removing it means giving any element that relies on the default
+   an explicit border-colour utility. */
+@layer base {
+    *,
+    ::after,
+    ::before,
+    ::backdrop,
+    ::file-selector-button {
+        border-color: var(--color-gray-200, currentcolor);
+    }
+}
+
+/*
+  The colour tokens below hold bare HSL triples (`210, 20%, 98%`) that the theme
+  wraps in `hsla()`. `@theme inline` is required rather than a plain `@theme`:
+  it substitutes each value into the utility itself, so `var(--background)` is
+  resolved on the element being styled. A plain `@theme` would resolve it once
+  against `:root` — which never carries `.dark` here — and inherit the light
+  value straight past `body.dark`, silently disabling dark mode.
+*/
+@theme inline {
+    --color-border: hsla(var(--border));
+    --color-input: hsla(var(--input));
+    --color-ring: hsla(var(--ring));
+    --color-background: hsla(var(--background));
+    --color-foreground: hsla(var(--foreground));
+
+    --color-primary: hsla(var(--primary));
+    --color-primary-foreground: hsla(var(--primary-foreground));
+
+    --color-secondary: hsla(var(--secondary));
+    --color-secondary-foreground: hsla(var(--secondary-foreground));
+
+    --color-destructive: hsla(var(--destructive));
+    --color-destructive-foreground: hsla(var(--destructive-foreground));
+
+    --color-muted: hsla(var(--muted));
+    --color-muted-foreground: hsla(var(--muted-foreground));
+
+    --color-accent: hsla(var(--accent));
+    --color-accent-foreground: hsla(var(--accent-foreground));
+
+    --color-popover: hsla(var(--popover));
+    --color-popover-foreground: hsla(var(--popover-foreground));
+
+    --color-code: hsla(var(--code));
+    --color-code-background: hsla(var(--code-background));
+
+    --color-card: hsla(var(--card));
+    --color-card-foreground: hsla(var(--card-foreground));
+
+    --radius-lg: var(--radius);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-sm: calc(var(--radius) - 4px);
+}
 
 @layer base {
     :root {
@@ -90,32 +155,54 @@
     }
 }
 
-@layer components {
-    .ripple {
-        @apply bg-center transition-all duration-300 ease-in-out cursor-pointer;
+/* `@utility container` adds to v4's built-in container rather than replacing it,
+   and the built-in caps the width at every breakpoint. The v3 config replaced
+   those caps with a single 2xl cap, so the defaults are cleared before it is set. */
+@utility container {
+    width: 100%;
+    margin-inline: auto;
+    padding-inline: 2rem;
+    max-width: none;
+
+    @media (width >= 1400px) {
+        max-width: 1400px;
+    }
+}
+
+/* Hide the scrollbar in Chrome, Safari, and Opera (and the IE/Edge/Firefox
+   equivalents) while keeping the element scrollable. */
+@utility scrollbar-hide {
+    &::-webkit-scrollbar {
+        display: none;
     }
 
-    .ripple:hover {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+@utility ripple {
+    @apply bg-center transition-all duration-300 ease-in-out cursor-pointer;
+
+    &:hover {
         background: hsla(var(--ripple), 0.05) radial-gradient(circle, transparent 1%, hsla(var(--ripple), 0.05) 1%) center/15000%;
     }
 
-    .ripple:active {
+    &:active {
         background-color: hsla(var(--ripple), 0.05);
         background-size: 100%;
         transition: background 0s;
     }
+}
 
-    .quote {
-        display: block;
-        padding: 1.5rem;
-        text-align: justify;
-        text-justify: inter-word;
-        position: relative;
-        color: hsl(var(--foreground));
+@utility quote {
+    display: block;
+    padding: 1.5rem;
+    text-align: justify;
+    text-justify: inter-word;
+    position: relative;
+    color: hsl(var(--foreground));
 
-    }
-
-    .quote:before {
+    &:before {
         content: '\201C';
         position: absolute;
         top: 0;
@@ -125,7 +212,7 @@
         text-align: center;
     }
 
-    .quote:after {
+    &:after {
         content: '\201C';
         position: absolute;
         transform: rotate(180deg);
@@ -135,21 +222,20 @@
         color: hsl(var(--popover-foreground));
         text-align: center;
     }
+}
 
-    .blink {
-        animation: blinker 1.5s linear infinite;
+@utility blink {
+    animation: blinker 1.5s linear infinite;
+}
+
+@keyframes blinker {
+    20% {
+        opacity: 1;
     }
-
-    @keyframes blinker {
-        20% {
-            opacity: 1;
-        }
-        40% {
-            opacity: 0;
-        }
-        80% {
-            opacity: 1;
-        }
-
+    40% {
+        opacity: 0;
+    }
+    80% {
+        opacity: 1;
     }
 }

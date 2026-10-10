@@ -65,7 +65,7 @@ export default function ExplorerPage() {
                                 className={cn(
                                     "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
                                     activeTab === tab
-                                        ? "bg-background text-foreground shadow-sm border border-border"
+                                        ? "bg-background text-foreground shadow-xs border border-border"
                                         : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                                 )}
                             >

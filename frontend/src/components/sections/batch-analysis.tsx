@@ -279,7 +279,7 @@ async function analyzeOne(
 const Card: FunctionComponent<{ step: number; title: string; icon: React.ReactNode; children: React.ReactNode }> = ({
     step, title, icon, children,
 }) => (
-    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+    <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted/30">
             <span className="flex items-center justify-center h-5 w-5 rounded-full bg-muted text-[10px] font-mono font-semibold text-muted-foreground">
                 {step}
@@ -292,7 +292,7 @@ const Card: FunctionComponent<{ step: number; title: string; icon: React.ReactNo
 );
 
 const inputCls =
-    "bg-background border border-border rounded-md px-2 py-1.5 text-xs outline-none focus:border-muted-foreground/50 transition-colors";
+    "bg-background border border-border rounded-md px-2 py-1.5 text-xs outline-hidden focus:border-muted-foreground/50 transition-colors";
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -511,7 +511,7 @@ export const BatchAnalysis: FunctionComponent = () => {
                         onChange={(e) => { setDocText(e.target.value); setVerification(null); }}
                         placeholder={t("explorer.batchDocsPlaceholder")}
                         rows={6}
-                        className="w-full resize-y bg-background border border-border rounded-md px-3 py-2 text-xs font-mono outline-none focus:border-muted-foreground/50 placeholder:text-muted-foreground/40"
+                        className="w-full resize-y bg-background border border-border rounded-md px-3 py-2 text-xs font-mono outline-hidden focus:border-muted-foreground/50 placeholder:text-muted-foreground/40"
                     />
                     <span className="text-xs text-muted-foreground font-mono">
                         {t("explorer.batchDocsCount", { n: ids.length })}
@@ -580,7 +580,7 @@ export const BatchAnalysis: FunctionComponent = () => {
                                     onChange={(e) => patchRow(row.key, { question: e.target.value })}
                                     placeholder={t("explorer.batchQuestionPlaceholder")}
                                     rows={2}
-                                    className="w-full resize-y bg-background border border-border rounded-md px-2 py-1.5 text-xs outline-none focus:border-muted-foreground/50 placeholder:text-muted-foreground/40"
+                                    className="w-full resize-y bg-background border border-border rounded-md px-2 py-1.5 text-xs outline-hidden focus:border-muted-foreground/50 placeholder:text-muted-foreground/40"
                                 />
                                 {row.type === "choice" && (
                                     <div className="flex flex-col gap-1.5">
@@ -762,7 +762,7 @@ export const BatchAnalysis: FunctionComponent = () => {
 
             {/* Results */}
             {results.length > 0 && (
-                <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+                <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
                     <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted/30">
                         <span className="text-sm font-medium">{t("explorer.batchResultsTitle")}</span>
                         <div className="ml-auto flex items-center gap-2">

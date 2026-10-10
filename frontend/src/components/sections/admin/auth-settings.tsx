@@ -59,7 +59,7 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
     return (
         <input
             {...props}
-            className="w-full rounded-md bg-muted border border-border text-foreground px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="w-full rounded-md bg-muted border border-border text-foreground px-3 py-1.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-ring"
         />
     );
 }
@@ -70,7 +70,7 @@ function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
             rows={3}
             spellCheck={false}
             {...props}
-            className="w-full rounded-md bg-muted border border-border text-foreground px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none font-mono"
+            className="w-full rounded-md bg-muted border border-border text-foreground px-3 py-1.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-ring resize-none font-mono"
         />
     );
 }
@@ -337,7 +337,7 @@ export const AuthSettings: React.FC<{ onDirtyChange?: (dirty: boolean) => void }
                     <select
                         value={provider}
                         onChange={(e) => setProvider(e.target.value as Provider)}
-                        className="w-full rounded-md bg-muted border border-border text-foreground px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        className="w-full rounded-md bg-muted border border-border text-foreground px-3 py-1.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-ring"
                     >
                         <option value="none">None (Mode 1 / Mode 2)</option>
                         <option value="oidc">OIDC — Keycloak / Azure AD / Okta</option>

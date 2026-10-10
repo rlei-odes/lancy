@@ -72,7 +72,7 @@ export const LlmDebugPanel: FunctionComponent = () => {
                     <select
                         value={lines}
                         onChange={(e) => setLines(Number(e.target.value))}
-                        className="text-xs [font-family:inherit] bg-muted border border-border text-foreground rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
+                        className="text-xs [font-family:inherit] bg-muted border border-border text-foreground rounded px-2 py-1 focus:outline-hidden focus:border-blue-400 transition-colors"
                     >
                         {LINE_OPTIONS.map((n) => (
                             <option key={n} value={n}>Last {n} lines</option>

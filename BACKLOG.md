@@ -547,10 +547,9 @@ Standard RAG retrieves isolated chunks. Graph-RAG builds a knowledge graph over 
 
 No urgent updates. The following are worth revisiting when there is a concrete reason:
 
-- **Tailwind CSS v3 → v4** — v4 replaces `tailwind.config.js` with a CSS-first config. Real migration effort, not a version bump. Only worth doing if a v4-specific feature is needed.
 - **React 18 → 19** — React 19 is stable. Low urgency.
 - **`@types/node: ^20` → `^22`** — trivial bump.
-- **`next` → 16.x** — `eslint-config-next` is already on 16 while `next` is on 15. Fix the mismatch during the bump.
+- **`next` → 16.x** — `eslint-config-next` is already on 16 while `next` is on 15. Fix the mismatch during the bump. `eslint-config-next` is also the only remaining source of the unpatchable `braces` advisory (via `@next/eslint-plugin-next` → `fast-glob` → `micromatch`), which the Tailwind v4 migration removed from the Tailwind side only.
 - **`lucide-react: ^0.321.0`** — far behind; current is in the 0.4xx range.
 - **`i18next: ^24.x`** — newer major available.
 - **`mini-css-extract-plugin` + explicit `webpack` in devDeps** — Next manages its own webpack. Probable leftovers; verify before deleting.

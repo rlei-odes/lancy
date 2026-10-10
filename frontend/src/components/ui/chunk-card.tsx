@@ -66,7 +66,7 @@ export const ChunkCard: FunctionComponent<Props> = ({
             className={cn(
                 "group relative flex gap-3 rounded-lg border border-border bg-card transition-all duration-200",
                 dimmed ? "opacity-40" : "opacity-100",
-                "hover:border-border/80 hover:shadow-sm"
+                "hover:border-border/80 hover:shadow-xs"
             )}
         >
             {/* Rank column */}

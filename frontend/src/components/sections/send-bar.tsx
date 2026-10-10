@@ -146,7 +146,7 @@ export const SendBar: FunctionComponent = () => {
                                     value={sessionLabel}
                                     onChange={(e) => setSessionLabel(e.target.value)}
                                     placeholder={t("tagPlaceholder")}
-                                    className="flex-1 text-xs bg-transparent border-b border-foreground/10 focus:border-amber-400/50 outline-none text-muted-foreground placeholder:text-foreground/20 py-0.5 transition-colors"
+                                    className="flex-1 text-xs bg-transparent border-b border-foreground/10 focus:border-amber-400/50 outline-hidden text-muted-foreground placeholder:text-foreground/20 py-0.5 transition-colors"
                                 />
                                 {sessionLabel && (
                                     <X
