@@ -293,6 +293,14 @@ export const app = {
         readyHint: "{{chunks}} Chunks aus {{files}} Datei(en) — bereit zur Analyse.",
         staleHint: "Die Dateien haben sich seit der letzten Verarbeitung geändert. Erneut verarbeiten, um sie einzuschließen.",
         failedHint: "Verarbeitung fehlgeschlagen ({{error}}). Bitte das Backend-Log prüfen und erneut versuchen.",
+        progressPreparing: "Wird vorbereitet…",
+        progressChunking: "Lesen und Aufteilen",
+        progressCaptioning: "Bilder beschreiben",
+        progressEmbedding: "Einbetten",
+        progressFiles: "Datei {{n}} von {{total}}",
+        progressElapsed: "{{time}} vergangen",
+        progressEta: "noch ~{{time}}",
+        progressLeaveHint: "Läuft auf dem Server — Sie können diese Seite verlassen. Danach ist der Stapel bereit für die Stapelanalyse.",
         embeddingDriftHint:
             "Dieser Stapel wurde mit einem anderen Embedding-Modell verarbeitet als dem aktuell aktiven. " +
             "Die Stapelanalyse funktioniert weiterhin; für die Suche vorher neu verarbeiten.",

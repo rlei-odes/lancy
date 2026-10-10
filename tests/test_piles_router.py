@@ -18,6 +18,8 @@ The contract pinned down here:
   - a pile left 'processing' by a restart is marked failed at startup, so it can be
     processed again instead of staying locked — but building the router has no such
     side effect, because spawned chunking workers rebuild it mid-run
+  - a processing pile reports the ingestion progress, but only when the shared
+    index status is a pile run — never another KB's indexing
 """
 
 import json
@@ -50,7 +52,7 @@ ACTIVE_KB = KBInfo(
 @pytest.fixture
 def ctx(tmp_path):
     """Router plus the mutable state the tests assert against."""
-    state = {"indexing": False, "processed": [], "result": (7, 1), "raise": None}
+    state = {"indexing": False, "status": {}, "processed": [], "result": (7, 1), "raise": None}
 
     async def process(kb: KBInfo, reset: bool):
         state["processed"].append((kb, reset))
@@ -65,7 +67,7 @@ def ctx(tmp_path):
             piles_dir=tmp_path / "user-piles",
             get_active_kb=lambda: ACTIVE_KB,
             process_callback=process,
-            status_factory=lambda: {"indexing": state["indexing"]},
+            status_factory=lambda: {"indexing": state["indexing"], **state["status"]},
         )
     )
     state["client"] = TestClient(app)
@@ -253,6 +255,59 @@ def test_the_startup_reset_unlocks_a_pile_left_processing(ctx):
     pile = get_pile(ctx["db"], pile_id, "session-aaa")
     assert (pile["status"], pile["error"]) == ("failed", "Interrupted")
     assert ctx["client"].post(f"/api/v1/piles/{pile_id}/process", headers=ME).status_code == 200
+
+
+def _processing_pile(ctx) -> str:
+    pile_id = _create(ctx["client"])
+    _upload(ctx["client"], pile_id)
+    begin_pile_processing(ctx["db"], pile_id, "chromadb")
+    return pile_id
+
+
+def _progress(ctx):
+    return ctx["client"].get("/api/v1/piles", headers=ME).json()[0]["progress"]
+
+
+def test_a_processing_pile_reports_the_ingestion_progress(ctx):
+    _processing_pile(ctx)
+    ctx["indexing"] = True
+    ctx["status"] = {
+        "kb_name": "User pile",
+        "phase": "embedding",
+        "current_file": "b.pdf",
+        "file_index": 2,
+        "total_files": 9,
+        "embed_batch": 1,
+        "embed_total_batches": 2,
+    }
+    progress = _progress(ctx)
+    assert progress["phase"] == "embedding"
+    assert (progress["file_index"], progress["total_files"]) == (2, 9)
+    assert progress["current_file"] == "b.pdf"
+    assert (progress["embed_batch"], progress["embed_total_batches"]) == (1, 2)
+
+
+def test_progress_ignores_another_kbs_indexing(ctx):
+    """The upload worker indexes into the admin's KB through the same status dict;
+    its file names must not show up as this pile's progress."""
+    _processing_pile(ctx)
+    ctx["indexing"] = True
+    ctx["status"] = {
+        "kb_name": "Standard",
+        "phase": "chunking",
+        "current_file": "admin.pdf",
+        "file_index": 1,
+        "total_files": 1,
+    }
+    progress = _progress(ctx)
+    assert progress["phase"] == "preparing"
+    assert progress["current_file"] == ""
+    assert progress["total_files"] == 0
+
+
+def test_a_pile_that_is_not_processing_has_no_progress(ctx):
+    _create(ctx["client"])
+    assert _progress(ctx) is None
 
 
 def test_processing_does_not_leak_the_pile_name_into_the_shared_status(ctx):

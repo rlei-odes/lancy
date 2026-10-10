@@ -298,6 +298,14 @@ export const app = {
         readyHint: "{{chunks}} chunks from {{files}} file(s) — ready to analyse.",
         staleHint: "The files changed since this pile was last processed. Process it again to include them.",
         failedHint: "Processing failed ({{error}}). Check the backend log, then try again.",
+        progressPreparing: "Preparing…",
+        progressChunking: "Reading and chunking",
+        progressCaptioning: "Captioning images",
+        progressEmbedding: "Embedding",
+        progressFiles: "File {{n}} of {{total}}",
+        progressElapsed: "{{time}} elapsed",
+        progressEta: "~{{time}} remaining",
+        progressLeaveHint: "Runs on the server — you can leave this page. The pile is ready for batch analysis once this finishes.",
         embeddingDriftHint:
             "This pile was processed with a different embedding model than the one now active. " +
             "Batch analysis still works; reprocess it before using it for retrieval.",

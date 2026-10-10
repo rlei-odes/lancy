@@ -293,6 +293,14 @@ export const app = {
         readyHint: "{{chunks}} chunk da {{files}} file — pronto per l'analisi.",
         staleHint: "I file sono cambiati dall'ultima elaborazione. Rielabora il gruppo per includerli.",
         failedHint: "Elaborazione non riuscita ({{error}}). Controlla il log del backend e riprova.",
+        progressPreparing: "Preparazione…",
+        progressChunking: "Lettura e suddivisione",
+        progressCaptioning: "Descrizione delle immagini",
+        progressEmbedding: "Embedding",
+        progressFiles: "File {{n}} di {{total}}",
+        progressElapsed: "{{time}} trascorsi",
+        progressEta: "~{{time}} rimanenti",
+        progressLeaveHint: "Viene eseguito sul server — puoi lasciare questa pagina. Al termine il gruppo è pronto per l'analisi in blocco.",
         embeddingDriftHint:
             "Questo gruppo è stato elaborato con un modello di embedding diverso da quello attivo. " +
             "L'analisi in blocco funziona ancora; rielaboralo prima di usarlo per il recupero.",

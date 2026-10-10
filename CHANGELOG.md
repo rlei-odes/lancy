@@ -14,6 +14,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - A progress bar splits ok, skipped and failed documents, and shows the document in flight, elapsed time and the time remaining.
 - A run cut short by a backend restart is marked interrupted and continues where it stopped.
 
+### Added — Progress for pile processing
+
+- While a pile is processed, My Documents shows a progress bar with the file being worked on, the phase (chunking, captioning, embedding), elapsed time and the time remaining. Processing runs on the server, so the page can be left meanwhile.
+
 ### Added — Saved question sets
 
 - Batch analysis question sets can be saved by name, loaded into the editor and deleted. They are stored per session in `user_config.db`.

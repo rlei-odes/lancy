@@ -169,7 +169,11 @@ process pool as an admin reindex, so the two must not overlap: `POST
 /piles/{id}/process` returns 409 while `_index_status["indexing"]` is set. Pile runs
 pass `db_engine=None`, keeping user filenames out of the admin's `ingest_events`
 provenance log, and report a neutral `kb_name` so the shared index-status badge does
-not publish one user's pile names to everyone. Processing runs inside the backend
+not publish one user's pile names to everyone. That same neutral name is how
+`GET /piles` recognises the shared index status as a pile run: while a pile is
+`processing` its `progress` carries the status fields (phase, file n of m, embedding
+batches) plus the run's start time, and stays at `preparing` while the status belongs
+to anything else, such as the upload worker. Processing runs inside the backend
 process, so a restart ends it unrecorded; the startup hook in `main.py` marks piles
 still `processing` as `failed` (`Interrupted`), which unlocks them for a new run.
 

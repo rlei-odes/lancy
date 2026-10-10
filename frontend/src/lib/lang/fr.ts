@@ -293,6 +293,14 @@ export const app = {
         readyHint: "{{chunks}} chunks issus de {{files}} fichier(s) — prêt à analyser.",
         staleHint: "Les fichiers ont changé depuis le dernier traitement. Retraitez le lot pour les inclure.",
         failedHint: "Le traitement a échoué ({{error}}). Consultez le journal du backend, puis réessayez.",
+        progressPreparing: "Préparation…",
+        progressChunking: "Lecture et découpage",
+        progressCaptioning: "Légendage des images",
+        progressEmbedding: "Vectorisation",
+        progressFiles: "Fichier {{n}} sur {{total}}",
+        progressElapsed: "{{time}} écoulées",
+        progressEta: "~{{time}} restantes",
+        progressLeaveHint: "S'exécute sur le serveur — vous pouvez quitter cette page. Le lot sera prêt pour l'analyse par lot une fois terminé.",
         embeddingDriftHint:
             "Ce lot a été traité avec un modèle d'embedding différent de celui actuellement actif. " +
             "L'analyse par lot fonctionne toujours ; retraitez-le avant de l'utiliser pour la recherche.",

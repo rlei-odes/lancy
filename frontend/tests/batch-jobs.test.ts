@@ -16,7 +16,6 @@ import { describe, expect, it } from "vitest";
 import {
     type BatchJob,
     type JobDefinition,
-    formatDuration,
     fromStoredRows,
     idsToRun,
     jobCounts,
@@ -26,6 +25,7 @@ import {
     toResultRow,
     toStoredRows,
 } from "@/components/sections/batch-analysis";
+import { formatDuration } from "@/lib/duration";
 
 const SCHEMA = { type: "object", properties: { question1: { type: "string" } } };
 

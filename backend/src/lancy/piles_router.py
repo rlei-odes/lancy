@@ -34,6 +34,7 @@ import shutil
 import sqlite3
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncIterator, Awaitable, Callable
 
@@ -106,6 +107,18 @@ class PileFileInfo(BaseModel):
     size_bytes: int
 
 
+class PileProgress(BaseModel):
+    """Where a processing pile's ingestion run is, read from the shared index status."""
+
+    phase: str = "preparing"  # "preparing" until ingestion reports; then chunking | captioning | embedding
+    current_file: str = ""
+    file_index: int = 0
+    total_files: int = 0
+    embed_batch: int = 0
+    embed_total_batches: int = 0
+    started_at: str | None = None
+
+
 class PileInfo(BaseModel):
     id: str
     name: str
@@ -125,6 +138,7 @@ class PileInfo(BaseModel):
     # Retrieval compares vectors and does not.
     has_store: bool = False  # processed at least once — chunks exist
     embedding_current: bool = False  # those vectors match the active embedding config
+    progress: PileProgress | None = None  # set only while status == "processing"
 
 
 class PileDetail(PileInfo):
@@ -139,6 +153,9 @@ ProcessCallback = Callable[[KBInfo, bool], Awaitable[tuple[int, int]]]
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
+
+_PILE_KB_NAME = "User pile"  # every pile's KB name in the shared index status
 
 
 def embedding_key(kb: KBInfo) -> str:
@@ -314,8 +331,29 @@ def create_piles_router(
             raise HTTPException(404, "Pile not found")
         return pile
 
+    # When each pile's current run began. In memory on purpose: a run ends with the
+    # process, and the startup reset marks such a pile failed.
+    started_at: dict[str, str] = {}
+
+    def _progress(pile_id: str) -> dict:
+        """The ingestion status, if it is this pile's run.
+
+        Only one indexing run happens at a time (processing refuses to start during
+        another), so while a pile is processing a pile-named status is its own. The
+        upload worker reports under its KB's real name; until ingestion reports at
+        all, the run is still preparing.
+        """
+        status = status_factory() if status_factory is not None else {}
+        ours = status.get("indexing") and status.get("kb_name") == _PILE_KB_NAME
+        fields = PileProgress.model_fields.keys() - {"started_at"}
+        return {
+            **({k: status[k] for k in fields if k in status} if ours else {}),
+            "started_at": started_at.get(pile_id),
+        }
+
     def _to_info(pile: dict, active_key: str) -> dict:
         return {
+            "progress": _progress(pile["id"]) if pile["status"] == "processing" else None,
             **{
                 k: pile[k]
                 for k in (
@@ -359,7 +397,7 @@ def create_piles_router(
             # Surfaces in the shared index-status badge while processing runs. The
             # pile's own name is left out on purpose — that badge is visible to
             # everyone, and it is not the place to publish one user's labels.
-            name="User pile",
+            name=_PILE_KB_NAME,
             vs_path=str(_vs_path(pile_id)),
             data_dirs=[str(_pile_dir(pile_id))],
             embedding_backend=active.embedding_backend,
@@ -535,6 +573,7 @@ def create_piles_router(
         reset = bool(pile["embedding_key"]) and pile["embedding_key"] != key
 
         async def _run() -> None:
+            started_at[pile_id] = datetime.now(timezone.utc).isoformat(timespec="seconds")
             begin_pile_processing(sqlite_path, pile_id, kb.vs_type)
             try:
                 chunks, files = await process_callback(kb, reset)
@@ -551,6 +590,8 @@ def create_piles_router(
                 # local path, and this value is rendered in the UI.
                 log.exception(f"Pile {pile_id} processing failed")
                 set_pile_status(sqlite_path, pile_id, "failed", type(exc).__name__)
+            finally:
+                started_at.pop(pile_id, None)
 
         background_tasks.add_task(_run)
         return {"started": True, "reset": reset}

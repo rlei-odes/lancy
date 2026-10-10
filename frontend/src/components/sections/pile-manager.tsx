@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/lorem";
+import { formatDuration } from "@/lib/duration";
 
 const API_BASE = "";
 const POLL_MS = 2_000;   // while a pile is processing
@@ -48,6 +49,26 @@ export interface Pile {
     pending_files: number;
     has_store: boolean;
     embedding_current: boolean;
+    progress: PileProgress | null;   // set only while processing
+}
+
+export interface PileProgress {
+    phase: "preparing" | "chunking" | "captioning" | "embedding" | string;
+    current_file: string;
+    file_index: number;    // 1-based; the file being worked on
+    total_files: number;   // 0 until ingestion has listed the files
+    embed_batch: number;
+    embed_total_batches: number;
+    started_at: string | null;
+}
+
+/** Share of the run done, 0–1. Each file is chunked and then embedded before the
+ *  next one starts, so files before the current one count whole and the current one
+ *  counts by its embedding batches. */
+export function progressFraction(p: PileProgress): number {
+    if (p.total_files <= 0 || p.file_index <= 0) return 0;
+    const within = p.phase === "embedding" && p.embed_total_batches > 0 ? p.embed_batch / p.embed_total_batches : 0;
+    return Math.min(1, (p.file_index - 1 + within) / p.total_files);
 }
 
 export interface PileDetail extends Pile {
@@ -132,6 +153,61 @@ function formatBytes(n: number): string {
 function needsProcessing(p: Pile): boolean {
     return p.status === "draft" || p.status === "stale" || p.status === "failed";
 }
+
+// ─── Processing progress ──────────────────────────────────────────────────────
+
+const ProcessingProgress: FunctionComponent<{ progress: PileProgress }> = ({ progress: p }) => {
+    const { t } = useTranslation("app");
+
+    // Ticks the elapsed clock between polls; the bar itself moves with the poll.
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        const id = setInterval(() => setNow(Date.now()), 1_000);
+        return () => clearInterval(id);
+    }, []);
+
+    const fraction = progressFraction(p);
+    const elapsed = p.started_at ? (now - Date.parse(p.started_at)) / 1000 : 0;
+    // Extrapolated from the pace so far — rough on the first file, steadier after.
+    const eta = fraction > 0 && elapsed > 0 ? (elapsed * (1 - fraction)) / fraction : null;
+    const phase = {
+        chunking: t("piles.progressChunking"),
+        captioning: t("piles.progressCaptioning"),
+        embedding: t("piles.progressEmbedding"),
+    }[p.phase] ?? t("piles.progressPreparing");
+
+    return (
+        <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+            <div className="flex items-center gap-2 text-xs">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+                <span className="font-medium">{phase}</span>
+                {p.total_files > 0 && (
+                    <span className="ml-auto font-mono text-muted-foreground">
+                        {t("piles.progressFiles", { n: p.file_index, total: p.total_files })} · {Math.round(fraction * 100)}%
+                    </span>
+                )}
+            </div>
+            <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                {p.total_files > 0 ? (
+                    <div className="h-full bg-primary transition-all duration-500" style={{ width: `${fraction * 100}%` }} />
+                ) : (
+                    // Nothing to measure yet: show that work is happening, not a fake 0 %.
+                    <div className="h-full w-full bg-primary/30 animate-pulse" />
+                )}
+            </div>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                {p.current_file && <span className="font-mono truncate" title={p.current_file}>{p.current_file}</span>}
+                {p.started_at && (
+                    <span className="ml-auto shrink-0 font-mono">
+                        {t("piles.progressElapsed", { time: formatDuration(elapsed) })}
+                        {eta !== null && ` · ${t("piles.progressEta", { time: formatDuration(eta) })}`}
+                    </span>
+                )}
+            </div>
+            <p className="text-xs text-muted-foreground">{t("piles.progressLeaveHint")}</p>
+        </div>
+    );
+};
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -391,6 +467,9 @@ export const PileManager: FunctionComponent<{ active?: boolean }> = ({ active = 
 
                         <div className="p-4 flex flex-col gap-4">
                             {/* State banner */}
+                            {selected.status === "processing" && selected.progress && (
+                                <ProcessingProgress progress={selected.progress} />
+                            )}
                             {selected.status === "failed" && (
                                 <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs">
                                     {t("piles.failedHint", { error: selected.error || "unknown" })}

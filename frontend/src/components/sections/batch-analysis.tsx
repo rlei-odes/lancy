@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/lorem";
+import { formatDuration } from "@/lib/duration";
 import { fetchPile, fetchPiles, type Pile } from "@/components/sections/pile-manager";
 
 const API_BASE = "";
@@ -311,14 +312,6 @@ export function jobCounts(job: BatchJob): { total: number; done: number; ok: num
         else skipped++;
     }
     return { total: Math.max(job.ids.length, job.results.length), done: job.results.length, ok, skipped, errors };
-}
-
-/** `45s`, `4m 05s`, `1h 02m` — compact enough for a status line in any language. */
-export function formatDuration(seconds: number): string {
-    const s = Math.max(0, Math.round(seconds));
-    if (s < 60) return `${s}s`;
-    if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
-    return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
 }
 
 export function toResultRow(r: JobResult): ResultRow {
