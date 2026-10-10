@@ -1,12 +1,20 @@
-"""Intent: the version in the UI footer, the changelog and the git tag agree.
+"""Intent: the UI footer, the changelog and the git tag stay consistent.
 
 Three places record the release and none of them derive from the others:
 `frontend/src/config.ts` feeds the footer, `CHANGELOG.md` documents it, and the git
 tag is what a checkout resolves to. They drift silently — a tag can land on a
 commit whose changelog entry is missing later work, and nothing complains.
 
-The git check is skipped when the repository has no tags, so a fresh clone or a
-CI checkout without tags still runs the rest.
+The footer and the changelog must always agree. The tag deliberately may not: a
+version is tagged only when it is closed out, so between releases `config.ts` and
+the newest changelog entry name the version being developed while the newest tag
+still points at the last released one. The tag may therefore lag, but never lead —
+a tag ahead of `config.ts` means a release went out with the footer reporting an
+older number.
+
+The git checks are skipped when the repository has no tags, so a fresh clone or a
+CI checkout without tags still runs the rest. They need the tags present, so a CI
+checkout has to fetch them (`fetch-depth: 0`) rather than shallow-clone.
 """
 
 import re
@@ -32,6 +40,10 @@ def changelog_versions() -> list[str]:
     return re.findall(r"^## \[Lancy v([^\]]+)\]", CHANGELOG.read_text(encoding="utf-8"), re.M)
 
 
+def version_key(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
 def git(*args: str) -> str | None:
     try:
         out = subprocess.run(
@@ -40,6 +52,16 @@ def git(*args: str) -> str | None:
     except (OSError, subprocess.SubprocessError):
         return None
     return out.stdout.strip() if out.returncode == 0 else None
+
+
+def latest_tag() -> str:
+    """The newest tag reachable from HEAD, without its `v` prefix."""
+    tag = git("describe", "--tags", "--abbrev=0")
+    assert tag, "could not read the latest tag"
+
+    version = tag.lstrip("v")
+    assert SEMVER.match(version), f"latest tag {tag!r} is not vMAJOR.MINOR.PATCH"
+    return version
 
 
 def test_ui_version_is_a_semver_string():
@@ -68,24 +90,36 @@ def test_changelog_versions_are_unique():
 
 
 def test_changelog_is_in_descending_version_order():
-    def key(v: str) -> tuple:
-        return tuple(int(p) for p in v.split("."))
-
     versions = [v for v in changelog_versions() if SEMVER.match(v)]
 
-    assert versions == sorted(versions, key=key, reverse=True), (
+    assert versions == sorted(versions, key=version_key, reverse=True), (
         "CHANGELOG entries are not newest-first"
     )
 
 
 @pytest.mark.skipif(not git("tag"), reason="repository has no tags")
-def test_latest_tag_matches_the_ui_version():
-    """Catches a release tagged before the version was bumped, or vice versa."""
-    latest = git("describe", "--tags", "--abbrev=0")
-    assert latest, "could not read the latest tag"
+def test_latest_tag_is_not_ahead_of_the_ui_version():
+    """The tag may lag the version in development, but must never lead it.
 
-    assert latest.lstrip("v") == ui_version(), (
-        f"latest tag is {latest}, config.ts says {ui_version()}"
+    Lagging is the normal state between releases. Leading means a release was
+    tagged while `config.ts` still named an older version, so the shipped footer
+    understates what was released.
+    """
+    latest = latest_tag()
+
+    assert version_key(latest) <= version_key(ui_version()), (
+        f"latest tag is v{latest}, config.ts says {ui_version()} — "
+        "the tag is ahead of the version being developed"
+    )
+
+
+@pytest.mark.skipif(not git("tag"), reason="repository has no tags")
+def test_latest_tag_is_documented_in_the_changelog():
+    """A tagged release nobody wrote an entry for is drift in the other direction."""
+    latest = latest_tag()
+
+    assert latest in changelog_versions(), (
+        f"tag v{latest} has no `## [Lancy v{latest}]` entry in CHANGELOG.md"
     )
 
 

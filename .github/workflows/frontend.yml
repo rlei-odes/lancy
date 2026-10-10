@@ -1,0 +1,56 @@
+name: Frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+
+# A newer commit on the same ref makes an in-flight run redundant.
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `ci` over `install`, so a lockfile that disagrees with package.json fails
+      # here rather than being silently rewritten.
+      - run: npm ci
+
+      - name: Types
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Tests
+        run: npm test
+
+      # Reports errors only; the suite currently carries 6 known warnings.
+      - name: Lint
+        run: npm run lint
+
+      # `npm run build` forces BUILD_MODE=export, the stricter of the two build
+      # paths. No .env is needed — dotenv finds none and the defaults apply.
+      - name: Build
+        run: npm run build
