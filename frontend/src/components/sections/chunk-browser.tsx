@@ -89,14 +89,23 @@ interface ChunkBrowseResponse {
     has_more: boolean;
 }
 
-async function fetchFileList(): Promise<string[]> {
-    const r = await fetch(`${API_BASE}/api/v1/rag/store-info`, { credentials: "include" });
+// The session's selected KB (set by the RAG config panel). Selecting a pooled KB is
+// session-local, so every request must name it — the backend's default is the
+// pool's global active KB, which may be a different one.
+function selectedKbId(): string | undefined {
+    return sessionStorage.getItem("lancy_selected_kb_id") ?? undefined;
+}
+
+async function fetchFileList(kbId: string | undefined): Promise<string[]> {
+    const qs = kbId ? `?kb_id=${encodeURIComponent(kbId)}` : "";
+    const r = await fetch(`${API_BASE}/api/v1/rag/store-info${qs}`, { credentials: "include" });
     if (!r.ok) return [];
     const data = await r.json();
     return (data.file_list as string[]) ?? [];
 }
 
 async function fetchChunks(
+    kbId: string | undefined,
     fileFilter: string,
     extraFilters: FilterRow[],
     limit: number,
@@ -115,7 +124,7 @@ async function fetchChunks(
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filters, limit, offset }),
+        body: JSON.stringify({ filters, limit, offset, kb_id: kbId }),
     });
     if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -140,6 +149,7 @@ export const ChunkBrowser: FunctionComponent<{ active: boolean }> = ({ active })
     const [extraFilters, setExtraFilters] = useState<FilterRow[]>([]);
 
     // Applied filter state — snapshot at Browse time, used for Load More
+    const appliedKbRef = useRef<string | undefined>(undefined);
     const appliedFileRef = useRef("");
     const appliedExtraRef = useRef<FilterRow[]>([]);
 
@@ -170,9 +180,26 @@ export const ChunkBrowser: FunctionComponent<{ active: boolean }> = ({ active })
     // Refresh file list whenever this tab becomes active
     useEffect(() => {
         if (active) {
-            fetchFileList().then(setFileList).catch(() => {});
+            fetchFileList(selectedKbId()).then(setFileList).catch(() => {});
         }
     }, [active]);
+
+    // KB switched in the sidebar: results and the file filter belong to the old KB
+    useEffect(() => {
+        const handler = () => {
+            setAllChunks([]);
+            setBrowsed(false);
+            setHasMore(false);
+            setCurrentOffset(0);
+            setError(null);
+            setExpandedIds(new Set());
+            setSelectedFile("");
+            setFileInput("");
+            fetchFileList(selectedKbId()).then(setFileList).catch(() => {});
+        };
+        window.addEventListener("lancy-kb-changed", handler);
+        return () => window.removeEventListener("lancy-kb-changed", handler);
+    }, []);
 
     // Close suggestions on outside click
     useEffect(() => {
@@ -219,6 +246,7 @@ export const ChunkBrowser: FunctionComponent<{ active: boolean }> = ({ active })
     }, []);
 
     const doFetch = useCallback(async (
+        kbId: string | undefined,
         file: string,
         extra: FilterRow[],
         offset: number,
@@ -227,7 +255,7 @@ export const ChunkBrowser: FunctionComponent<{ active: boolean }> = ({ active })
         setLoading(true);
         setError(null);
         try {
-            const resp = await fetchChunks(file, extra, 50, offset);
+            const resp = await fetchChunks(kbId, file, extra, 50, offset);
             setAllChunks(prev => append ? [...prev, ...resp.chunks] : resp.chunks);
             setHasMore(resp.has_more);
             setCurrentOffset(offset + resp.returned);
@@ -240,14 +268,15 @@ export const ChunkBrowser: FunctionComponent<{ active: boolean }> = ({ active })
     }, []);
 
     const handleBrowse = useCallback(() => {
+        appliedKbRef.current = selectedKbId();
         appliedFileRef.current = selectedFile;
         appliedExtraRef.current = extraFilters;
         setExpandedIds(new Set());
-        doFetch(selectedFile, extraFilters, 0, false);
+        doFetch(appliedKbRef.current, selectedFile, extraFilters, 0, false);
     }, [selectedFile, extraFilters, doFetch]);
 
     const handleLoadMore = useCallback(() => {
-        doFetch(appliedFileRef.current, appliedExtraRef.current, currentOffset, true);
+        doFetch(appliedKbRef.current, appliedFileRef.current, appliedExtraRef.current, currentOffset, true);
     }, [doFetch, currentOffset]);
 
     // Derive extra columns from the union of metadata keys in loaded chunks

@@ -175,6 +175,7 @@ class ChunkBrowseRequest(BaseModel):
     filters: list[FilterCondition] = Field(default_factory=list)
     limit: int = Field(50, ge=1, le=200)
     offset: int = Field(0, ge=0)
+    kb_id: str | None = Field(default=None, max_length=100)
 
 
 class ChunkBrowseItem(BaseModel):
@@ -407,8 +408,16 @@ def create_rag_router(
 
     @router.get("/store-info", response_model=StoreInfo)
     async def store_info(kb_id: str | None = None) -> StoreInfo:
+        if kb_id and vs_by_kb_factory:
+            vs = vs_by_kb_factory(kb_id)
+            if vs is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"KB '{kb_id}' is not loaded — activate it before requesting store info.",
+                )
+        else:
+            vs = vector_store_factory()
         try:
-            vs = (vs_by_kb_factory(kb_id) if kb_id and vs_by_kb_factory else None) or vector_store_factory()
             count = await vs.count()
             try:
                 records = await vs.get_chunks_by_filter({})
@@ -558,9 +567,20 @@ def create_rag_router(
 
     @router.post("/chunks", response_model=ChunkBrowseResponse)
     async def browse_chunks(req: ChunkBrowseRequest) -> ChunkBrowseResponse:
-        """Browse indexed chunks by metadata filter with server-side pagination."""
-        try:
+        """Browse indexed chunks by metadata filter with server-side pagination.
+
+        `kb_id` is the session's selected KB; omit it to use the active KB.
+        """
+        if req.kb_id and vs_by_kb_factory:
+            vs = vs_by_kb_factory(req.kb_id)
+            if vs is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"KB '{req.kb_id}' is not loaded — activate it before browsing chunks.",
+                )
+        else:
             vs = vector_store_factory()
+        try:
             eq_filters = {f.key: f.value for f in req.filters if f.op == "eq"} or None
             chunks = await vs.get_chunks_by_filter(eq_filters, limit=req.limit + 1, offset=req.offset)
             has_more = len(chunks) > req.limit

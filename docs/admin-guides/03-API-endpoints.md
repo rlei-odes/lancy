@@ -736,7 +736,7 @@ Returns the current indexing state.
 POST /rag/chunks
 ```
 
-Returns a paginated list of raw chunks from the vector store, optionally filtered by metadata. Used by the Chunk Browser UI tab. Accepts a `ChunkBrowseRequest` body (see Swagger for schema).
+Returns a paginated list of raw chunks from the vector store, optionally filtered by metadata. Used by the Chunk Browser UI tab. Accepts a `ChunkBrowseRequest` body (see Swagger for schema). An optional `kb_id` reads that KB instead of the currently active one; a `kb_id` that is not loaded in the pool returns 404.
 
 ---
 
@@ -819,7 +819,7 @@ These are read-only, take no significant parameters, and are self-explanatory in
 |---|---|
 | `GET /rag/status` | Server readiness and active KB info |
 | `GET /rag/query-status` | Number of in-flight RAG queries |
-| `GET /rag/store-info` | Chunk count and file list for the active vector store |
+| `GET /rag/store-info[?kb_id=]` | Chunk count and file list for the active vector store, or for `kb_id` (404 if that KB is not loaded) |
 | `GET /rag/litellm-models` | Available models from the configured LiteLLM proxy |
 | `GET /rag/ollama-models[?host=]` | Available models from an Ollama instance (`host` defaults to `localhost:11434`) |
 
