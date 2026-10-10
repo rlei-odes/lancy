@@ -34,9 +34,3 @@ Your presets are private: nobody else sees them, and they do not affect anyone e
 ### If you are not sure what to pick
 
 `Default` is chosen by your administrator as the sensible baseline, and it is what you get without doing anything. The other administrator presets (`·`) trade speed against thoroughness — `Fast` retrieves less, `Quality` and `Multi-Document` retrieve more and do extra work per question. Try one if answers feel too shallow or too slow.
-
----
-
-## Content
-
-Placeholder file
