@@ -1,7 +1,7 @@
 -e ./conversational-toolkit/
 -e ./backend/
 chromadb==1.5.9
-docling==2.112.0
+docling==2.132.0
 einops
 fastapi==0.139.0
 httpx==0.28.1
