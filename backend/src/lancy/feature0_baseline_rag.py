@@ -61,6 +61,7 @@ from conversational_toolkit.embeddings.sentence_transformer import (
 from conversational_toolkit.agents.base import QueryWithContext
 from conversational_toolkit.agents.rag import RAG
 from conversational_toolkit.chunking.base import Chunk
+from conversational_toolkit.chunking.email_chunker import EmailChunker
 from conversational_toolkit.chunking.excel_chunker import ExcelChunker
 from conversational_toolkit.chunking.markdown_chunker import MarkdownChunker
 from conversational_toolkit.chunking.markitdown_chunker import MarkItDownChunker
@@ -214,7 +215,7 @@ SYSTEM_PROMPT = (
 )
 
 _CHUNKERS: dict[
-    str, PDFChunker | ExcelChunker | MarkdownChunker | MarkItDownChunker
+    str, PDFChunker | ExcelChunker | MarkdownChunker | MarkItDownChunker | EmailChunker
 ] = {
     ".pdf": PDFChunker(),
     ".xlsx": ExcelChunker(),
@@ -226,6 +227,15 @@ _CHUNKERS: dict[
     ".epub": MarkItDownChunker(),
 }
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".tiff", ".bmp", ".webp"}
+
+# Registered after the table above, because the email chunker hands each attachment
+# to the chunker for that attachment's own type — so it needs the finished table. It
+# receives a copy: the entry added here is excluded from it, so an email attached to
+# an email is skipped rather than recursed into.
+_CHUNKERS[".eml"] = EmailChunker(
+    attachment_chunkers=dict(_CHUNKERS),
+    image_extensions=_IMAGE_EXTENSIONS,
+)
 
 
 def _get_secret(name: str) -> str:
@@ -886,7 +896,9 @@ def load_chunks(
             else:
                 chunker = _CHUNKERS[ext]
                 kwargs: dict = {}
-                if ext == ".pdf":
+                # .eml forwards both to its attachments, so an attached PDF is
+                # OCR'd on the same terms as one sitting in the data directory.
+                if ext in (".pdf", ".eml"):
                     kwargs["do_ocr"] = pdf_ocr_enabled
                     kwargs["write_images"] = write_images
                 file_chunks = chunker.make_chunks(str(file_path), **kwargs)

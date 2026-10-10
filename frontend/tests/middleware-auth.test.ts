@@ -152,6 +152,17 @@ describe("role=user", () => {
         ["POST", "/api/v1/rag/query"],
         ["POST", "/api/v1/rag/analyze-document"],
         ["GET", "/api/v1/branding"],
+        // Piles are a per-session feature, so every one of these must stay open to
+        // `user`. They are owner-scoped in the backend by the x-session-id header
+        // this middleware injects, not by role — gating them here would take the
+        // feature away from exactly the people it exists for.
+        ["GET", "/api/v1/piles"],
+        ["POST", "/api/v1/piles"],
+        ["GET", "/api/v1/piles/abc123"],
+        ["DELETE", "/api/v1/piles/abc123"],
+        ["POST", "/api/v1/piles/abc123/files"],
+        ["DELETE", "/api/v1/piles/abc123/files/report.pdf"],
+        ["POST", "/api/v1/piles/abc123/process"],
     ])("is allowed %s %s", async (method, path) => {
         const middleware = await loadMiddleware(PROTECTED_ENV);
         const res = await middleware(request(path, { method, cookie: await cookieFor("user") }));

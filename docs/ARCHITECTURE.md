@@ -48,6 +48,7 @@ FastAPI application with three routers:
 |--------|--------|---------|
 | `rag_router` | `/rag` | Query endpoint, streaming responses |
 | `kb_router` | `/kb` | KB management: list, create, switch, index, cancel |
+| `piles_router` | `/piles` | Per-session document piles: upload, process, delete |
 | `openai_compat_router` | `/v1` | OpenAI-compatible chat completions |
 
 The conversational toolkit (`conversational-toolkit/`) is a separate installable package
@@ -102,6 +103,81 @@ a 409 if indexing is already running.
 saves it to a temp path, and triggers the same ingestion pipeline via `BackgroundTasks`.
 The temp file is always deleted after ingestion. Requires a stable `document_id` in metadata;
 re-uploading the same `document_id` replaces the existing chunks (delete-then-insert).
+
+### Piles
+
+`backend/src/lancy/piles_router.py`
+
+A **pile** is a set of documents a user uploads for their own use, kept out of the
+curated corpus. Structurally a pile is what a KB already is — a directory of files
+plus a vector store — so processing one hands a synthetic `KBInfo` to `run_ingestion`
+and inherits hash deduplication, OCR, chunking and image handling unchanged.
+
+```
+user-piles/<pile_id>/            raw uploads (gitignored)
+db/vs_pile_<pile_id>             the pile's own vector store (ChromaDB)
+rag_pile_<pile_id>               …or its own table (pgvector)
+db/user_config.db
+  ├── piles                      id, owner_id, name, status, embedding_key, vs_type, counts
+  └── pile_files                 pile_id, filename (on disk), source_file (as uploaded)
+```
+
+Piles are deliberately **not** in `knowledge_bases.json`: that registry belongs to
+the admin and is rewritten wholesale, while piles are created and discarded per user.
+
+**Isolation is physical, not filtered.** Each pile has its own store, so no query
+needs an owner filter to stay inside one user's documents, and no filter bug can
+cross that boundary. It also keeps each pile's BM25 corpus to its own documents
+rather than putting every user's text in one in-memory index.
+
+**Ownership is the lookup.** Every read is keyed on `(pile_id, owner_id)`; there is
+no function that resolves a pile without its owner, so a guessed id from another
+session is indistinguishable from one that does not exist (404, never 403). The owner
+is the `x-session-id` header the Next.js middleware injects, falling back to `admin`
+exactly as `SessionCookieProvider` does — the same identity conversation history is
+already scoped by.
+
+**Lifecycle:**
+
+```
+draft       created, files uploaded, never processed
+processing  run_ingestion in flight (vs_type is stamped BEFORE the run, so a
+            crashed run still leaves the store backend known and droppable)
+ready       store matches the pile's current file set
+stale       files added or removed since the last run — reprocess to include them
+failed      last run raised; the exception CLASS is recorded, never its message,
+            which can carry a connection string or a local path
+```
+
+**Inherited configuration.** Embedding backend and model, store backend and
+connection string, chunk parameters and OCR settings are copied from the active KB at
+process time, so a pile always matches the one embedding model the pool is running.
+The `(backend, model)` pair is recorded as `embedding_key` on the pile row. Two
+separate questions follow from it, because the answers differ by consumer:
+
+| Flag | Meaning | Who needs it |
+|------|---------|--------------|
+| `has_store` | processed at least once — chunks exist | Batch analysis |
+| `embedding_current` | those vectors match the active embedding config | Retrieval |
+
+Batch analysis reads chunk text by metadata and never embeds, so a pile built with a
+since-replaced embedding model remains analyzable. Retrieval compares vectors and
+does not.
+
+**Serialisation.** Processing a pile uses the same embedding model and chunking
+process pool as an admin reindex, so the two must not overlap: `POST
+/piles/{id}/process` returns 409 while `_index_status["indexing"]` is set. Pile runs
+pass `db_engine=None`, keeping user filenames out of the admin's `ingest_events`
+provenance log, and report a neutral `kb_name` so the shared index-status badge does
+not publish one user's pile names to everyone.
+
+**Consumption.** `POST /rag/document-stats` and `POST /rag/analyze-document` accept a
+`pile_id` and resolve it through `open_pile_store`, which opens the store directly —
+piles are never pool residents, since this path needs no retrievers, no BM25 index and
+no embedding model. The store is closed before the LLM call, so a pgvector pile does
+not hold a connection pool open across a generation. The factory is injected into
+`create_rag_router` rather than imported, because `lancy.ingestion` imports
+`rag_router` and the reverse edge would cycle.
 
 ### Ingestion Pipeline
 
@@ -165,11 +241,34 @@ applies — two identical files in one run always produce one set of chunks.
 | Function | File | Role |
 |----------|------|------|
 | `file_hash(path)` | `feature0_baseline_rag.py` | SHA-256 of raw file bytes |
+| `EmailChunker` | `chunking/email_chunker.py` | `.eml` → message chunk + one group per attachment |
 | `_collect_candidate_files(dirs, ...)` | `feature0_baseline_rag.py` | Extension + size + EVALUATION filter, shared by pre-pass and `load_chunks` |
 | `load_chunks(..., include_files, file_hashes)` | `feature0_baseline_rag.py` | Parse files, stamp `chunk.metadata["file_hash"]` |
 | `build_vector_store(..., existing_hashes)` | `feature0_baseline_rag.py` | Embed and persist; skips chunks already in store |
 | `VectorStore.get_file_hashes()` | `vectorstores/base.py` | Abstract: return set of hashes in the store |
 | `run_ingestion(kb, reset, db_dir)` | `ingestion.py` | Orchestrates all steps above; returns `(chunks, files, skipped)` |
+
+#### Email (.eml)
+
+`conversational-toolkit/src/conversational_toolkit/chunking/email_chunker.py`
+
+An email is both a message and a carrier for documents, so `EmailChunker` emits
+both: one chunk for the message (headers rendered as searchable text, body
+converted from HTML when there is no plain part) plus one group per attachment,
+each handed to the chunker registered for that attachment's own extension. An
+attached PDF therefore goes through the full PDF pipeline, OCR included, on the
+same settings as one sitting in a data directory.
+
+Every chunk an email produces carries its headers in metadata
+(`email_from`, `email_subject`, `email_date`, `email_message_id`, and
+`email_attachment` on attachment chunks), so a hit deep inside an attachment can
+still name the message it arrived on.
+
+`.eml` is registered in `_CHUNKERS` *after* the table is built, because the chunker
+needs the finished table to dispatch attachments. It receives a copy with `.eml`
+removed, so an email attached to an email is listed by name and skipped rather than
+recursed into. An attachment whose own chunker raises costs only that attachment;
+one with no registered chunker is still named in the message chunk's attachment list.
 
 #### Threading Model
 

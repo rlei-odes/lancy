@@ -146,6 +146,7 @@ export const app = {
         tabProbe: "Retrieval Probe",
         tabBrowser: "Chunk Browser",
         tabAnalytics: "Analytics",
+        tabPiles: "My Documents",
         tabBatch: "Batch Analysis",
         // Batch analysis — intro
         batchIntroTitle: "One LLM call per document",
@@ -156,6 +157,10 @@ export const app = {
         batchIdFieldLabel: "Match documents by",
         batchIdFieldHintFile: "filenames as ingested, e.g. contract-2025-01.pdf",
         batchIdFieldHintDoc: "stable ids assigned at upload time, e.g. CTR-2025-001",
+        batchSourceLabel: "Analyse documents from",
+        batchSourceKb: "Active knowledge base",
+        batchSourceNoPiles: "no processed document pile yet — create one under My Documents",
+        batchIdFieldHintPile: "a pile is always matched by filename",
         batchUploadDocs: "Upload docs.txt",
         batchDocsPlaceholder: "One identifier per line.\nBlank lines and lines starting with # are ignored.",
         batchDocsCount: "{{n}} unique identifiers",
@@ -235,6 +240,36 @@ export const app = {
         // Chunk browser states
         browserEmptyTitle: "No chunks matched the current filters.",
         browserIdleTitle: "Add a filter and click Browse to inspect indexed chunks.",
+    },
+    piles: {
+        introTitle: "Your own documents",
+        introBody:
+            "Upload documents into a pile, then process it once to make it searchable. " +
+            "A pile is private to your session and is never mixed into the shared knowledge base. " +
+            "Processed piles can be selected as the source in Batch Analysis.",
+        newPlaceholder: "New pile name…",
+        create: "Create",
+        loading: "Loading piles…",
+        empty: "No piles yet. Create one to upload documents.",
+        fileCount: "{{n}} file(s)",
+        delete: "Delete",
+        addFiles: "Add files",
+        dropHint: "Drag files here, or click to choose",
+        dropNow: "Drop to upload",
+        dropTypes: "pdf · docx · xlsx · md · txt · epub · eml · images",
+        process: "Process",
+        noFiles: "No files in this pile yet.",
+        statusDraft: "not processed",
+        statusProcessing: "processing…",
+        statusReady: "ready",
+        statusStale: "needs reprocessing",
+        statusFailed: "failed",
+        readyHint: "{{chunks}} chunks from {{files}} file(s) — ready to analyse.",
+        staleHint: "The files changed since this pile was last processed. Process it again to include them.",
+        failedHint: "Processing failed ({{error}}). Check the backend log, then try again.",
+        embeddingDriftHint:
+            "This pile was processed with a different embedding model than the one now active. " +
+            "Batch analysis still works; reprocess it before using it for retrieval.",
     },
     rag: {
         title: "RAG Parameters",

@@ -212,6 +212,12 @@ class DocumentStatsRequest(BaseModel):
     Defaults to source_file so the expand-context popover is unaffected; the batch
     analysis UI passes document_id when the caller drives the batch by DMS ids.
     """
+    pile_id: str | None = Field(default=None, max_length=64)
+    """Read from this pile's store instead of a Knowledge Base.
+
+    Resolved against the calling session's own piles, so another owner's pile is
+    indistinguishable from one that does not exist.
+    """
 
 
 class DocumentStat(BaseModel):
@@ -244,11 +250,20 @@ class AnalyzeDocumentRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=20_000)
     response_schema: dict[str, Any] = Field(..., description="JSON Schema for the LLM output.")
     kb_id: str | None = Field(default=None, max_length=100)
+    pile_id: str | None = Field(default=None, max_length=64)
+    """Analyze a document in one of the caller's own piles instead of a KB.
+
+    Mutually exclusive with `kb_id`. A pile needs no pool residency and no matching
+    embedding model to be analyzed: this path reads chunk text by metadata and never
+    embeds anything.
+    """
 
     @model_validator(mode="after")
     def one_identifier(self) -> "AnalyzeDocumentRequest":
         if bool(self.document_id) == bool(self.source_file):
             raise ValueError("Provide exactly one of document_id or source_file.")
+        if self.pile_id and self.kb_id:
+            raise ValueError("Provide either pile_id or kb_id, not both.")
         return self
 
 
@@ -283,6 +298,7 @@ def create_rag_router(
     retrieve_callback: Callable
     | None = None,  # async (RetrieveRequest) -> RetrieveResponse
     vs_by_kb_factory: Callable | None = None,  # (kb_id: str) -> VectorStore | None
+    pile_store_factory: Callable | None = None,  # (pile_id, owner_id) -> async ctx mgr
 ) -> APIRouter:
     """
     Args:
@@ -294,6 +310,10 @@ def create_rag_router(
         vector_store_factory: Zero-arg callable returning the active vector store proxy.
         rebuild_callback:     Async callable(RagConfig, reset: bool) -> ReindexResult.
                               The active KB is resolved inside main.py's callback.
+        pile_store_factory:   (pile_id, owner_id) -> async context manager yielding the
+                              pile's VectorStore, or None when the caller does not own
+                              a processed pile by that id. Injected rather than imported
+                              because lancy.ingestion imports this module.
     """
     router = APIRouter(prefix="/api/v1/rag")
     config_path = db_dir / "rag_config.json"
@@ -569,8 +589,22 @@ def create_rag_router(
             log.warning(f"browse-chunks error: {exc}")
             raise HTTPException(status_code=500, detail=str(exc))
 
+    async def _collect_document_stats(vs: Any, req: DocumentStatsRequest) -> DocumentStatsResponse:
+        chunks = await vs.get_chunks_by_filter(filters={req.id_field: req.source_files})
+        by_file: dict[str, tuple[int, int]] = {}
+        for c in chunks:
+            sf = c.metadata.get(req.id_field, "")
+            cur = by_file.get(sf, (0, 0))
+            by_file[sf] = (cur[0] + 1, cur[1] + len(c.content or ""))
+        return DocumentStatsResponse(
+            stats=[
+                DocumentStat(source_file=sf, chunk_count=by_file.get(sf, (0, 0))[0], char_count=by_file.get(sf, (0, 0))[1])
+                for sf in req.source_files
+            ]
+        )
+
     @router.post("/document-stats", response_model=DocumentStatsResponse)
-    async def document_stats(req: DocumentStatsRequest) -> DocumentStatsResponse:
+    async def document_stats(req: DocumentStatsRequest, http: Request) -> DocumentStatsResponse:
         """Return chunk_count + char_count per requested identifier.
 
         Used by the expand-context popover to estimate LLM context budget usage
@@ -579,21 +613,21 @@ def create_rag_router(
         model-agnostic proxy for tokens (see the popover's ~/3.5 approximation).
         """
         try:
+            if req.pile_id:
+                if pile_store_factory is None:
+                    raise HTTPException(status_code=503, detail="Piles are not available.")
+                async with pile_store_factory(
+                    req.pile_id, http.headers.get("x-session-id")
+                ) as pile_vs:
+                    if pile_vs is None:
+                        raise HTTPException(
+                            status_code=404, detail="Pile not found or not yet processed."
+                        )
+                    return await _collect_document_stats(pile_vs, req)
             vs = vector_store_factory()
             if vs is None:
                 raise HTTPException(status_code=404, detail="No active KB.")
-            chunks = await vs.get_chunks_by_filter(filters={req.id_field: req.source_files})
-            by_file: dict[str, tuple[int, int]] = {}
-            for c in chunks:
-                sf = c.metadata.get(req.id_field, "")
-                cur = by_file.get(sf, (0, 0))
-                by_file[sf] = (cur[0] + 1, cur[1] + len(c.content or ""))
-            return DocumentStatsResponse(
-                stats=[
-                    DocumentStat(source_file=sf, chunk_count=by_file.get(sf, (0, 0))[0], char_count=by_file.get(sf, (0, 0))[1])
-                    for sf in req.source_files
-                ]
-            )
+            return await _collect_document_stats(vs, req)
         except HTTPException:
             raise
         except Exception as exc:
@@ -623,17 +657,38 @@ def create_rag_router(
         skipped (not truncated) — the response reports `skipped="over_budget"` so the
         batch script can log a row and continue.
         """
-        vs = (vs_by_kb_factory(req.kb_id) if req.kb_id and vs_by_kb_factory else None) or vector_store_factory()
-        if vs is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"KB {req.kb_id!r} not found." if req.kb_id else "No active KB.",
-            )
-
         filter_field = "document_id" if req.document_id else "source_file"
         filter_value = req.document_id or req.source_file
+
+        # The store is only needed for this fetch. Closing it before the LLM call
+        # matters for piles on pgvector: holding the connection pool open across a
+        # generation that may run the full _ANALYZE_TIMEOUT_S serves no purpose.
         try:
-            chunks = await vs.get_chunks_by_filter(filters={filter_field: filter_value})
+            if req.pile_id:
+                if pile_store_factory is None:
+                    raise HTTPException(status_code=503, detail="Piles are not available.")
+                async with pile_store_factory(
+                    req.pile_id, http.headers.get("x-session-id")
+                ) as pile_vs:
+                    if pile_vs is None:
+                        raise HTTPException(
+                            status_code=404, detail="Pile not found or not yet processed."
+                        )
+                    chunks = await pile_vs.get_chunks_by_filter(
+                        filters={filter_field: filter_value}
+                    )
+            else:
+                vs = (
+                    vs_by_kb_factory(req.kb_id) if req.kb_id and vs_by_kb_factory else None
+                ) or vector_store_factory()
+                if vs is None:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"KB {req.kb_id!r} not found." if req.kb_id else "No active KB.",
+                    )
+                chunks = await vs.get_chunks_by_filter(filters={filter_field: filter_value})
+        except HTTPException:
+            raise
         except Exception as exc:
             log.warning(f"analyze-document chunk fetch failed ({filter_field}={filter_value!r}): {exc}")
             raise HTTPException(status_code=500, detail=f"Chunk fetch failed: {exc}")

@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.4.0] — 2026-10-10 · rlei-odes
+
+### Added — Document piles
+
+- Users can upload their own documents into a private pile and process it on demand into its own vector store. A pile is scoped to the session that created it, is never mixed into the shared corpus, and can be selected as the source in Batch Analysis.
+- Embedding model, store backend and chunking parameters are inherited from the active KB, so a pile needs no configuration of its own.
+- Isolation is physical rather than filtered: each pile owns its store, so no query depends on an owner filter to stay inside one user's documents.
+- New "My Documents" tab in the Explorer, with drag-and-drop upload.
+
+### Added — Email ingestion, attachments included
+
+- `.eml` files are indexed as the message plus each attachment, every attachment going through the chunker for its own file type — an attached PDF is OCR'd like any other PDF.
+- Attachment chunks carry the email's headers, so a hit inside an attachment can name the message it arrived on. An attachment with no supported chunker is still listed by name in the message chunk.
+
+---
+
 ## [Lancy v0.3.11] — 2026-09-10 · rlei-odes
 
 ### Fixed — Query expansion could flood retrieval with hundreds of searches

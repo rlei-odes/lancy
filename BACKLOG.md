@@ -572,3 +572,7 @@ After the LLM finishes streaming, there is a noticeable delay before sources app
 - Move source fetching out of `get_conversation_by_id` into a separate on-demand endpoint
 - Send sources as a lightweight reference (id + filename only) in the stream, fetch full content lazily on click
 
+
+## Notes
+
+- Support for .eml files?

@@ -154,6 +154,43 @@ def init_db(db_path: Path) -> None:
             ON presets(kb_id, user_id, type)
         """)
         _migrate_presets_unique_index(conn)
+        # Piles: user-owned document sets, processed into their own vector store on
+        # demand. Deliberately not in knowledge_bases.json — that registry is the
+        # admin's, rewritten wholesale, and piles come and go per user.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS piles (
+                id            TEXT PRIMARY KEY,
+                owner_id      TEXT NOT NULL,
+                name          TEXT NOT NULL,
+                created_at    TEXT NOT NULL,
+                processed_at  TEXT,
+                status        TEXT NOT NULL DEFAULT 'draft',
+                error         TEXT NOT NULL DEFAULT '',
+                embedding_key TEXT NOT NULL DEFAULT '',
+                vs_type       TEXT NOT NULL DEFAULT '',
+                chunk_count   INTEGER NOT NULL DEFAULT 0,
+                file_count    INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_piles_owner ON piles(owner_id)")
+        # Two piles of the same name under one owner would be indistinguishable in
+        # the picker, which is the mistake the KB registry had to correct later.
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_piles_owner_name
+            ON piles(owner_id, name)
+        """)
+        # `filename` is the sanitised name on disk and the unique key within a pile;
+        # `source_file` is what the user uploaded and what the chunk metadata carries.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pile_files (
+                pile_id     TEXT NOT NULL,
+                filename    TEXT NOT NULL,
+                source_file TEXT NOT NULL,
+                uploaded_at TEXT NOT NULL,
+                size_bytes  INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (pile_id, filename)
+            )
+        """)
         conn.commit()
 
 
@@ -365,6 +402,182 @@ def get_default_preset(db_path: Path) -> dict | None:
             "WHERE type='retrieval' AND name='Default' AND user_id IS NULL AND kb_id IS NULL",
         ).fetchone()
     return json.loads(row[0]) if row else None
+
+
+# ─── piles CRUD ───────────────────────────────────────────────────────────────
+# Every read is keyed on (pile_id, owner_id) rather than pile_id alone. A caller
+# cannot reach another owner's pile even by guessing its id, because there is no
+# function that resolves a pile without its owner.
+
+_PILE_COLS = (
+    "id", "owner_id", "name", "created_at", "processed_at",
+    "status", "error", "embedding_key", "vs_type", "chunk_count", "file_count",
+)
+_PILE_FILE_COLS = ("pile_id", "filename", "source_file", "uploaded_at", "size_bytes")
+
+
+def create_pile(db_path: Path, pile_id: str, owner_id: str, name: str) -> None:
+    """Insert a new empty pile. Raises sqlite3.IntegrityError if the owner already
+    has a pile of this name (idx_piles_owner_name)."""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            conn.execute(
+                "INSERT INTO piles (id, owner_id, name, created_at, status) "
+                "VALUES (?, ?, ?, ?, 'draft')",
+                (pile_id, owner_id, name, now),
+            )
+            conn.commit()
+
+
+def list_piles(db_path: Path, owner_id: str) -> list[dict]:
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT {', '.join(_PILE_COLS)} FROM piles WHERE owner_id = ? "
+            "ORDER BY created_at DESC",
+            (owner_id,),
+        ).fetchall()
+    return [dict(zip(_PILE_COLS, r)) for r in rows]
+
+
+def get_pile(db_path: Path, pile_id: str, owner_id: str) -> dict | None:
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            f"SELECT {', '.join(_PILE_COLS)} FROM piles WHERE id = ? AND owner_id = ?",
+            (pile_id, owner_id),
+        ).fetchone()
+    return dict(zip(_PILE_COLS, row)) if row else None
+
+
+def delete_pile(db_path: Path, pile_id: str, owner_id: str) -> bool:
+    """Remove the pile and its file rows. The vector store and the raw files on
+    disk are the caller's to clean up — this only drops the bookkeeping."""
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            deleted = conn.execute(
+                "DELETE FROM piles WHERE id = ? AND owner_id = ?", (pile_id, owner_id)
+            ).rowcount
+            if deleted:
+                conn.execute("DELETE FROM pile_files WHERE pile_id = ?", (pile_id,))
+            conn.commit()
+    return bool(deleted)
+
+
+def set_pile_status(db_path: Path, pile_id: str, status: str, error: str = "") -> None:
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            conn.execute(
+                "UPDATE piles SET status = ?, error = ? WHERE id = ?",
+                (status, error, pile_id),
+            )
+            conn.commit()
+
+
+def begin_pile_processing(db_path: Path, pile_id: str, vs_type: str) -> None:
+    """Mark a pile as processing and record which store backend it is building into.
+
+    `vs_type` is written here rather than on completion on purpose: a run that dies
+    halfway may already have created a pgvector table, and deletion needs to know
+    the backend to drop it. Stamping it only on success would orphan that table.
+    """
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            conn.execute(
+                "UPDATE piles SET status = 'processing', error = '', vs_type = ? WHERE id = ?",
+                (vs_type, pile_id),
+            )
+            conn.commit()
+
+
+def finish_pile_processing(
+    db_path: Path,
+    pile_id: str,
+    *,
+    chunk_count: int,
+    file_count: int,
+    embedding_key: str,
+) -> None:
+    """Mark a pile ready and record what its store was built from.
+
+    `embedding_key` is the (backend, model) pair the vectors were produced with.
+    A pile whose key no longer matches the active KB's cannot be queried against
+    that embedding model and has to be rebuilt — storing it is what makes that
+    detectable instead of silently returning nonsense.
+    """
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            conn.execute(
+                "UPDATE piles SET status = 'ready', error = '', processed_at = ?, "
+                "chunk_count = ?, file_count = ?, embedding_key = ? WHERE id = ?",
+                (now, chunk_count, file_count, embedding_key, pile_id),
+            )
+            conn.commit()
+
+
+def _mark_stale_if_ready(conn: sqlite3.Connection, pile_id: str) -> None:
+    """A pile whose file set changed no longer matches its store.
+
+    Kept next to the file mutations rather than in the router so the invariant
+    holds for every caller and lands in the same transaction as the change.
+    """
+    conn.execute(
+        "UPDATE piles SET status = 'stale' WHERE id = ? AND status = 'ready'",
+        (pile_id,),
+    )
+
+
+def add_pile_file(
+    db_path: Path, pile_id: str, filename: str, source_file: str, size_bytes: int
+) -> None:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO pile_files "
+                "(pile_id, filename, source_file, uploaded_at, size_bytes) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (pile_id, filename, source_file, now, size_bytes),
+            )
+            _mark_stale_if_ready(conn, pile_id)
+            conn.commit()
+
+
+def list_pile_files(db_path: Path, pile_id: str) -> list[dict]:
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT {', '.join(_PILE_FILE_COLS)} FROM pile_files WHERE pile_id = ? "
+            "ORDER BY uploaded_at, filename",
+            (pile_id,),
+        ).fetchall()
+    return [dict(zip(_PILE_FILE_COLS, r)) for r in rows]
+
+
+def delete_pile_file(db_path: Path, pile_id: str, filename: str) -> bool:
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            deleted = conn.execute(
+                "DELETE FROM pile_files WHERE pile_id = ? AND filename = ?",
+                (pile_id, filename),
+            ).rowcount
+            if deleted:
+                _mark_stale_if_ready(conn, pile_id)
+            conn.commit()
+    return bool(deleted)
+
+
+def pile_usage(db_path: Path, owner_id: str) -> tuple[int, int]:
+    """(pile count, total bytes across all of this owner's piles) — for quota checks."""
+    with _connect(db_path) as conn:
+        piles = conn.execute(
+            "SELECT COUNT(*) FROM piles WHERE owner_id = ?", (owner_id,)
+        ).fetchone()[0]
+        total = conn.execute(
+            "SELECT COALESCE(SUM(f.size_bytes), 0) FROM pile_files f "
+            "JOIN piles p ON p.id = f.pile_id WHERE p.owner_id = ?",
+            (owner_id,),
+        ).fetchone()[0]
+    return int(piles), int(total)
 
 
 # ─── JSON migration ───────────────────────────────────────────────────────────

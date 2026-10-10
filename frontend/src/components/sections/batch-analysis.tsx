@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/lorem";
+import { fetchPile, fetchPiles, type Pile } from "@/components/sections/pile-manager";
 
 const API_BASE = "";
 const STORAGE_KEY = "batchAnalysisQuestions";
@@ -207,14 +208,22 @@ async function fetchTemplate(): Promise<string> {
     return (await r.json()).template ?? "";
 }
 
-async function fetchDocStats(ids: string[], idField: IdField): Promise<DocumentStat[]> {
+async function fetchDocStats(
+    ids: string[],
+    idField: IdField,
+    pileId: string | null
+): Promise<DocumentStat[]> {
     const out: DocumentStat[] = [];
     for (let i = 0; i < ids.length; i += STATS_BATCH) {
         const r = await fetch(`${API_BASE}/api/v1/rag/document-stats`, {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ source_files: ids.slice(i, i + STATS_BATCH), id_field: idField }),
+            body: JSON.stringify({
+                source_files: ids.slice(i, i + STATS_BATCH),
+                id_field: idField,
+                ...(pileId ? { pile_id: pileId } : {}),
+            }),
         });
         if (!r.ok) {
             const err = await r.json().catch(() => ({}));
@@ -229,7 +238,8 @@ async function analyzeOne(
     ident: string,
     idField: IdField,
     prompt: string,
-    schema: Record<string, unknown>
+    schema: Record<string, unknown>,
+    pileId: string | null
 ): Promise<ResultRow> {
     let r: Response;
     try {
@@ -237,7 +247,12 @@ async function analyzeOne(
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ [idField]: ident, prompt, response_schema: schema }),
+            body: JSON.stringify({
+                [idField]: ident,
+                prompt,
+                response_schema: schema,
+                ...(pileId ? { pile_id: pileId } : {}),
+            }),
         });
     } catch (e) {
         return { _id: ident, _status: `error:${e instanceof Error ? e.message : "network"}`, _chunk_count: 0, _char_count: 0 };
@@ -286,6 +301,9 @@ export const BatchAnalysis: FunctionComponent = () => {
 
     const [idField, setIdField] = useState<IdField>("source_file");
     const [docText, setDocText] = useState("");
+    // null = the active Knowledge Base; otherwise one of the user's own piles.
+    const [pileId, setPileId] = useState<string | null>(null);
+    const [piles, setPiles] = useState<Pile[]>([]);
     const [rows, setRows] = useState<QuestionRow[]>([]);
     const [template, setTemplate] = useState("");
     const [showPrompt, setShowPrompt] = useState(false);
@@ -314,6 +332,35 @@ export const BatchAnalysis: FunctionComponent = () => {
     }, [rows]);
 
     useEffect(() => { fetchTemplate().then(setTemplate).catch(() => {}); }, []);
+
+    // Only processed piles can be analyzed. `has_store` rather than
+    // `embedding_current`: this path reads chunk text and never embeds, so a pile
+    // built with a since-replaced embedding model is still perfectly analyzable.
+    useEffect(() => {
+        fetchPiles()
+            .then((all) => setPiles(all.filter((p) => p.has_store)))
+            .catch(() => {});
+    }, []);
+
+    // Selecting a pile fills the identifier list from its files, so the common case
+    // needs no typing. The textarea stays editable for trimming the list down.
+    const selectPile = useCallback(async (id: string | null) => {
+        setPileId(id);
+        setVerification(null);
+        setResults([]);
+        setError(null);
+        if (id === null) {
+            setDocText("");
+            return;
+        }
+        setIdField("source_file");  // a pile's chunks carry no DMS document_id
+        try {
+            const detail = await fetchPile(id);
+            setDocText(detail.files.map((f) => f.source_file).join("\n"));
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not load pile");
+        }
+    }, []);
 
     // Warn before a reload throws away an in-flight run
     useEffect(() => {
@@ -361,7 +408,7 @@ export const BatchAnalysis: FunctionComponent = () => {
         try {
             const cfg = await fetchConfig();
             const budgetChars = Math.floor(cfg.num_ctx * BUDGET_FRACTION * CHARS_PER_TOKEN);
-            const stats = await fetchDocStats(ids, idField);
+            const stats = await fetchDocStats(ids, idField, pileId);
             const byId = new Map(stats.map((s) => [s.source_file, s]));
 
             const ready: string[] = [];
@@ -382,7 +429,7 @@ export const BatchAnalysis: FunctionComponent = () => {
         } finally {
             setVerifying(false);
         }
-    }, [ids, duplicates, idField]);
+    }, [ids, duplicates, idField, pileId]);
 
     const handleRun = useCallback(async () => {
         cancelRef.current = false;
@@ -391,12 +438,12 @@ export const BatchAnalysis: FunctionComponent = () => {
         for (const ident of todo) {
             if (cancelRef.current) break;
             const t0 = performance.now();
-            const row = await analyzeOne(ident, idField, prompt, schema);
+            const row = await analyzeOne(ident, idField, prompt, schema, pileId);
             setResults((prev) => [...prev, row]);
             setElapsed((prev) => [...prev, (performance.now() - t0) / 1000]);
         }
         setRunning(false);
-    }, [todo, idField, prompt, schema]);
+    }, [todo, idField, prompt, schema, pileId]);
 
     const statusTone = (status: string) =>
         status === "ok" ? "text-emerald-600 dark:text-emerald-400"
@@ -418,17 +465,38 @@ export const BatchAnalysis: FunctionComponent = () => {
             <Card step={1} title={t("explorer.batchDocsTitle")} icon={<FileStack className="h-4 w-4 text-muted-foreground" />}>
                 <div className="flex flex-col gap-3">
                     <div className="flex flex-wrap items-center gap-3">
+                        <label className="text-xs text-muted-foreground">{t("explorer.batchSourceLabel")}</label>
+                        <select
+                            value={pileId ?? ""}
+                            onChange={(e) => selectPile(e.target.value || null)}
+                            className={inputCls}
+                        >
+                            <option value="">{t("explorer.batchSourceKb")}</option>
+                            {piles.map((p) => (
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                        </select>
+                        {pileId === null && piles.length === 0 && (
+                            <span className="text-xs text-muted-foreground/70">
+                                {t("explorer.batchSourceNoPiles")}
+                            </span>
+                        )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
                         <label className="text-xs text-muted-foreground">{t("explorer.batchIdFieldLabel")}</label>
                         <select
                             value={idField}
                             onChange={(e) => { setIdField(e.target.value as IdField); setVerification(null); }}
-                            className={inputCls}
+                            disabled={pileId !== null}
+                            className={cn(inputCls, pileId !== null && "opacity-50")}
                         >
                             <option value="source_file">source_file</option>
                             <option value="document_id">document_id</option>
                         </select>
                         <span className="text-xs text-muted-foreground/70">
-                            {t(idField === "source_file" ? "explorer.batchIdFieldHintFile" : "explorer.batchIdFieldHintDoc")}
+                            {pileId !== null
+                                ? t("explorer.batchIdFieldHintPile")
+                                : t(idField === "source_file" ? "explorer.batchIdFieldHintFile" : "explorer.batchIdFieldHintDoc")}
                         </span>
                         <button
                             onClick={() => fileRef.current?.click()}

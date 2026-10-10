@@ -145,6 +145,7 @@ export const app = {
         tabProbe: "Sonda di retrieval",
         tabBrowser: "Browser dei chunk",
         tabAnalytics: "Analisi",
+        tabPiles: "I miei documenti",
         tabBatch: "Analisi in blocco",
         // Batch analysis — intro
         batchIntroTitle: "Una chiamata al LLM per documento",
@@ -155,6 +156,10 @@ export const app = {
         batchIdFieldLabel: "Abbina i documenti per",
         batchIdFieldHintFile: "nomi di file come indicizzati, es. contract-2025-01.pdf",
         batchIdFieldHintDoc: "id stabili assegnati al caricamento, es. CTR-2025-001",
+        batchSourceLabel: "Analizza documenti da",
+        batchSourceKb: "Base di conoscenza attiva",
+        batchSourceNoPiles: "nessun gruppo di documenti elaborato — creane uno in I miei documenti",
+        batchIdFieldHintPile: "un gruppo viene sempre abbinato per nome file",
         batchUploadDocs: "Carica docs.txt",
         batchDocsPlaceholder: "Un identificatore per riga.\nLe righe vuote e quelle che iniziano con # vengono ignorate.",
         batchDocsCount: "{{n}} identificatori univoci",
@@ -230,6 +235,36 @@ export const app = {
         browserColChunkIndex: "Indice",
         browserEmptyTitle: "Nessun chunk corrisponde ai filtri attuali.",
         browserIdleTitle: "Aggiungi un filtro e clicca su Sfoglia per ispezionare i chunk indicizzati.",
+    },
+    piles: {
+        introTitle: "I tuoi documenti",
+        introBody:
+            "Carica i documenti in un gruppo, poi elaboralo una volta per renderlo ricercabile. " +
+            "Un gruppo è privato della tua sessione e non viene mai unito alla base di conoscenza condivisa. " +
+            "I gruppi elaborati possono essere scelti come sorgente nell'Analisi in blocco.",
+        newPlaceholder: "Nome del nuovo gruppo…",
+        create: "Crea",
+        loading: "Caricamento gruppi…",
+        empty: "Nessun gruppo. Creane uno per caricare documenti.",
+        fileCount: "{{n}} file",
+        delete: "Elimina",
+        addFiles: "Aggiungi file",
+        dropHint: "Trascina i file qui, o clicca per scegliere",
+        dropNow: "Rilascia per caricare",
+        dropTypes: "pdf · docx · xlsx · md · txt · epub · eml · immagini",
+        process: "Elabora",
+        noFiles: "Ancora nessun file in questo gruppo.",
+        statusDraft: "non elaborato",
+        statusProcessing: "elaborazione…",
+        statusReady: "pronto",
+        statusStale: "da rielaborare",
+        statusFailed: "non riuscito",
+        readyHint: "{{chunks}} chunk da {{files}} file — pronto per l'analisi.",
+        staleHint: "I file sono cambiati dall'ultima elaborazione. Rielabora il gruppo per includerli.",
+        failedHint: "Elaborazione non riuscita ({{error}}). Controlla il log del backend e riprova.",
+        embeddingDriftHint:
+            "Questo gruppo è stato elaborato con un modello di embedding diverso da quello attivo. " +
+            "L'analisi in blocco funziona ancora; rielaboralo prima di usarlo per il recupero.",
     },
     rag: {
         title: "Parametri RAG",

@@ -81,3 +81,6 @@ frontend/tsconfig.tsbuildinfo
 
 # Caddy TLS setup (contains private key material, host-specific)
 caddy/
+
+# Raw documents users uploaded into their piles
+user-piles/

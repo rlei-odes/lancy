@@ -92,6 +92,7 @@ from lancy.feature0_baseline_rag import (
 from lancy.llm_debug import DebugLLM, configure as _configure_llm_debug
 _configure_llm_debug(_ROOT / "logs" / "llm_debug.log")
 from lancy.ingestion import (
+    _dispose_vs,
     _index_status,
     _reset_chunking_pool,
     cancel_indexing,
@@ -105,6 +106,7 @@ from lancy.auth_router import create_auth_router
 from lancy.branding_router import create_branding_router
 from lancy.kb_router import KBInfo, create_kb_router
 from lancy.openai_compat_router import create_openai_compat_router
+from lancy.piles_router import create_piles_router, open_pile_store
 from lancy.rag_router import (
     ChunkResult,
     ChunkScores,
@@ -144,6 +146,10 @@ _DB_DIR.mkdir(exist_ok=True)
 
 _PROMPTS_DIR = Path(__file__).parent.parent.parent.parent / "prompts"
 _PROMPTS_DIR.mkdir(exist_ok=True)
+
+# Raw user uploads, one subdirectory per pile. Gitignored — this is user content,
+# not part of the repo or of the admin's `data/` corpus.
+_PILES_DIR = _ROOT / "user-piles"
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -782,6 +788,56 @@ def build_server():
     )
     app.include_router(kb_router)
 
+    # ── Piles Router ──────────────────────────────────────────────────────
+    async def _process_pile(kb: KBInfo, reset: bool) -> tuple[int, int]:
+        """Chunk + embed a pile through the normal ingestion pipeline.
+
+        `db_engine=None` keeps pile runs out of the admin's ingest_events log: that
+        log is the provenance record for the curated corpus, and it is not where one
+        user's filenames belong.
+
+        The counts come from the store rather than from run_ingestion's return value,
+        which reports only what this run added — zero for a reprocess where every
+        file was already indexed.
+        """
+        try:
+            pile_cfg = (
+                RagConfig(**json.loads(session_cfg_path.read_text()))
+                if session_cfg_path.exists()
+                else session_cfg
+            )
+        except Exception:
+            pile_cfg = session_cfg
+
+        await run_ingestion(kb, reset, _DB_DIR, cfg=pile_cfg, db_engine=None)
+
+        vs_type = kb.vs_type or "chromadb"
+        vs = make_vector_store(
+            vs_type=vs_type,
+            db_path=Path(kb.vs_path) if vs_type == "chromadb" else None,
+            embedding_model_name=kb.embedding_model,
+            vs_connection_string=kb.vs_connection_string or "",
+            table_name=f"rag_{kb.id.replace('-', '_')}",
+        )
+        try:
+            chunks = await vs.count()
+            files = len(await vs.get_source_files()) if chunks else 0
+            return chunks, files
+        finally:
+            if vs_type == "pgvector":
+                # Opened purely to read the counts; its asyncpg pool leaks otherwise.
+                await _dispose_vs(vs)
+
+    app.include_router(
+        create_piles_router(
+            db_dir=_DB_DIR,
+            piles_dir=_PILES_DIR,
+            get_active_kb=kb_router.get_active_kb,
+            process_callback=_process_pile,
+            status_factory=lambda: dict(_index_status),
+        )
+    )
+
     # ── Startup: load stats if VS is already populated ────────────────────
     async def _auto_cleanup_loop() -> None:
         while True:
@@ -1029,6 +1085,9 @@ def build_server():
         prompts_dir=_PROMPTS_DIR,
         vector_store_factory=lambda: pool.get_active().vs if pool.get_active() else None,
         vs_by_kb_factory=lambda kb_id: pool.get(kb_id).vs if pool.get(kb_id) else None,
+        pile_store_factory=lambda pile_id, owner_id: open_pile_store(
+            _DB_DIR, pile_id, owner_id, kb_router.get_active_kb
+        ),
         rebuild_callback=rebuild_callback,
         status_factory=lambda: dict(_index_status),
         query_status_factory=lambda: dict(_query_status),

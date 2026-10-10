@@ -145,6 +145,7 @@ export const app = {
         tabProbe: "Retrieval Probe",
         tabBrowser: "Chunk Browser",
         tabAnalytics: "Analytik",
+        tabPiles: "Meine Dokumente",
         tabBatch: "Stapelanalyse",
         // Batch analysis — intro
         batchIntroTitle: "Ein LLM-Aufruf pro Dokument",
@@ -155,6 +156,10 @@ export const app = {
         batchIdFieldLabel: "Dokumente zuordnen über",
         batchIdFieldHintFile: "Dateinamen wie indexiert, z. B. contract-2025-01.pdf",
         batchIdFieldHintDoc: "beim Upload vergebene stabile IDs, z. B. CTR-2025-001",
+        batchSourceLabel: "Dokumente analysieren aus",
+        batchSourceKb: "Aktive Wissensdatenbank",
+        batchSourceNoPiles: "noch kein verarbeiteter Dokumentenstapel — unter Meine Dokumente anlegen",
+        batchIdFieldHintPile: "ein Stapel wird immer über den Dateinamen zugeordnet",
         batchUploadDocs: "docs.txt hochladen",
         batchDocsPlaceholder: "Eine Kennung pro Zeile.\nLeerzeilen und Zeilen mit # werden ignoriert.",
         batchDocsCount: "{{n}} eindeutige Kennungen",
@@ -230,6 +235,36 @@ export const app = {
         browserColChunkIndex: "Index",
         browserEmptyTitle: "Keine Chunks entsprechen den aktuellen Filtern.",
         browserIdleTitle: "Filter hinzufügen und auf Durchsuchen klicken, um indexierte Chunks zu prüfen.",
+    },
+    piles: {
+        introTitle: "Eigene Dokumente",
+        introBody:
+            "Dokumente in einen Stapel hochladen und diesen einmal verarbeiten, um ihn durchsuchbar zu machen. " +
+            "Ein Stapel ist nur in der eigenen Sitzung sichtbar und wird nie in die gemeinsame Wissensdatenbank übernommen. " +
+            "Verarbeitete Stapel lassen sich in der Stapelanalyse als Quelle auswählen.",
+        newPlaceholder: "Name des neuen Stapels…",
+        create: "Erstellen",
+        loading: "Stapel werden geladen…",
+        empty: "Noch keine Stapel. Erstellen Sie einen, um Dokumente hochzuladen.",
+        fileCount: "{{n}} Datei(en)",
+        delete: "Löschen",
+        addFiles: "Dateien hinzufügen",
+        dropHint: "Dateien hierher ziehen oder klicken zum Auswählen",
+        dropNow: "Zum Hochladen ablegen",
+        dropTypes: "pdf · docx · xlsx · md · txt · epub · eml · Bilder",
+        process: "Verarbeiten",
+        noFiles: "Noch keine Dateien in diesem Stapel.",
+        statusDraft: "nicht verarbeitet",
+        statusProcessing: "wird verarbeitet…",
+        statusReady: "bereit",
+        statusStale: "muss neu verarbeitet werden",
+        statusFailed: "fehlgeschlagen",
+        readyHint: "{{chunks}} Chunks aus {{files}} Datei(en) — bereit zur Analyse.",
+        staleHint: "Die Dateien haben sich seit der letzten Verarbeitung geändert. Erneut verarbeiten, um sie einzuschließen.",
+        failedHint: "Verarbeitung fehlgeschlagen ({{error}}). Bitte das Backend-Log prüfen und erneut versuchen.",
+        embeddingDriftHint:
+            "Dieser Stapel wurde mit einem anderen Embedding-Modell verarbeitet als dem aktuell aktiven. " +
+            "Die Stapelanalyse funktioniert weiterhin; für die Suche vorher neu verarbeiten.",
     },
     rag: {
         title: "RAG-Parameter",

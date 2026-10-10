@@ -145,6 +145,7 @@ export const app = {
         tabProbe: "Sonde de retrieval",
         tabBrowser: "Navigateur de chunks",
         tabAnalytics: "Analytique",
+        tabPiles: "Mes documents",
         tabBatch: "Analyse par lot",
         // Batch analysis — intro
         batchIntroTitle: "Un appel au LLM par document",
@@ -155,6 +156,10 @@ export const app = {
         batchIdFieldLabel: "Faire correspondre les documents par",
         batchIdFieldHintFile: "noms de fichiers tels qu'indexés, p. ex. contract-2025-01.pdf",
         batchIdFieldHintDoc: "identifiants stables attribués au téléversement, p. ex. CTR-2025-001",
+        batchSourceLabel: "Analyser les documents depuis",
+        batchSourceKb: "Base de connaissances active",
+        batchSourceNoPiles: "aucun lot de documents traité — créez-en un dans Mes documents",
+        batchIdFieldHintPile: "un lot est toujours identifié par nom de fichier",
         batchUploadDocs: "Téléverser docs.txt",
         batchDocsPlaceholder: "Un identifiant par ligne.\nLes lignes vides et celles commençant par # sont ignorées.",
         batchDocsCount: "{{n}} identifiants uniques",
@@ -230,6 +235,36 @@ export const app = {
         browserColChunkIndex: "Index",
         browserEmptyTitle: "Aucun chunk ne correspond aux filtres actuels.",
         browserIdleTitle: "Ajouter un filtre et cliquer sur Parcourir pour inspecter les chunks indexés.",
+    },
+    piles: {
+        introTitle: "Vos propres documents",
+        introBody:
+            "Téléversez des documents dans un lot, puis traitez-le une fois pour le rendre interrogeable. " +
+            "Un lot reste privé à votre session et n'est jamais intégré à la base de connaissances partagée. " +
+            "Les lots traités peuvent être choisis comme source dans l'Analyse par lot.",
+        newPlaceholder: "Nom du nouveau lot…",
+        create: "Créer",
+        loading: "Chargement des lots…",
+        empty: "Aucun lot pour l'instant. Créez-en un pour téléverser des documents.",
+        fileCount: "{{n}} fichier(s)",
+        delete: "Supprimer",
+        addFiles: "Ajouter des fichiers",
+        dropHint: "Glissez des fichiers ici, ou cliquez pour choisir",
+        dropNow: "Déposez pour téléverser",
+        dropTypes: "pdf · docx · xlsx · md · txt · epub · eml · images",
+        process: "Traiter",
+        noFiles: "Aucun fichier dans ce lot pour l'instant.",
+        statusDraft: "non traité",
+        statusProcessing: "traitement…",
+        statusReady: "prêt",
+        statusStale: "à retraiter",
+        statusFailed: "échec",
+        readyHint: "{{chunks}} chunks issus de {{files}} fichier(s) — prêt à analyser.",
+        staleHint: "Les fichiers ont changé depuis le dernier traitement. Retraitez le lot pour les inclure.",
+        failedHint: "Le traitement a échoué ({{error}}). Consultez le journal du backend, puis réessayez.",
+        embeddingDriftHint:
+            "Ce lot a été traité avec un modèle d'embedding différent de celui actuellement actif. " +
+            "L'analyse par lot fonctionne toujours ; retraitez-le avant de l'utiliser pour la recherche.",
     },
     rag: {
         title: "Paramètres RAG",

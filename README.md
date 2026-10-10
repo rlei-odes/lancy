@@ -26,7 +26,8 @@ retrieval settings, and generation stats — no black box. Investigate your docu
 | **RAG config panel** | Collapsible right-side panel with presets and live parameter tuning |
 | **Retrieval Probe** | Test queries against the retrieval pipeline without the LLM — returns ranked chunks with per-method scores (BM25, semantic, RRF), reranking cut-off visualised, and a lookahead window showing what the RAG discards |
 | **Chunk Browser** | Browse the raw vector store by metadata filter (file, author, document class, and more); paginated server-side so large KBs are never fully loaded; expandable rows render chunk content as markdown |
-| **Batch Analysis** | Ask the same set of questions of many documents at once and get a table back: questions are built as typed rows (text / yes-no / number / choice), from which the prompt and a strict JSON Schema are generated together so they cannot drift apart. Preflight reports model, per-document context budget, and which documents are missing or too large before any LLM call is spent; results stream into a live table and export as CSV or JSON. Same pipeline is scriptable headlessly via `scripts/batch-analyze.py` |
+| **Batch Analysis** | Ask the same set of questions of many documents at once and get a table back: questions are built as typed rows (text / yes-no / number / choice), from which the prompt and a strict JSON Schema are generated together so they cannot drift apart. Preflight reports model, per-document context budget, and which documents are missing or too large before any LLM call is spent; results stream into a live table and export as CSV or JSON. Runs against a knowledge base or against one of your own document piles. Same pipeline is scriptable headlessly via `scripts/batch-analyze.py` |
+| **Document piles** | Upload your own documents without touching the shared corpus. A pile is private to your session, processed on demand into its own vector store, and selectable as the source for Batch Analysis. Embedding, chunking and store backend are inherited from the active KB, so a pile needs no configuration of its own |
 | **KB Analytics** | Pre-computed health dashboard per KB: chunk size distribution, chunks-per-document histogram, stacked ingestion history, and a summary strip with avg / P50 / P95 chunk sizes — zero query-time cost |
 | **Transparent sessions** | Per-conversation config snapshot: KB · LLM · T= · emb: · k= · BM25 · Rerank · HyDE displayed as badges |
 | **Generation stats** | Query duration, tokens/second, and model name shown per response |
@@ -36,7 +37,7 @@ retrieval settings, and generation stats — no black box. Investigate your docu
 | **Multiple LLM backends** | Ollama (local), OpenAI, Anthropic, LiteLLM — switchable at runtime |
 | **Multiple embedding backends** | `local` (SentenceTransformer, fully offline), `ollama`, `litellm`, `custom` |
 | **Multiple vector stores** | ChromaDB (local, zero-config) or pgvector (PostgreSQL) — selectable per KB |
-| **Document formats** | PDF, Markdown, XLSX, EPUB, DOCX |
+| **Document formats** | PDF, Markdown, XLSX, EPUB, DOCX, and email (`.eml`) — an email is indexed as the message plus each attachment, every attachment going through the chunker for its own file type |
 | **Auth** | Three modes: shared password (Mode 1), role-separated passwords (Mode 2), or SSO via OIDC / LDAP / Active Directory (Mode 3) — switchable without code changes |
 | **i18n** | DE / EN / FR / IT |
 
