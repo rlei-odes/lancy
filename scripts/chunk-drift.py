@@ -100,6 +100,24 @@ def find_source(name: str, kb: dict) -> Path | None:
 # ─── Store access ─────────────────────────────────────────────────────────────
 
 
+def require_lancy() -> None:
+    """Fail with the fix rather than a traceback.
+
+    `lancy` is an editable install in the project venv, so running this with the
+    system interpreter raises ModuleNotFoundError several frames deep — which
+    reads like a bug in the script rather than the wrong `python` on the path.
+    """
+    try:
+        import lancy  # noqa: F401
+    except ModuleNotFoundError:
+        sys.exit(
+            f"'lancy' is not importable from {sys.executable}.\n"
+            "This needs the project venv — the same interpreter the backend runs under:\n"
+            "    .venv/bin/python scripts/chunk-drift.py ...\n"
+            "(find it with: head -1 $(which uvicorn)  — or check your start script)"
+        )
+
+
 def open_store(kb: dict) -> Any:
     from lancy.feature0_baseline_rag import make_vector_store
 
@@ -202,6 +220,7 @@ def docling_version() -> str:
 
 
 def mode_kb(args: argparse.Namespace) -> int:
+    require_lancy()
     kb = load_kb(args.kb_id)
     chunks = asyncio.run(read_store(kb))
 
@@ -269,6 +288,7 @@ def mode_kb(args: argparse.Namespace) -> int:
 
 
 def mode_chunk(args: argparse.Namespace) -> int:
+    require_lancy()
     kb = load_kb(args.kb_id)
     paths: list[Path] = []
     for raw in args.paths:
@@ -359,6 +379,7 @@ def mode_compare(args: argparse.Namespace) -> int:
 
 
 def mode_drift(args: argparse.Namespace) -> int:
+    require_lancy()
     kb = load_kb(args.kb_id)
     stored = asyncio.run(read_store(kb))
     if not stored:
