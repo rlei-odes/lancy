@@ -22,6 +22,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Batch analysis question sets can be saved by name, loaded into the editor and deleted. They are stored per session in `user_config.db`.
 
+### Changed — Reference page written for users
+
+- The sidebar Reference explains how Lancy finds and answers, what each retrieval setting does and when to change it, tips for better answers, and the Advanced Features tabs. Administration content is gone from it; the docs and manuals cover that.
+- The user guide covers My Documents and Batch Analysis, including question sets and reruns.
+- The German interface uses Swiss spelling throughout.
+
 ### Fixed — Explorer reads the selected knowledge base
 
 - The chunk browser, its file filter and batch analysis read the knowledge base selected in the sidebar instead of the server-wide active one. A selected knowledge base that is not loaded returns 404 rather than quietly answering from another one.
