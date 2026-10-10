@@ -328,7 +328,13 @@ WantedBy=default.target
 
 ### Frontend
 
-The frontend service runs `next dev` directly. For production deployments, replace `next dev` with `next start` — but run `npm run build` in the `frontend/` directory first and after every update.
+The frontend service runs `next dev` directly. For production deployments, replace `next dev` with `next start` — but build in the `frontend/` directory first, and after every update:
+
+```bash
+npx next build
+```
+
+Use `npx next build`, **not** `npm run build`. The `build` script sets `BUILD_MODE=export`, which produces a static export: `dist/` ends up holding only HTML, with no server build for `next start` to serve, and the API routes, middleware and backend rewrites this deployment relies on are all dropped. `npx next build` leaves `BUILD_MODE` unset, which builds the standalone server instead.
 
 Create `~/.config/systemd/user/lancy-frontend.service`:
 

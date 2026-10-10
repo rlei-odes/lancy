@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Lancy v0.4.1] — 2026-10-10 · rlei-odes
 
+### Added — Backend uptime in the footer
+
+- Elapsed time since the backend started, replacing a start time that read as the current clock.
+
+### Changed — Sidebar and dialog wording
+
+- Retrieval Explorer is now Advanced Features; the Webhooks button is hidden.
+- The re-index confirmation estimates hours rather than minutes.
+
+### Changed — Tooling
+
+- Ruff is configured once at the repository root, at 120 columns.
+- GitHub Actions check both halves: types, tests, lint and build.
+
+### Fixed — Dependency advisories
+
+- `next` 15.5.27, plus patched `brace-expansion`, `sharp` and `source-map-js`.
+
 ### Changed — Tailwind CSS v4
 
 - The frontend moved to Tailwind CSS v4. Configuration is now CSS-first in `globals.css`; `tailwind.config.ts`, `autoprefixer` and `tailwindcss-animate` are gone, replaced by `@tailwindcss/postcss` and `tw-animate-css`. This drops Tailwind v3's build subtree, and with it the unpatchable `braces` advisory it carried.
