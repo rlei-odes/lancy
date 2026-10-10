@@ -85,8 +85,15 @@ class DebugLLM(LLM):
         self._inner = inner
         self.tools = inner.tools
 
-    async def generate(self, conversation: list[LLMMessage]) -> LLMMessage:
-        result = await self._inner.generate(conversation)
+    async def generate(
+        self, conversation: list[LLMMessage], max_tokens: int | None = None
+    ) -> LLMMessage:
+        # Mirrors LLM.generate exactly, including `max_tokens`. This wrapper is
+        # installed unconditionally — debug mode only decides whether it writes a
+        # log entry — so a parameter missing here is a TypeError on a normal query,
+        # not a debug-only problem. Query expansion passes `max_tokens` to cap a
+        # runaway, and that call failed here for four months.
+        result = await self._inner.generate(conversation, max_tokens=max_tokens)
         if _enabled:
             text = " ".join(c.text or "" for c in result.content if c.text)
             _write_entry(conversation, text)
