@@ -71,19 +71,27 @@ jobs:
         uses: actions/cache@v6
         with:
           path: .venv
-          key: venv-${{ runner.os }}-py313-${{ hashFiles('requirements.txt', 'backend/pyproject.toml', 'conversational-toolkit/pyproject.toml') }}
+          # The workflow file is part of the key: changing how the venv is built has
+          # to invalidate it, or a cached environment outlives the fix.
+          key: venv-${{ runner.os }}-py313-${{ hashFiles('requirements.txt', 'backend/pyproject.toml', 'conversational-toolkit/pyproject.toml', '.github/workflows/backend.yml') }}
 
       - name: Create venv
         if: steps.venv.outputs.cache-hit != 'true'
         run: |
           python -m venv .venv
           .venv/bin/pip install --upgrade pip
-          # CPU torch first. requirements.txt leaves torch unpinned (it arrives via
-          # sentence-transformers), so installing it here satisfies that dependency
-          # and keeps pip from resolving the CUDA build with its ~3.4 GB of
-          # nvidia/* and triton wheels, which no runner can use. The deployment
-          # host installs normally and still gets the GPU build.
-          .venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+          # The CPU build of torch, installed before requirements.txt so pip finds the
+          # dependency satisfied and never resolves the CUDA build with its ~3.4 GB of
+          # nvidia/* and triton wheels, which no runner can use. The deployment host
+          # installs normally and still gets the GPU build.
+          #
+          # torchvision has to be named here too, and both have to be pinned.
+          # requirements.txt pulls torchvision in transitively (docling-ibm-models), so
+          # leaving it out means pip takes it from PyPI, built against a different
+          # torch — the extension then fails to register and every import of
+          # transformers dies with "operator torchvision::nms does not exist". The
+          # versions are the pair the deployment runs, just CPU-flavoured.
+          .venv/bin/pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytorch.org/whl/cpu
           .venv/bin/pip install -r requirements.txt
 
       # The editable installs in requirements.txt resolve against the workspace, so
