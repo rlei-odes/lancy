@@ -25,7 +25,6 @@ export const SidebarContent: FunctionComponent<Props> = ({ onChangeConversation 
             <History
                 onClickSettings={() => setState(States.SETTINGS)}
                 onClickHelp={() => setState(States.HELP)}
-                onClickWebhook={() => setState(States.WORKFLOWS)}
                 onChangeConversation={onChangeConversation}
             />
         );

@@ -1,7 +1,7 @@
 import React, { FunctionComponent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
-import { BookOpen, ChevronDown, ChevronRight, FlaskConical, Settings, ShieldCheck, SquarePen, Tag, Trash2, Webhook } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, FlaskConical, Settings, ShieldCheck, SquarePen, Tag, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { SidebarButton } from "@/components/ui/sidebar-button";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -18,12 +18,11 @@ import { Conversation } from "@/services/conversation";
 interface Props {
     onClickSettings: () => void;
     onClickHelp: () => void;
-    onClickWebhook: () => void;
     onChangeConversation?: (conversationId: string) => void;
 }
 
 export const History: FunctionComponent<Props> = (props: Props) => {
-    const { onClickSettings, onClickHelp, onClickWebhook, onChangeConversation } = props;
+    const { onClickSettings, onClickHelp, onChangeConversation } = props;
     const { conversations, changeConversation, createNewConversation, activeConversationId, deleteAllConversations, deleteConversation } = useMessaging();
     const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
     const [pendingGroupIds, setPendingGroupIds] = useState<string[]>([]);
@@ -202,16 +201,6 @@ export const History: FunctionComponent<Props> = (props: Props) => {
                     <div className="flex gap-2 py-1 px-2 mx-2">
                         <div
                             className="flex flex-1 py-2 px-3 border border-border rounded-md justify-center ripple"
-                            onClick={onClickWebhook}
-                        >
-                            <div className="flex text-sm items-center gap-1 text-muted-foreground">
-                                <Webhook className="h-4 w-4" /> {t("workflows.title")}
-                            </div>
-                        </div>
-                    </div>
-                    <div className="flex gap-2 py-1 px-2 mx-2">
-                        <div
-                            className="flex flex-1 py-2 px-3 border border-border rounded-md justify-center ripple"
                             onClick={onClickHelp}
                         >
                             <div className="flex text-sm items-center gap-1 text-muted-foreground">
@@ -233,7 +222,7 @@ export const History: FunctionComponent<Props> = (props: Props) => {
                             className="flex w-full py-2 px-3 border border-border rounded-md justify-center ripple"
                         >
                             <div className="flex text-sm items-center gap-1.5 text-muted-foreground">
-                                <FlaskConical className="h-4 w-4" /> Retrieval Explorer
+                                <FlaskConical className="h-4 w-4" /> Advanced Features
                             </div>
                         </Link>
                     </div>
