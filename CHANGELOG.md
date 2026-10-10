@@ -19,6 +19,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `.eml` files are indexed as the message plus each attachment, every attachment going through the chunker for its own file type — an attached PDF is OCR'd like any other PDF.
 - Attachment chunks carry the email's headers, so a hit inside an attachment can name the message it arrived on. An attachment with no supported chunker is still listed by name in the message chunk.
 
+### Changed — docling 2.112.0 → 2.132.0
+
+- Chunking output changes for effectively every PDF: a 20-document sample came back 20 of 20 altered. Existing stores keep their old chunks, because deduplication skips files already indexed — a re-index with `reset=True` is needed to make a corpus consistent.
+- The new version extracts more accurately (it fixes a case where a line-final word was split into its own table cell) and roughly halves the duplication of cells spanning several columns. Character counts drop on table-heavy documents as a result; that is redundancy removed, not content.
+
+### Fixed — Knowledge-base queries failed while query expansion was on
+
+- `DebugLLM.generate` did not accept the `max_tokens` parameter its base class declares, so every query that reached query expansion raised a `TypeError`. Chat-only queries were unaffected, which made it look intermittent.
+
 ---
 
 ## [Lancy v0.3.11] — 2026-09-10 · rlei-odes

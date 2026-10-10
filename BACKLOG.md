@@ -136,6 +136,39 @@ The metadata schema (title, author, document_id, document_class, etc.) and uploa
 
 ---
 
+### Table Handling Degrades Standards Documents
+
+**Reference example:** `ISOIEC 27001-2013(D).pdf`, Annex A control table (section A.12, "Betriebssicherheit"). The source is a three-column table — control id, control name, measure — with full-width merged rows carrying the section headings (`A.12`, `A.12.1 … Ziel: …`). To see what it chunks into:
+
+```python
+from pathlib import Path
+from lancy.feature0_baseline_rag import load_chunks
+
+cs = load_chunks(include_files=[Path("<path>/ISOIEC 27001-2013(D).pdf")],
+                 pdf_ocr_enabled=True, max_chunk_tokens=2000)
+for c in cs:
+    if "A.12.1.1" in c.content:
+        print(c.title, "\n", c.content)
+```
+
+Three separate defects show up in that one chunk, all in docling's table serialisation rather than in our chunking code. They matter disproportionately because they hit the most authoritative documents in the corpus — ISO, COBIT, Grundschutz are almost entirely tables.
+
+**1. Chunk titles are wrong on table-heavy documents.** The A.12 chunk is titled `## A.11.1 Sicherheitsbereiche`. docling emits section headings *inside* the table rather than as markdown headings, so the header-based splitter in `PDFChunker` never sees `## A.12` and keeps attributing content to the previous heading. This is not cosmetic: `BM25Retriever._searchable_text` includes `chunk.title`, so lexical search matches A.12 content against the wrong section name, and source citations name the wrong control.
+
+**2. Cells spanning multiple columns are duplicated per column.** A merged heading row is emitted once per column it spans. docling 2.132 halved this (5× → 2× on the reference document) but did not remove it. The repeated text burns context budget and inflates BM25 term frequencies.
+
+**3. Cell text truncates at row boundaries.** On the reference document, A.12.3.1 ends at "Sicherheitskopien von Information, Software und" and A.12.4.1 at "Ereignisprotokolle, die Benutzertätigkeiten, Ausnahmen,". The remainder is not in the corpus at all. Likely the same phenomenon as the `MatchingPostProcessor` warning, which reported 18 of 210 cells dropped from a 13×6 grid on this file. Present in 2.112 as well, at different cut points.
+
+**Questions to investigate:**
+- Does docling expose a table export mode that serialises spanned cells once (TableFormer options, or `export_to_markdown` parameters)?
+- Should tables become their own chunk type rather than being flattened into markdown prose?
+- Can the section heading be recovered from the first cell of a full-width row and promoted to a real markdown heading, fixing the title attribution?
+- Is the cell truncation a page-boundary artefact we can detect and report during ingestion, instead of losing content silently?
+
+**Practice note:** docling moves fast and its table handling is actively changing — the 2.112 → 2.132 bump altered chunking for 20 of 20 sampled documents. Take its releases in small steps rather than letting twenty minor versions accumulate, and measure each one against a fixed sample of documents before adopting it: chunk the sample before and after, and compare per-file chunk counts, character totals and per-chunk content hashes. Equal counts are not enough — boundaries move while the count stays the same. A throwaway script for exactly this is in the history at `12d3f30`.
+
+---
+
 ## UI & Settings
 
 ### Reindex Can Silently Drop a KB from the Pool
