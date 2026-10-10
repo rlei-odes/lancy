@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, BigInteger, select, ForeignKey, text
+from sqlalchemy import Column, String, BigInteger, select, ForeignKey
 from sqlalchemy.types import JSON
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import relationship

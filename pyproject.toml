@@ -1,7 +1,9 @@
+# Governs the whole repository, `conversational-toolkit/` included — it is a fork
+# this project owns rather than a tracked upstream, so it carries no config of its own.
 [tool.ruff]
 extend-include = ["*.ipynb"]
 target-version = "py311"
-line-length = 88
+line-length = 120
 
 [tool.ruff.lint]
 extend-select = [
@@ -13,7 +15,10 @@ ignore = [
     "PGH003",   # allow blanket type: ignore comments
     "E402",     # module-level import not at top — intentional: .env loaded before third-party imports
     "PLC0415",  # import not at top-level — intentional lazy imports in async methods
-    "E401",     # multiple imports on one line — handled per-file in conversational-toolkit
+    "E401",     # multiple imports on one line — common in the toolkit's module headers
+    "RUF001",   # ambiguous unicode in strings — ×, – and ² are deliberate in log output
+    "RUF002",   # ambiguous unicode in docstrings — en dash for ranges, e.g. 1–100
+    "RUF003",   # ambiguous unicode in comments — same
 ]
 
 [tool.ruff.lint.per-file-ignores]

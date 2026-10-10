@@ -63,10 +63,17 @@ class RecordingChunker:
         self.calls.append((file_path, kwargs))
         if self.raises is not None:
             raise self.raises
-        return list(self.chunks or [
-            Chunk(title="Clause 1", content="payment terms", mime_type="text/markdown",
-                  metadata={"chapters": ["Clause 1"]}),
-        ])
+        return list(
+            self.chunks
+            or [
+                Chunk(
+                    title="Clause 1",
+                    content="payment terms",
+                    mime_type="text/markdown",
+                    metadata={"chapters": ["Clause 1"]},
+                ),
+            ]
+        )
 
 
 # ─── the message chunk ────────────────────────────────────────────────────────
@@ -111,7 +118,7 @@ def test_a_folded_header_is_unfolded_into_one_line(tmp_path):
     "From: ..." line the content relies on."""
     long_subject = "Contract for review " + "and further discussion " * 6
     chunks = EmailChunker().make_chunks(write_eml(tmp_path, subject=long_subject))
-    subject_lines = [l for l in chunks[0].content.splitlines() if l.startswith("Subject:")]
+    subject_lines = [line for line in chunks[0].content.splitlines() if line.startswith("Subject:")]
     assert len(subject_lines) == 1
     assert "\n" not in chunks[0].metadata["email_subject"]
 
@@ -175,10 +182,7 @@ def test_attachment_chunks_carry_the_envelope_in_their_content(tmp_path):
 def test_every_chunk_of_one_attachment_carries_the_envelope(tmp_path):
     """Retrieval returns chunks one at a time; the message chunk holding the full
     headers may not come with them."""
-    many = [
-        Chunk(title=f"Clause {i}", content=f"clause {i} text", mime_type="text/markdown")
-        for i in range(3)
-    ]
+    many = [Chunk(title=f"Clause {i}", content=f"clause {i} text", mime_type="text/markdown") for i in range(3)]
     path = write_eml(tmp_path, attachments=[("contract.pdf", b"%PDF-fake", "application", "pdf")])
     chunks = EmailChunker({".pdf": RecordingChunker(chunks=many)}).make_chunks(path)
 
@@ -216,10 +220,13 @@ def test_an_attachment_chunk_is_titled_by_its_filename(tmp_path):
 
 
 def test_the_message_chunk_lists_the_attachment_names(tmp_path):
-    path = write_eml(tmp_path, attachments=[
-        ("contract.pdf", b"%PDF-fake", "application", "pdf"),
-        ("prices.xlsx", b"fake-xlsx", "application", "vnd.ms-excel"),
-    ])
+    path = write_eml(
+        tmp_path,
+        attachments=[
+            ("contract.pdf", b"%PDF-fake", "application", "pdf"),
+            ("prices.xlsx", b"fake-xlsx", "application", "vnd.ms-excel"),
+        ],
+    )
     chunks = EmailChunker({".pdf": RecordingChunker()}).make_chunks(path)
     assert "Attachments: contract.pdf, prices.xlsx" in chunks[0].content
 
@@ -234,21 +241,28 @@ def test_an_unsupported_attachment_is_still_findable_by_name(tmp_path):
 
 
 def test_a_failing_attachment_does_not_cost_the_message_or_its_siblings(tmp_path):
-    path = write_eml(tmp_path, attachments=[
-        ("broken.pdf", b"not really a pdf", "application", "pdf"),
-        ("notes.md", b"# notes", "text", "markdown"),
-    ])
-    chunker = EmailChunker({
-        ".pdf": RecordingChunker(raises=RuntimeError("docling exploded")),
-        ".md": RecordingChunker(chunks=[
-            Chunk(title="notes", content="# notes", mime_type="text/markdown"),
-        ]),
-    })
+    path = write_eml(
+        tmp_path,
+        attachments=[
+            ("broken.pdf", b"not really a pdf", "application", "pdf"),
+            ("notes.md", b"# notes", "text", "markdown"),
+        ],
+    )
+    chunker = EmailChunker(
+        {
+            ".pdf": RecordingChunker(raises=RuntimeError("docling exploded")),
+            ".md": RecordingChunker(
+                chunks=[
+                    Chunk(title="notes", content="# notes", mime_type="text/markdown"),
+                ]
+            ),
+        }
+    )
 
     chunks = chunker.make_chunks(path)
 
-    assert chunks[0].metadata["email_part"] == "message"          # message survived
-    assert len(chunks) == 2                                        # sibling survived
+    assert chunks[0].metadata["email_part"] == "message"  # message survived
+    assert len(chunks) == 2  # sibling survived
     assert chunks[1].content.endswith("# notes")
     assert chunks[1].metadata["email_attachment"] == "notes.md"
     assert "Attachments: broken.pdf, notes.md" in chunks[0].content

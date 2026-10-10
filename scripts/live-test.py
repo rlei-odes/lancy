@@ -71,9 +71,7 @@ class Report:
         self.sections: list[str] = []
 
     def check(self, status: str, name: str, detail: str = "", *, gating: bool = True) -> bool:
-        self.checks.append(
-            {"status": status, "name": name, "detail": detail, "gating": gating}
-        )
+        self.checks.append({"status": status, "name": name, "detail": detail, "gating": gating})
         icon = {PASS: "  ok  ", FAIL: " FAIL ", WARN: " warn ", INFO: "  ..  "}[status]
         print(f"[{icon}] {name}" + (f" — {detail}" if detail else ""), flush=True)
         return status != FAIL
@@ -160,14 +158,10 @@ class Lancy:
         self.http = httpx.Client(timeout=timeout, follow_redirects=False)
 
     def get(self, path: str, *, anon: bool = False, **kw) -> httpx.Response:
-        return self.http.get(
-            f"{self.base}{path}", headers={} if anon else self.auth, **kw
-        )
+        return self.http.get(f"{self.base}{path}", headers={} if anon else self.auth, **kw)
 
     def post(self, path: str, *, anon: bool = False, **kw) -> httpx.Response:
-        return self.http.post(
-            f"{self.base}{path}", headers={} if anon else self.auth, **kw
-        )
+        return self.http.post(f"{self.base}{path}", headers={} if anon else self.auth, **kw)
 
     def delete(self, path: str, **kw) -> httpx.Response:
         return self.http.delete(f"{self.base}{path}", headers=self.auth, **kw)
@@ -234,11 +228,7 @@ def check_auth_boundary(api: Lancy, rep: Report) -> None:
     )
 
     body = api.get("/api/v1/kb").text
-    leaked = [
-        m
-        for m in ("postgresql://", "postgres://")
-        if m in body and "***" not in body.split(m, 1)[1][:120]
-    ]
+    leaked = [m for m in ("postgresql://", "postgres://") if m in body and "***" not in body.split(m, 1)[1][:120]]
     rep.expect(
         "KB API masks stored credentials",
         not leaked,
@@ -253,9 +243,15 @@ def kb_payload(active: dict, name: str, vs_type: str, conn: str = "") -> dict:
     activating this KB raises EmbeddingConflict and would evict the real one.
     """
     inherit = (
-        "embedding_backend", "embedding_model", "embedding_ollama_host",
-        "embedding_custom_base_url", "nomic_prefix", "max_file_size_mb",
-        "embedding_batch_size", "pdf_ocr_enabled", "max_chunk_tokens",
+        "embedding_backend",
+        "embedding_model",
+        "embedding_ollama_host",
+        "embedding_custom_base_url",
+        "nomic_prefix",
+        "max_file_size_mb",
+        "embedding_batch_size",
+        "pdf_ocr_enabled",
+        "max_chunk_tokens",
     )
     payload = {k: active[k] for k in inherit if k in active}
     payload.update({"name": name, "vs_type": vs_type, "vs_connection_string": conn})
@@ -278,7 +274,8 @@ def wait_for_ingestion(api: Lancy, rep: Report, expected: list[str], timeout: fl
             seen = set(data.get("file_list", []))
             if seen >= set(expected):
                 rep.check(
-                    INFO, "ingestion finished",
+                    INFO,
+                    "ingestion finished",
                     f"{data.get('chunks', 0)} chunks from {data.get('files', 0)} files",
                 )
                 return True
@@ -313,11 +310,7 @@ def grade(answer: str, sources: list[str], spec: dict) -> list[str]:
 def parse_answer(payload: dict) -> tuple[str, list[str]]:
     content = payload["choices"][0]["message"]["content"]
     body, _, tail = content.partition("**Sources:**")
-    sources = [
-        line.lstrip("- ").strip()
-        for line in tail.splitlines()
-        if line.strip().startswith("-")
-    ]
+    sources = [line.lstrip("- ").strip() for line in tail.splitlines() if line.strip().startswith("-")]
     return body.strip(), sources
 
 
@@ -331,9 +324,7 @@ def run_questions(api: Lancy, rep: Report, model: str, store: str, qs: list[dict
             continue
         latency = time.time() - started
 
-        if not rep.expect(
-            f"{store}: {spec['id']} answered", r.status_code == 200, f"HTTP {r.status_code}"
-        ):
+        if not rep.expect(f"{store}: {spec['id']} answered", r.status_code == 200, f"HTTP {r.status_code}"):
             continue
         answer, sources = parse_answer(r.json())
         rep.expect(f"{store}: {spec['id']} is not empty", bool(answer.strip()))
@@ -346,9 +337,14 @@ def run_questions(api: Lancy, rep: Report, model: str, store: str, qs: list[dict
         )
         rep.answers.append(
             {
-                "id": spec["id"], "store": store, "question": spec["question"],
-                "why": spec.get("why", ""), "answer": answer, "sources": sources,
-                "latency": latency, "misses": misses,
+                "id": spec["id"],
+                "store": store,
+                "question": spec["question"],
+                "why": spec.get("why", ""),
+                "answer": answer,
+                "sources": sources,
+                "latency": latency,
+                "misses": misses,
             }
         )
 
@@ -357,28 +353,30 @@ def run_probes(api: Lancy, rep: Report, model: str, store: str, probes: list[dic
     """filters and expand_context — the Lancy extensions to the OpenAI schema."""
     for spec in probes:
         extra = (
-            {"expand_context": spec["documents"]}
-            if spec["mode"] == "expand_context"
-            else {"filters": spec["filters"]}
+            {"expand_context": spec["documents"]} if spec["mode"] == "expand_context" else {"filters": spec["filters"]}
         )
         started = time.time()
         r = api.ask(spec["question"], model, **extra)
         latency = time.time() - started
-        if not rep.expect(
-            f"{store}: {spec['id']} accepted", r.status_code == 200, f"HTTP {r.status_code}"
-        ):
+        if not rep.expect(f"{store}: {spec['id']} accepted", r.status_code == 200, f"HTTP {r.status_code}"):
             continue
         answer, sources = parse_answer(r.json())
         misses = grade(answer, sources, spec)
         rep.note(
-            f"{store}: {spec['id']} content", not misses,
+            f"{store}: {spec['id']} content",
+            not misses,
             "; ".join(misses) if misses else f"{len(sources)} sources, {latency:.1f}s",
         )
         rep.answers.append(
             {
-                "id": spec["id"], "store": store, "question": spec["question"],
-                "why": spec.get("why", ""), "answer": answer, "sources": sources,
-                "latency": latency, "misses": misses,
+                "id": spec["id"],
+                "store": store,
+                "question": spec["question"],
+                "why": spec.get("why", ""),
+                "answer": answer,
+                "sources": sources,
+                "latency": latency,
+                "misses": misses,
             }
         )
 
@@ -418,9 +416,7 @@ def check_settings(api: Lancy, rep: Report, store: str, questions: list[dict]) -
 
     for label, opts in RETRIEVE_VARIANTS:
         r = api.post("/api/v1/rag/retrieve", json={"query": probe_q, **opts})
-        if not rep.expect(
-            f"{store}: retrieve [{label}]", r.status_code == 200, f"HTTP {r.status_code}"
-        ):
+        if not rep.expect(f"{store}: retrieve [{label}]", r.status_code == 200, f"HTTP {r.status_code}"):
             continue
         data = r.json()
         chunks = data.get("chunks", [])
@@ -434,20 +430,24 @@ def check_settings(api: Lancy, rep: Report, store: str, questions: list[dict]) -
             rep.expect(f"{store}: [{label}] bm25 scored the results", has_bm25)
         else:
             rep.expect(
-                f"{store}: [{label}] bm25 is genuinely off", not has_bm25,
+                f"{store}: [{label}] bm25 is genuinely off",
+                not has_bm25,
                 "bm25_score present despite bm25_enabled=false" if has_bm25 else "",
             )
 
         if opts["reranking_enabled"]:
             rep.expect(
-                f"{store}: [{label}] reranking ran", has_rerank and not data.get("reranking_skipped"),
+                f"{store}: [{label}] reranking ran",
+                has_rerank and not data.get("reranking_skipped"),
                 f"skipped={data.get('reranking_skipped')}, pre_rerank_rank present={has_rerank}",
             )
             moved = [c for c in chunks if c["scores"].get("pre_rerank_rank") != c["final_rank"]]
             rep.note(
-                f"{store}: [{label}] reranking reordered results", bool(moved),
+                f"{store}: [{label}] reranking reordered results",
+                bool(moved),
                 f"{len(moved)}/{len(chunks)} chunks moved"
-                if moved else "order identical to pre-rerank — reranker had no effect here",
+                if moved
+                else "order identical to pre-rerank — reranker had no effect here",
             )
 
         ids = [c["id"] for c in chunks]
@@ -514,9 +514,7 @@ def check_session_settings(api: Lancy, rep: Report, store: str, model: str, ques
             return False
         time.sleep(4)  # the agent rebuild runs as a background task
         got = api.get("/api/v1/rag/config")
-        return got.status_code == 200 and all(
-            got.json().get(k) == v for k, v in overrides.items()
-        )
+        return got.status_code == 200 and all(got.json().get(k) == v for k, v in overrides.items())
 
     variants = [
         ("baseline", {"hyde_enabled": False, "query_expansion": 0}),
@@ -532,9 +530,7 @@ def check_session_settings(api: Lancy, rep: Report, store: str, model: str, ques
                 fail_detail="config did not round-trip through the API",
             )
             r = api.ask(question, model)
-            if not rep.expect(
-                f"{store}: {label} query answered", r.status_code == 200, f"HTTP {r.status_code}"
-            ):
+            if not rep.expect(f"{store}: {label} query answered", r.status_code == 200, f"HTTP {r.status_code}"):
                 continue
             _, sources = parse_answer(r.json())
             observed.append((label, sources))
@@ -554,10 +550,7 @@ def check_session_settings(api: Lancy, rep: Report, store: str, model: str, ques
             "",
             "| Setting | Sources cited |",
             "|---|---|",
-        ] + [
-            f"| {label} | {', '.join(s) if s else 'none'} |".replace("|", "\\|", 0)
-            for label, s in observed
-        ]
+        ] + [f"| {label} | {', '.join(s) if s else 'none'} |".replace("|", "\\|", 0) for label, s in observed]
 
 
 # Chunking thresholds. Deliberately crude — a starting point to expand, not a
@@ -587,9 +580,7 @@ def check_chunking(api: Lancy, rep: Report, store: str, uploaded: list[str]) -> 
 
     by_file: dict[str, list[int]] = {}
     for c in chunks:
-        by_file.setdefault(c.get("metadata", {}).get("source_file", "?"), []).append(
-            len(c.get("content", ""))
-        )
+        by_file.setdefault(c.get("metadata", {}).get("source_file", "?"), []).append(len(c.get("content", "")))
 
     # Every uploaded file must have produced something. A file that ingests to
     # zero chunks is invisible to retrieval while looking successfully indexed.
@@ -606,14 +597,16 @@ def check_chunking(api: Lancy, rep: Report, store: str, uploaded: list[str]) -> 
     tiny = [n for sizes in by_file.values() for n in sizes if n < TINY_CHUNK_CHARS]
     ratio = len(tiny) / len(chunks)
     rep.note(
-        f"{store}: few undersized chunks", ratio <= TINY_CHUNK_RATIO,
+        f"{store}: few undersized chunks",
+        ratio <= TINY_CHUNK_RATIO,
         f"{len(tiny)}/{len(chunks)} ({ratio:.0%}) under {TINY_CHUNK_CHARS} chars",
     )
 
     texts = [c.get("content", "").strip() for c in chunks]
     dupes = len(texts) - len(set(texts))
     rep.note(
-        f"{store}: few duplicate chunks", dupes / len(chunks) <= DUPLICATE_RATIO,
+        f"{store}: few duplicate chunks",
+        dupes / len(chunks) <= DUPLICATE_RATIO,
         f"{dupes}/{len(chunks)} duplicates",
     )
 
@@ -622,9 +615,7 @@ def check_chunking(api: Lancy, rep: Report, store: str, uploaded: list[str]) -> 
         sizes = sorted(by_file[f])
         median = sizes[len(sizes) // 2]
         small = sum(1 for n in sizes if n < TINY_CHUNK_CHARS)
-        rows.append(
-            f"| {f} | {len(sizes)} | {min(sizes)} | {median} | {max(sizes)} | {small} |"
-        )
+        rows.append(f"| {f} | {len(sizes)} | {min(sizes)} | {median} | {max(sizes)} | {small} |")
 
     rep.sections += [
         "",
@@ -636,7 +627,8 @@ def check_chunking(api: Lancy, rep: Report, store: str, uploaded: list[str]) -> 
         "",
         "| File | Chunks | Min | Median | Max | < 100 chars |",
         "|---|---|---|---|---|---|",
-    ] + rows
+        *rows,
+    ]
 
 
 def exercise_store(
@@ -650,7 +642,9 @@ def exercise_store(
     if not rep.expect(
         f"{store}: KB created",
         created.status_code == 200,
-        f"HTTP {created.status_code}" if created.status_code == 200 else f"HTTP {created.status_code} {created.text[:200]}",
+        f"HTTP {created.status_code}"
+        if created.status_code == 200
+        else f"HTTP {created.status_code} {created.text[:200]}",
     ):
         return None
     kb_id = created.json()["id"]
@@ -681,11 +675,7 @@ def exercise_store(
             r = api.post(
                 f"/api/v1/kb/{kb_id}/documents",
                 files={"file": (path.name, fh, "application/octet-stream")},
-                data={
-                    "metadata": json.dumps(
-                        {"document_id": f"livetest-{path.stem}", "livetest_group": doc["group"]}
-                    )
-                },
+                data={"metadata": json.dumps({"document_id": f"livetest-{path.stem}", "livetest_group": doc["group"]})},
             )
         if rep.expect(f"{store}: uploaded {doc['file']}", r.status_code == 200, f"HTTP {r.status_code}"):
             uploaded.append(path.name)
@@ -706,7 +696,8 @@ def exercise_store(
 
     unknown = api.ask("hello", f"{TEST_KB_PREFIX}does-not-exist")
     rep.expect(
-        f"{store}: unloaded KB is refused", unknown.status_code == 404,
+        f"{store}: unloaded KB is refused",
+        unknown.status_code == 404,
         f"HTTP {unknown.status_code} (expected 404)",
     )
     return kb_id
@@ -757,21 +748,21 @@ def main() -> int:
                 rep.check(WARN, f"{store}: skipped", "no connection_string configured", gating=False)
                 continue
             print(f"\n─── {store} ─────────────────────────────────────────────")
-            kb_id = exercise_store(
-                api, rep, cfg, active, store, opts.get("connection_string", ""), questions
-            )
+            kb_id = exercise_store(api, rep, cfg, active, store, opts.get("connection_string", ""), questions)
             if kb_id:
                 created.append(kb_id)
     except KeyboardInterrupt:
         rep.check(FAIL, "run completed", "interrupted")
-    except Exception as exc:  # noqa: BLE001 — the report must survive any failure
+    # Deliberately broad: the report must survive any failure.
+    except Exception as exc:
         rep.check(FAIL, "run completed", f"{type(exc).__name__}: {exc}")
     finally:
         print("\n─── cleanup ─────────────────────────────────────────────────")
         if original_active:
             r = api.post(f"/api/v1/kb/{original_active}/activate")
             rep.expect(
-                f"restored active KB to {original_active}", r.status_code == 200,
+                f"restored active KB to {original_active}",
+                r.status_code == 200,
                 f"HTTP {r.status_code}",
             )
         if args.keep or cfg.get("keep_test_kbs"):

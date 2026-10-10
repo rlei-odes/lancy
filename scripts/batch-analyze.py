@@ -129,8 +129,10 @@ def login(session: requests.Session, frontend: str, password: str, admin_escape:
         if r.status_code == 400 and "sername" in r.text:
             # Mode 3 (LDAP): the login route only falls through to the password
             # branch when adminEscape is set.
-            hint = ("\n  This deployment uses LDAP login. To use the APP_PASSWORD or\n"
-                    "  ADMIN_PASSWORD instead, set LANCY_ADMIN=1 for the admin escape hatch.")
+            hint = (
+                "\n  This deployment uses LDAP login. To use the APP_PASSWORD or\n"
+                "  ADMIN_PASSWORD instead, set LANCY_ADMIN=1 for the admin escape hatch."
+            )
         sys.exit(f"Login failed ({r.status_code}): {r.text.strip()}{hint}")
     role = r.json().get("role", "?")
     print(f"  logged in as role={role}")
@@ -190,8 +192,7 @@ def validate_schema(schema: dict) -> tuple[list[str], list[str]]:
     missing = [k for k in props if k not in required]
     if missing:
         warnings.append(
-            "not in 'required': " + ", ".join(missing)
-            + " - OpenAI-compatible backends reject this under strict mode"
+            "not in 'required': " + ", ".join(missing) + " - OpenAI-compatible backends reject this under strict mode"
         )
     return errors, warnings
 
@@ -237,8 +238,13 @@ def load_processed(output: Path) -> set[str]:
 
 
 def analyze_one(
-    session: requests.Session, frontend: str, id_field: str, ident: str,
-    prompt: str, schema: dict, kb_id: str | None,
+    session: requests.Session,
+    frontend: str,
+    id_field: str,
+    ident: str,
+    prompt: str,
+    schema: dict,
+    kb_id: str | None,
 ) -> dict:
     body: dict = {id_field: ident, "prompt": prompt, "response_schema": schema}
     if kb_id:
@@ -275,28 +281,28 @@ def analyze_one(
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Batch-analyze documents in a Lancy KB.")
-    ap.add_argument("--frontend", default=os.getenv("LANCY_FRONTEND", "http://localhost:3000"),
-                    help="Frontend base URL (default: http://localhost:3000).")
-    ap.add_argument("--files", required=True, type=Path,
-                    help="Path to a text file listing one identifier per line.")
-    ap.add_argument("--prompt", required=True, type=Path,
-                    help="Path to a text file with the analysis prompt.")
-    ap.add_argument("--schema", required=True, type=Path,
-                    help="Path to a JSON Schema file for the LLM output.")
-    ap.add_argument("--output", required=True, type=Path,
-                    help="CSV output path. Appended row-by-row; safe to resume.")
-    ap.add_argument("--id-field", choices=["source_file", "document_id"], default="source_file",
-                    help="How to interpret entries in --files (default: source_file).")
-    ap.add_argument("--kb", default=None,
-                    help="KB id to target. Defaults to the currently active KB.")
-    ap.add_argument("--password", default=None,
-                    help="Login password. Falls back to $LANCY_PASSWORD, then interactive prompt.")
-    ap.add_argument("--force", action="store_true",
-                    help="Re-analyze ids already present in the output CSV.")
-    ap.add_argument("--interactive", action="store_true",
-                    help="Pause for confirmation between preflight checks.")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="Run the preflight checks and exit without analyzing.")
+    ap.add_argument(
+        "--frontend",
+        default=os.getenv("LANCY_FRONTEND", "http://localhost:3000"),
+        help="Frontend base URL (default: http://localhost:3000).",
+    )
+    ap.add_argument("--files", required=True, type=Path, help="Path to a text file listing one identifier per line.")
+    ap.add_argument("--prompt", required=True, type=Path, help="Path to a text file with the analysis prompt.")
+    ap.add_argument("--schema", required=True, type=Path, help="Path to a JSON Schema file for the LLM output.")
+    ap.add_argument("--output", required=True, type=Path, help="CSV output path. Appended row-by-row; safe to resume.")
+    ap.add_argument(
+        "--id-field",
+        choices=["source_file", "document_id"],
+        default="source_file",
+        help="How to interpret entries in --files (default: source_file).",
+    )
+    ap.add_argument("--kb", default=None, help="KB id to target. Defaults to the currently active KB.")
+    ap.add_argument(
+        "--password", default=None, help="Login password. Falls back to $LANCY_PASSWORD, then interactive prompt."
+    )
+    ap.add_argument("--force", action="store_true", help="Re-analyze ids already present in the output CSV.")
+    ap.add_argument("--interactive", action="store_true", help="Pause for confirmation between preflight checks.")
+    ap.add_argument("--dry-run", action="store_true", help="Run the preflight checks and exit without analyzing.")
     args = ap.parse_args()
 
     frontend = args.frontend.rstrip("/")
@@ -325,7 +331,7 @@ def main() -> None:
 
     fields = list(schema.get("properties", {}).keys())
     print(f"  prompt: {len(prompt)} chars, schema: {len(fields)} fields ({', '.join(fields)})")
-    columns = ["_id", "_status", "_chunk_count", "_char_count"] + fields
+    columns = ["_id", "_status", "_chunk_count", "_char_count", *fields]
 
     # ── 2. Duplicates ────────────────────────────────────────────────────────
     confirm("scan the identifier list for duplicates", args.interactive)
@@ -333,7 +339,7 @@ def main() -> None:
     ids, duplicates = read_id_list(args.files)
     if duplicates:
         print(f"  {len(ids)} unique identifiers, {duplicates} duplicate line(s) dropped")
-        print(f"  (each duplicate would have been a redundant LLM call)")
+        print("  (each duplicate would have been a redundant LLM call)")
     else:
         print(f"  {len(ids)} unique identifiers, no duplicates")
 
@@ -400,7 +406,13 @@ def main() -> None:
         for i, ident in enumerate(todo, 1):
             t0 = time.monotonic()
             row = analyze_one(
-                session, args.frontend.rstrip("/"), args.id_field, ident, prompt, schema, args.kb,
+                session,
+                args.frontend.rstrip("/"),
+                args.id_field,
+                ident,
+                prompt,
+                schema,
+                args.kb,
             )
             row["_id"] = ident
             writer.writerow(row)
