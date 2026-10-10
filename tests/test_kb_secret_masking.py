@@ -154,9 +154,7 @@ def test_clearing_a_secret_still_clears_it():
     stored = kb()
 
     result = _unmask(
-        echo(_redact(stored)).model_copy(
-            update={"vs_connection_string": "", "embedding_custom_api_key": ""}
-        ),
+        echo(_redact(stored)).model_copy(update={"vs_connection_string": "", "embedding_custom_api_key": ""}),
         stored,
     )
 

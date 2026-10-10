@@ -121,10 +121,7 @@ def _unmask(cfg: KBCreate, existing: KBInfo) -> KBCreate:
     back means "unchanged" — writing it through would destroy the credential.
     """
     out = cfg.model_copy()
-    if (
-        existing.vs_connection_string
-        and out.vs_connection_string == safe_conn_str(existing.vs_connection_string)
-    ):
+    if existing.vs_connection_string and out.vs_connection_string == safe_conn_str(existing.vs_connection_string):
         out.vs_connection_string = existing.vs_connection_string
     if out.embedding_custom_api_key == _API_KEY_MASK:
         out.embedding_custom_api_key = existing.embedding_custom_api_key
@@ -164,9 +161,7 @@ def _name_taken(name: str, reg: KBRegistry, ignore: str | None = None) -> bool:
     identical in the KB dropdown, which renders the name.
     """
     key = _name_key(name)
-    return any(
-        kb_id != ignore and _name_key(kb.name) == key for kb_id, kb in reg.bases.items()
-    )
+    return any(kb_id != ignore and _name_key(kb.name) == key for kb_id, kb in reg.bases.items())
 
 
 # ─── Router factory ───────────────────────────────────────────────────────────
@@ -386,14 +381,10 @@ def create_kb_router(
                 return FileResponse(
                     str(candidate),
                     filename=candidate.name,
-                    headers={
-                        "Content-Disposition": f'inline; filename="{candidate.name}"'
-                    },
+                    headers={"Content-Disposition": f'inline; filename="{candidate.name}"'},
                 )
 
-        raise HTTPException(
-            404, f"File '{filename}' not found in any configured data directory"
-        )
+        raise HTTPException(404, f"File '{filename}' not found in any configured data directory")
 
     @router.post("/kb/{kb_id}/documents")
     async def upload_document(

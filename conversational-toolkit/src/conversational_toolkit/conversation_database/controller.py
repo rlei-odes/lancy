@@ -49,7 +49,9 @@ class MessageInput(BaseModel):
     kb_name: str | None = None
     filters: list[MessageFilter] | None = None  # applied only on the first message of a conversation
     chat_only: bool = False  # per-message flag: skip retrieval, answer from history + general knowledge
-    expand_context: list[str] | None = None  # per-message list of source_files: use ALL their chunks instead of retrieval
+    expand_context: list[str] | None = (
+        None  # per-message list of source_files: use ALL their chunks instead of retrieval
+    )
 
 
 def _filters_to_dict(filters: list[MessageFilter] | list[dict] | None) -> dict[str, Any] | None:
@@ -448,7 +450,9 @@ class ConversationalToolkitController:
                     (m.get("tokens_per_second") for m in reversed(_meta) if m.get("tokens_per_second")), None
                 ),
                 llm_model=next((m.get("model") for m in reversed(_meta) if m.get("model")), None),
-                retrieval_stats=next((m.get("retrieval_stats") for m in reversed(_meta) if m.get("retrieval_stats")), None),
+                retrieval_stats=next(
+                    (m.get("retrieval_stats") for m in reversed(_meta) if m.get("retrieval_stats")), None
+                ),
             )
 
             api_messages.append(api_message)

@@ -39,7 +39,7 @@ def _extract_ranking(text: str) -> list[int]:
         raise ValueError('no "ranking" list in response')
 
     depth, digits, found = 0, "", []
-    for char in text[match.end() - 1:]:
+    for char in text[match.end() - 1 :]:
         if char == "[":
             depth += 1
             continue
@@ -103,9 +103,7 @@ class RerankingRetriever(Retriever[ChunkMatch]):
         and capped at the base retriever's `top_k` so the prompt does not grow
         with the number of variants.
         """
-        per_query = await asyncio.gather(
-            *[self.retriever.retrieve(q, filters=filters) for q in queries]
-        )
+        per_query = await asyncio.gather(*[self.retriever.retrieve(q, filters=filters) for q in queries])
         candidates = reciprocal_rank_fusion(list(per_query))[: self.retriever.top_k]
         return await self._rerank(rank_query, candidates)
 
@@ -198,7 +196,7 @@ class RerankingRetriever(Retriever[ChunkMatch]):
             seen = set(ranking)
             ranking += [i for i in range(len(candidates)) if i not in seen]
             self._last_rerank_fallback = False
-            logger.info(f"RerankingRetriever: reranked {len(candidates)} candidates → {ranking[:self.top_k]}")
+            logger.info(f"RerankingRetriever: reranked {len(candidates)} candidates → {ranking[: self.top_k]}")
             return ranking
         except Exception as exc:
             self._last_rerank_fallback = True

@@ -136,8 +136,7 @@ def create_openai_compat_router(agent) -> APIRouter:
                 content={
                     "error": {
                         "message": (
-                            f"Model '{req.model}' is not available. "
-                            f"Call GET /v1/models for the loaded knowledge bases."
+                            f"Model '{req.model}' is not available. Call GET /v1/models for the loaded knowledge bases."
                         ),
                         "type": "invalid_request_error",
                         "param": "model",

@@ -52,9 +52,7 @@ class EmailChunker(Chunker):
         # otherwise recurse as deep as the nesting goes. Such an attachment is
         # skipped with a warning, and its filename still appears in the message
         # chunk's attachment list.
-        self.attachment_chunkers = {
-            ext: c for ext, c in (attachment_chunkers or {}).items() if ext != ".eml"
-        }
+        self.attachment_chunkers = {ext: c for ext, c in (attachment_chunkers or {}).items() if ext != ".eml"}
         self.image_extensions = set(image_extensions)
 
     # ── Parsing ───────────────────────────────────────────────────────────────
@@ -120,16 +118,11 @@ class EmailChunker(Chunker):
     def _email_metadata(self, msg: EmailMessage) -> dict[str, Any]:
         """Headers stamped on every chunk this email produces, attachments included,
         so a hit inside an attachment can still name the message it arrived on."""
-        meta = {
-            f"email_{name.lower()}": self._header(msg, name)
-            for name in _HEADERS
-        }
+        meta = {f"email_{name.lower()}": self._header(msg, name) for name in _HEADERS}
         meta["email_message_id"] = self._header(msg, "Message-ID")
         return {k: v for k, v in meta.items() if v}
 
-    def _message_chunk(
-        self, msg: EmailMessage, attachment_names: list[str]
-    ) -> Chunk:
+    def _message_chunk(self, msg: EmailMessage, attachment_names: list[str]) -> Chunk:
         lines = [f"{name}: {self._header(msg, name)}" for name in _HEADERS if self._header(msg, name)]
         if attachment_names:
             # Listed in the body so an attachment is findable by name even when its
@@ -183,9 +176,7 @@ class EmailChunker(Chunker):
 
             if ext in self.attachment_chunkers:
                 chunks.extend(
-                    self._chunk_attachment(
-                        filename, ext, payload, email_meta, write_images, image_path, do_ocr
-                    )
+                    self._chunk_attachment(filename, ext, payload, email_meta, write_images, image_path, do_ocr)
                 )
             elif ext in self.image_extensions:
                 if write_images:
@@ -199,9 +190,7 @@ class EmailChunker(Chunker):
                         )
                     )
             else:
-                logger.warning(
-                    f"Attachment {filename!r}: unsupported type {ext!r}, indexed by name only"
-                )
+                logger.warning(f"Attachment {filename!r}: unsupported type {ext!r}, indexed by name only")
 
         return chunks, names
 
@@ -230,9 +219,7 @@ class EmailChunker(Chunker):
             produced = self.attachment_chunkers[ext].make_chunks(str(tmp), **kwargs)
         except Exception as exc:
             # One bad attachment must not cost the message or its siblings.
-            logger.warning(
-                f"Attachment {filename!r}: chunking failed ({type(exc).__name__}: {exc})"
-            )
+            logger.warning(f"Attachment {filename!r}: chunking failed ({type(exc).__name__}: {exc})")
             return []
         finally:
             tmp.unlink(missing_ok=True)

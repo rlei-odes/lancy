@@ -63,7 +63,7 @@ class RAG(Agent):
         # Required for expand_context mode: fetches all chunks matching the picked source_files.
         self.vector_store = vector_store
 
-    async def answer_stream(  # noqa: PLR0912, PLR0915
+    async def answer_stream(
         self,
         query_with_context: QueryWithContext,
         phase_callback: Callable[[str], None] | None = None,
@@ -144,9 +144,12 @@ class RAG(Agent):
             )
             logger.info(f"Retrieval: {len(sources)} chunk(s) to LLM")
 
-        context_message = LLMMessage(role=Roles.USER, content=[
-            MessageContent(type="text", text="<sources>"),
-        ])
+        context_message = LLMMessage(
+            role=Roles.USER,
+            content=[
+                MessageContent(type="text", text="<sources>"),
+            ],
+        )
 
         for source in sources:
             if "text" in source.mime_type:
@@ -158,18 +161,19 @@ class RAG(Agent):
                 )
             elif "image" in source.mime_type:
                 context_message.content.append(
-                    MessageContent(type="text", text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}" type="image">')
+                    MessageContent(
+                        type="text",
+                        text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}" type="image">',
+                    )
                 )
-                context_message.content.append(
-                    MessageContent(type="image", image_url=source.content)
-                )
-                context_message.content.append(
-                    MessageContent(type="text", text="</source>")
-                )
+                context_message.content.append(MessageContent(type="image", image_url=source.content))
+                context_message.content.append(MessageContent(type="text", text="</source>"))
             else:
                 raise ValueError(f"Unsupported MIME type: {source.mime_type}")
 
-        context_message.content.append(MessageContent(type="text", text=f"</sources>\n<user_question>\n{query}\n</user_question>"))
+        context_message.content.append(
+            MessageContent(type="text", text=f"</sources>\n<user_question>\n{query}\n</user_question>")
+        )
 
         response_stream = self.llm.generate_stream(
             [
@@ -237,9 +241,12 @@ class RAG(Agent):
 
         system_prompt = self.expand_context_system_prompt or self.system_prompt
 
-        context_message = LLMMessage(role=Roles.USER, content=[
-            MessageContent(type="text", text="<sources>"),
-        ])
+        context_message = LLMMessage(
+            role=Roles.USER,
+            content=[
+                MessageContent(type="text", text="<sources>"),
+            ],
+        )
         for source in sources:
             if "text" in source.mime_type:
                 context_message.content.append(
@@ -252,17 +259,18 @@ class RAG(Agent):
                 # Images normally live in a separate vector store, so this branch is unlikely,
                 # but if a picked source_file happens to be image-typed, emit it consistently.
                 context_message.content.append(
-                    MessageContent(type="text", text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}" type="image">')
+                    MessageContent(
+                        type="text",
+                        text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}" type="image">',
+                    )
                 )
-                context_message.content.append(
-                    MessageContent(type="image", image_url=source.content)
-                )
-                context_message.content.append(
-                    MessageContent(type="text", text="</source>")
-                )
+                context_message.content.append(MessageContent(type="image", image_url=source.content))
+                context_message.content.append(MessageContent(type="text", text="</source>"))
             else:
                 raise ValueError(f"Unsupported MIME type: {source.mime_type}")
-        context_message.content.append(MessageContent(type="text", text=f"</sources>\n<user_question>\n{query}\n</user_question>"))
+        context_message.content.append(
+            MessageContent(type="text", text=f"</sources>\n<user_question>\n{query}\n</user_question>")
+        )
 
         response_stream = self.llm.generate_stream(
             [

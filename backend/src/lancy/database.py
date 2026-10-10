@@ -26,16 +26,18 @@ _BACKUP_INTERVAL_SECONDS = 86_400  # 24 h
 
 # Fields a non-admin user may override in their own per-browser config.
 # Everything else (LLM, embedding, prompt) is admin-only and lives in rag_config.json.
-USER_RETRIEVAL_FIELDS: frozenset[str] = frozenset({
-    "retriever_top_k",
-    "rrf_k",
-    "bm25_enabled",
-    "query_expansion",
-    "hyde_enabled",
-    "reranking_enabled",
-    "reranking_candidate_pool",
-    "image_retriever_top_k",
-})
+USER_RETRIEVAL_FIELDS: frozenset[str] = frozenset(
+    {
+        "retriever_top_k",
+        "rrf_k",
+        "bm25_enabled",
+        "query_expansion",
+        "hyde_enabled",
+        "reranking_enabled",
+        "reranking_candidate_pool",
+        "image_retriever_top_k",
+    }
+)
 
 
 # ─── Connection setup ─────────────────────────────────────────────────────────
@@ -103,9 +105,7 @@ def _migrate_presets_unique_index(conn: sqlite3.Connection) -> None:
     a new copy on every startup. The expression index maps NULL → '' so uniqueness is
     properly enforced regardless of NULL keys.
     """
-    if conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_presets_unique'"
-    ).fetchone():
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_presets_unique'").fetchone():
         return
     # Deduplicate before creating the index — keep the row with the lowest id per logical key.
     conn.execute("""
@@ -199,9 +199,7 @@ def init_db(db_path: Path) -> None:
 
 def get_user_retrieval(db_path: Path, user_id: str) -> dict | None:
     with _connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT config_json FROM user_config WHERE user_id = ?", (user_id,)
-        ).fetchone()
+        row = conn.execute("SELECT config_json FROM user_config WHERE user_id = ?", (user_id,)).fetchone()
     return json.loads(row[0]) if row else None
 
 
@@ -210,8 +208,7 @@ def set_user_retrieval(db_path: Path, user_id: str, data: dict) -> None:
     with _sqlite_lock:
         with _connect(db_path) as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO user_config (user_id, config_json, updated_at) "
-                "VALUES (?, ?, ?)",
+                "INSERT OR REPLACE INTO user_config (user_id, config_json, updated_at) VALUES (?, ?, ?)",
                 (user_id, json.dumps(data), now),
             )
             conn.commit()
@@ -229,22 +226,28 @@ def get_presets(db_path: Path, kb_id: str, user_id: str | None) -> dict:
     filter seeds out of save payloads.
     """
     with _connect(db_path) as conn:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT name, data_json, protected FROM presets
             WHERE type = 'retrieval'
               AND (kb_id = ? OR kb_id IS NULL)
               AND (user_id IS NULL OR user_id = ?)
             ORDER BY user_id NULLS FIRST, kb_id NULLS FIRST, name
-        """, (kb_id, user_id)).fetchall()
+        """,
+            (kb_id, user_id),
+        ).fetchall()
         retrieval = [{"name": r[0], "data": json.loads(r[1]), "protected": r[2]} for r in rows]
 
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT name, data_json, protected FROM presets
             WHERE type = 'kb'
               AND (kb_id = ? OR kb_id IS NULL)
               AND user_id IS NULL
             ORDER BY kb_id NULLS FIRST, name
-        """, (kb_id,)).fetchall()
+        """,
+            (kb_id,),
+        ).fetchall()
         kb = [{"name": r[0], "data": json.loads(r[1]), "protected": r[2]} for r in rows]
 
     return {"retrieval": retrieval, "kb": kb}
@@ -275,7 +278,6 @@ def save_presets(
 
     with _sqlite_lock:
         with _connect(db_path) as conn:
-
             # Delete only unprotected rows in this scope — never touch seeds
             conn.execute(
                 "DELETE FROM presets WHERE type='retrieval' AND kb_id=? AND user_id IS ? AND protected <= ?",
@@ -384,8 +386,7 @@ def seed_presets(db_path: Path, seeds_path: Path) -> None:
                 )
                 inserted += cur.rowcount
                 conn.execute(
-                    "UPDATE presets SET protected=? "
-                    "WHERE user_id IS NULL AND kb_id IS NULL AND type='kb' AND name=?",
+                    "UPDATE presets SET protected=? WHERE user_id IS NULL AND kb_id IS NULL AND type='kb' AND name=?",
                     (protected, p["name"]),
                 )
             conn.commit()
@@ -410,8 +411,17 @@ def get_default_preset(db_path: Path) -> dict | None:
 # function that resolves a pile without its owner.
 
 _PILE_COLS = (
-    "id", "owner_id", "name", "created_at", "processed_at",
-    "status", "error", "embedding_key", "vs_type", "chunk_count", "file_count",
+    "id",
+    "owner_id",
+    "name",
+    "created_at",
+    "processed_at",
+    "status",
+    "error",
+    "embedding_key",
+    "vs_type",
+    "chunk_count",
+    "file_count",
 )
 _PILE_FILE_COLS = ("pile_id", "filename", "source_file", "uploaded_at", "size_bytes")
 
@@ -423,8 +433,7 @@ def create_pile(db_path: Path, pile_id: str, owner_id: str, name: str) -> None:
     with _sqlite_lock:
         with _connect(db_path) as conn:
             conn.execute(
-                "INSERT INTO piles (id, owner_id, name, created_at, status) "
-                "VALUES (?, ?, ?, ?, 'draft')",
+                "INSERT INTO piles (id, owner_id, name, created_at, status) VALUES (?, ?, ?, ?, 'draft')",
                 (pile_id, owner_id, name, now),
             )
             conn.commit()
@@ -433,8 +442,7 @@ def create_pile(db_path: Path, pile_id: str, owner_id: str, name: str) -> None:
 def list_piles(db_path: Path, owner_id: str) -> list[dict]:
     with _connect(db_path) as conn:
         rows = conn.execute(
-            f"SELECT {', '.join(_PILE_COLS)} FROM piles WHERE owner_id = ? "
-            "ORDER BY created_at DESC",
+            f"SELECT {', '.join(_PILE_COLS)} FROM piles WHERE owner_id = ? ORDER BY created_at DESC",
             (owner_id,),
         ).fetchall()
     return [dict(zip(_PILE_COLS, r)) for r in rows]
@@ -454,9 +462,7 @@ def delete_pile(db_path: Path, pile_id: str, owner_id: str) -> bool:
     disk are the caller's to clean up — this only drops the bookkeeping."""
     with _sqlite_lock:
         with _connect(db_path) as conn:
-            deleted = conn.execute(
-                "DELETE FROM piles WHERE id = ? AND owner_id = ?", (pile_id, owner_id)
-            ).rowcount
+            deleted = conn.execute("DELETE FROM piles WHERE id = ? AND owner_id = ?", (pile_id, owner_id)).rowcount
             if deleted:
                 conn.execute("DELETE FROM pile_files WHERE pile_id = ?", (pile_id,))
             conn.commit()
@@ -527,9 +533,7 @@ def _mark_stale_if_ready(conn: sqlite3.Connection, pile_id: str) -> None:
     )
 
 
-def add_pile_file(
-    db_path: Path, pile_id: str, filename: str, source_file: str, size_bytes: int
-) -> None:
+def add_pile_file(db_path: Path, pile_id: str, filename: str, source_file: str, size_bytes: int) -> None:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     with _sqlite_lock:
         with _connect(db_path) as conn:
@@ -546,8 +550,7 @@ def add_pile_file(
 def list_pile_files(db_path: Path, pile_id: str) -> list[dict]:
     with _connect(db_path) as conn:
         rows = conn.execute(
-            f"SELECT {', '.join(_PILE_FILE_COLS)} FROM pile_files WHERE pile_id = ? "
-            "ORDER BY uploaded_at, filename",
+            f"SELECT {', '.join(_PILE_FILE_COLS)} FROM pile_files WHERE pile_id = ? ORDER BY uploaded_at, filename",
             (pile_id,),
         ).fetchall()
     return [dict(zip(_PILE_FILE_COLS, r)) for r in rows]
@@ -569,9 +572,7 @@ def delete_pile_file(db_path: Path, pile_id: str, filename: str) -> bool:
 def pile_usage(db_path: Path, owner_id: str) -> tuple[int, int]:
     """(pile count, total bytes across all of this owner's piles) — for quota checks."""
     with _connect(db_path) as conn:
-        piles = conn.execute(
-            "SELECT COUNT(*) FROM piles WHERE owner_id = ?", (owner_id,)
-        ).fetchone()[0]
+        piles = conn.execute("SELECT COUNT(*) FROM piles WHERE owner_id = ?", (owner_id,)).fetchone()[0]
         total = conn.execute(
             "SELECT COALESCE(SUM(f.size_bytes), 0) FROM pile_files f "
             "JOIN piles p ON p.id = f.pile_id WHERE p.owner_id = ?",

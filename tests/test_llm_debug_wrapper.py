@@ -127,6 +127,7 @@ def test_generate_returns_the_inner_response_unchanged():
 
 def test_generate_stream_passes_chunks_through():
     inner = RecordingLLM()
+
     async def drain():
         return [c async for c in DebugLLM(inner).generate_stream(conversation())]
 

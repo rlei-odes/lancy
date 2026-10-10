@@ -4,6 +4,7 @@ Admin API — usage analytics, database stats, data cleanup.
 All routes under /api/admin require the admin role.
 Enforcement is handled at the Next.js middleware layer (x-user-role header).
 """
+
 from __future__ import annotations
 
 import json as _json_mod
@@ -31,8 +32,8 @@ class UsageStats(BaseModel):
 
 
 class ConvDbStats(BaseModel):
-    db_type: str          # "sqlite" | "postgres"
-    path: str | None      # file path for sqlite, None for postgres
+    db_type: str  # "sqlite" | "postgres"
+    path: str | None  # file path for sqlite, None for postgres
     size_bytes: int | None
     conv_count: int
     message_count: int
@@ -41,8 +42,8 @@ class ConvDbStats(BaseModel):
 
 
 class VsDbStats(BaseModel):
-    vs_type: str          # "chromadb" | "pgvector"
-    path: str | None      # directory path for chromadb, None for pgvector
+    vs_type: str  # "chromadb" | "pgvector"
+    path: str | None  # directory path for chromadb, None for pgvector
     size_bytes: int | None
     chunk_count: int | None
 
@@ -58,7 +59,7 @@ class ModelPerfStats(BaseModel):
     tps_min: float | None
     tps_avg: float | None
     tps_max: float | None
-    dur_min: float | None   # seconds
+    dur_min: float | None  # seconds
     dur_avg: float | None
     dur_max: float | None
 
@@ -133,16 +134,18 @@ async def run_auto_cleanup(db_dir: Path, db_engine: AsyncEngine) -> int:
     cfg = _load_admin_cfg(db_dir)
     if not cfg.auto_cleanup_enabled:
         return 0
-    cutoff_ms = int(
-        (datetime.now(timezone.utc) - timedelta(days=cfg.auto_cleanup_months * 30)).timestamp() * 1000
-    )
+    cutoff_ms = int((datetime.now(timezone.utc) - timedelta(days=cfg.auto_cleanup_months * 30)).timestamp() * 1000)
     old_convs = "SELECT id FROM conversations WHERE create_timestamp < :cutoff"
     old_msgs = f"SELECT id FROM messages WHERE conversation_id IN ({old_convs})"
     async with db_engine.begin() as conn:
         await conn.execute(text(f"DELETE FROM reactions WHERE message_id IN ({old_msgs})"), {"cutoff": cutoff_ms})
         await conn.execute(text(f"DELETE FROM sources WHERE message_id IN ({old_msgs})"), {"cutoff": cutoff_ms})
         await conn.execute(text(f"DELETE FROM messages WHERE conversation_id IN ({old_convs})"), {"cutoff": cutoff_ms})
-        c = (await conn.execute(text("DELETE FROM conversations WHERE create_timestamp < :cutoff"), {"cutoff": cutoff_ms})).rowcount
+        c = (
+            await conn.execute(
+                text("DELETE FROM conversations WHERE create_timestamp < :cutoff"), {"cutoff": cutoff_ms}
+            )
+        ).rowcount
     cfg.auto_cleanup_last_run = datetime.now(timezone.utc).isoformat()
     _save_admin_cfg(db_dir, cfg)
     if c:
@@ -166,9 +169,7 @@ def create_admin_router(
 
     @router.get("/stats/usage", response_model=UsageStats)
     async def get_usage_stats(days: int = 180) -> UsageStats:
-        cutoff_ms = int(
-            (datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000
-        )
+        cutoff_ms = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
         if is_sqlite:
             date_expr = "date(create_timestamp / 1000, 'unixepoch')"
         else:
@@ -228,6 +229,7 @@ def create_admin_router(
             vs_chunks: int | None = None
             if stats_file.exists():
                 import json
+
                 data = json.loads(stats_file.read_text())
                 vs_chunks = data.get("total_chunks")
         except Exception:
@@ -254,9 +256,8 @@ def create_admin_router(
     @router.get("/stats/performance", response_model=PerformanceStats)
     async def get_performance_stats(days: int = 180) -> PerformanceStats:
         import json as _json
-        cutoff_ms = int(
-            (datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000
-        )
+
+        cutoff_ms = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
         async with db_engine.connect() as conn:
             rows = (
                 await conn.execute(
@@ -304,40 +305,41 @@ def create_admin_router(
     @router.post("/clear", response_model=ClearResult)
     async def clear_old_records(req: ClearRequest) -> ClearResult:
         months = max(1, req.older_than_months)
-        cutoff_ms = int(
-            (datetime.now(timezone.utc) - timedelta(days=months * 30)).timestamp() * 1000
-        )
+        cutoff_ms = int((datetime.now(timezone.utc) - timedelta(days=months * 30)).timestamp() * 1000)
         # Delete in FK order: reactions → sources → messages → conversations
         async with db_engine.begin() as conn:
-            old_convs = (
-                "SELECT id FROM conversations WHERE create_timestamp < :cutoff"
-            )
+            old_convs = "SELECT id FROM conversations WHERE create_timestamp < :cutoff"
             old_msgs = f"SELECT id FROM messages WHERE conversation_id IN ({old_convs})"
 
-            r = (await conn.execute(
-                text(f"DELETE FROM reactions WHERE message_id IN ({old_msgs})"),
-                {"cutoff": cutoff_ms},
-            )).rowcount
+            r = (
+                await conn.execute(
+                    text(f"DELETE FROM reactions WHERE message_id IN ({old_msgs})"),
+                    {"cutoff": cutoff_ms},
+                )
+            ).rowcount
 
-            s = (await conn.execute(
-                text(f"DELETE FROM sources WHERE message_id IN ({old_msgs})"),
-                {"cutoff": cutoff_ms},
-            )).rowcount
+            s = (
+                await conn.execute(
+                    text(f"DELETE FROM sources WHERE message_id IN ({old_msgs})"),
+                    {"cutoff": cutoff_ms},
+                )
+            ).rowcount
 
-            m = (await conn.execute(
-                text(f"DELETE FROM messages WHERE conversation_id IN ({old_convs})"),
-                {"cutoff": cutoff_ms},
-            )).rowcount
+            m = (
+                await conn.execute(
+                    text(f"DELETE FROM messages WHERE conversation_id IN ({old_convs})"),
+                    {"cutoff": cutoff_ms},
+                )
+            ).rowcount
 
-            c = (await conn.execute(
-                text("DELETE FROM conversations WHERE create_timestamp < :cutoff"),
-                {"cutoff": cutoff_ms},
-            )).rowcount
+            c = (
+                await conn.execute(
+                    text("DELETE FROM conversations WHERE create_timestamp < :cutoff"),
+                    {"cutoff": cutoff_ms},
+                )
+            ).rowcount
 
-        log.info(
-            f"Admin clear ({months}mo): {c} conversations, {m} messages, "
-            f"{r} reactions, {s} sources deleted"
-        )
+        log.info(f"Admin clear ({months}mo): {c} conversations, {m} messages, {r} reactions, {s} sources deleted")
         return ClearResult(
             deleted_conversations=c,
             deleted_messages=m,
@@ -382,24 +384,36 @@ def create_admin_router(
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
         async with db_engine.connect() as conn:
-            total = (await conn.execute(
-                text(f"SELECT COUNT(*) FROM ingest_events {where}"),
-                params,
-            )).scalar() or 0
-            rows = (await conn.execute(
-                text(
-                    f"SELECT id, ts, kb_id, document_id, filename, status, chunks, "
-                    f"file_size_mb, duration_ms, error "
-                    f"FROM ingest_events {where} ORDER BY ts DESC LIMIT :limit OFFSET :offset"
-                ),
-                params,
-            )).fetchall()
+            total = (
+                await conn.execute(
+                    text(f"SELECT COUNT(*) FROM ingest_events {where}"),
+                    params,
+                )
+            ).scalar() or 0
+            rows = (
+                await conn.execute(
+                    text(
+                        f"SELECT id, ts, kb_id, document_id, filename, status, chunks, "
+                        f"file_size_mb, duration_ms, error "
+                        f"FROM ingest_events {where} ORDER BY ts DESC LIMIT :limit OFFSET :offset"
+                    ),
+                    params,
+                )
+            ).fetchall()
 
         return IngestEventPage(
             events=[
                 IngestEvent(
-                    id=r[0], ts=r[1], kb_id=r[2], document_id=r[3], filename=r[4],
-                    status=r[5], chunks=r[6], file_size_mb=r[7], duration_ms=r[8], error=r[9],
+                    id=r[0],
+                    ts=r[1],
+                    kb_id=r[2],
+                    document_id=r[3],
+                    filename=r[4],
+                    status=r[5],
+                    chunks=r[6],
+                    file_size_mb=r[7],
+                    duration_ms=r[8],
+                    error=r[9],
                 )
                 for r in rows
             ],
@@ -413,23 +427,27 @@ def create_admin_router(
     @router.get("/llm-debug/status")
     async def get_llm_debug_status() -> dict:
         from lancy.llm_debug import is_enabled
+
         return {"enabled": is_enabled()}
 
     @router.post("/llm-debug/enable")
     async def enable_llm_debug() -> dict:
         from lancy.llm_debug import set_enabled
+
         set_enabled(True)
         return {"enabled": True}
 
     @router.post("/llm-debug/disable")
     async def disable_llm_debug() -> dict:
         from lancy.llm_debug import set_enabled
+
         set_enabled(False)
         return {"enabled": False}
 
     @router.get("/llm-debug/log")
     async def get_llm_debug_log(lines: int = 100) -> dict:
         from lancy.llm_debug import get_log_path
+
         path = get_log_path()
         if path is None or not path.exists():
             return {"lines": [], "total_lines": 0}

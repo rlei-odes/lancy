@@ -70,19 +70,9 @@ def test_fenced_code_passes_through_verbatim(normalize):
 
 def test_prose_wrapped_between_two_tables_still_joins(normalize):
     """The two rules coexist: fold prose, keep the blocks around it."""
-    text = (
-        "| A | B |\n|---|---|\n| 1 | 2 |\n"
-        "\n"
-        "Dieser Satz wurde\nvom Layout umbrochen.\n"
-        "\n"
-        "- Punkt eins\n- Punkt zwei"
-    )
+    text = "| A | B |\n|---|---|\n| 1 | 2 |\n\nDieser Satz wurde\nvom Layout umbrochen.\n\n- Punkt eins\n- Punkt zwei"
     expected = (
-        "| A | B |\n|---|---|\n| 1 | 2 |\n"
-        "\n"
-        "Dieser Satz wurde vom Layout umbrochen.\n"
-        "\n"
-        "- Punkt eins\n- Punkt zwei"
+        "| A | B |\n|---|---|\n| 1 | 2 |\n\nDieser Satz wurde vom Layout umbrochen.\n\n- Punkt eins\n- Punkt zwei"
     )
     assert normalize(text) == expected
 

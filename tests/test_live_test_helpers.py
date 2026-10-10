@@ -44,8 +44,8 @@ def test_the_test_kb_prefix_is_distinctive():
         ("wb-local", False),
         ("default", False),
         ("", False),
-        ("livetest-chromadb", False),          # prefix missing
-        ("my-zz-livetest-kb", False),          # prefix not at the start
+        ("livetest-chromadb", False),  # prefix missing
+        ("my-zz-livetest-kb", False),  # prefix not at the start
     ],
 )
 def test_only_prefixed_kbs_are_deletable(kb_id, deletable):
@@ -114,9 +114,7 @@ def test_an_empty_spec_never_reports_a_miss():
 
 def test_the_answer_and_sources_are_split():
     payload = {
-        "choices": [
-            {"message": {"content": "The answer.\n\n---\n**Sources:**\n- Title (a.pdf)\n- Other (b.pdf)"}}
-        ]
+        "choices": [{"message": {"content": "The answer.\n\n---\n**Sources:**\n- Title (a.pdf)\n- Other (b.pdf)"}}]
     }
 
     body, sources = lt.parse_answer(payload)

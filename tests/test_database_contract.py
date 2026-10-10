@@ -63,6 +63,7 @@ def test_repeated_writes_do_not_accumulate_descriptors(db):
     WAL mode costs two descriptors per connection (the db and its -wal), so a
     leak here grows fast. 30 round-trips must end where they started.
     """
+
     def open_fds() -> int:
         return len(os.listdir("/proc/self/fd"))
 

@@ -129,9 +129,7 @@ def test_rotating_the_api_key_invalidates_the_cache(builder):
 
 def test_api_key_is_never_stored_in_plaintext(builder):
     secret = "sk-super-secret-value"
-    f0.get_shared_embedding_model(
-        "custom", "text-embedding-3", custom_base_url="https://x", custom_api_key=secret
-    )
+    f0.get_shared_embedding_model("custom", "text-embedding-3", custom_base_url="https://x", custom_api_key=secret)
 
     stored = repr(f0._emb_cached_key)
     assert secret not in stored, "the raw API key is retained in the cache key"
@@ -139,9 +137,7 @@ def test_api_key_is_never_stored_in_plaintext(builder):
 
 def test_log_description_carries_no_key_material(builder):
     secret = "sk-super-secret-value"
-    f0.get_shared_embedding_model(
-        "custom", "text-embedding-3", custom_base_url="https://x", custom_api_key=secret
-    )
+    f0.get_shared_embedding_model("custom", "text-embedding-3", custom_base_url="https://x", custom_api_key=secret)
 
     described = f0._describe(f0._emb_cached_key)
     assert secret not in described

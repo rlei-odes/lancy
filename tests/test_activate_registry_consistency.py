@@ -63,6 +63,7 @@ def test_an_embedding_conflict_does_not_move_the_active_kb(tmp_path):
 
 def test_any_activation_failure_leaves_the_active_kb_alone(tmp_path):
     """Only EmbeddingConflict is handled; an unreachable store must not persist either."""
+
     async def activate(kb_info, reset=False):
         raise ConnectionRefusedError("vector store unreachable")
 
@@ -75,6 +76,7 @@ def test_any_activation_failure_leaves_the_active_kb_alone(tmp_path):
 
 def test_the_failed_kb_is_not_named_anywhere_as_active(tmp_path):
     """Guards the whole record, not just the one key we happen to check."""
+
     async def activate(kb_info, reset=False):
         raise EmbeddingConflict("kb-b", ("local", "model-a"), ("local", "model-b"))
 

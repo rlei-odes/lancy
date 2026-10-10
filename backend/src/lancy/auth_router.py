@@ -76,22 +76,26 @@ def _ldap_test_sync(req: LDAPTestRequest) -> LDAPTestResponse:
             search_conn = conn
             steps.append(LDAPTestStep(label="Anonymous bind", ok=True, detail="Server allows anonymous bind"))
         except LDAPException:
-            steps.append(LDAPTestStep(
-                label="Anonymous bind",
-                ok=False,
-                detail="Anonymous bind not supported — normal for lldap and Active Directory",
-            ))
+            steps.append(
+                LDAPTestStep(
+                    label="Anonymous bind",
+                    ok=False,
+                    detail="Anonymous bind not supported — normal for lldap and Active Directory",
+                )
+            )
 
     # Step 3: Base DN lookup (only if we have a working bind).
     if search_conn is not None:
         try:
             search_conn.search(req.base_dn, "(objectClass=*)", search_scope=ldap3.BASE, attributes=["objectClass"])
             found = bool(search_conn.entries)
-            steps.append(LDAPTestStep(
-                label="Base DN",
-                ok=found,
-                detail=f"{req.base_dn} {'found' if found else 'not found or no read access'}",
-            ))
+            steps.append(
+                LDAPTestStep(
+                    label="Base DN",
+                    ok=found,
+                    detail=f"{req.base_dn} {'found' if found else 'not found or no read access'}",
+                )
+            )
         except LDAPException as e:
             steps.append(LDAPTestStep(label="Base DN", ok=False, detail=str(e)))
         finally:
@@ -101,11 +105,13 @@ def _ldap_test_sync(req: LDAPTestRequest) -> LDAPTestResponse:
                 except Exception:
                     pass
     else:
-        steps.append(LDAPTestStep(
-            label="Base DN",
-            ok=False,
-            detail="Skipped — add a service account to verify base DN access",
-        ))
+        steps.append(
+            LDAPTestStep(
+                label="Base DN",
+                ok=False,
+                detail="Skipped — add a service account to verify base DN access",
+            )
+        )
 
     try:
         conn.unbind()
@@ -190,11 +196,7 @@ def _ldap_verify_sync(req: LDAPVerifyRequest) -> LDAPVerifyResponse:
                 return None
 
         session_id = _attr(req.user_id_attribute) or bind_dn
-        display_name = (
-            _attr(req.display_name_attribute)
-            or _attr("cn")
-            or req.username
-        )
+        display_name = _attr(req.display_name_attribute) or _attr("cn") or req.username
 
         if req.allowed_groups:
             member_of: list[str] = []

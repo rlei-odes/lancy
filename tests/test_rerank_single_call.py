@@ -34,8 +34,12 @@ ANSWER_JSON = '{"answer":"ok","used_sources_id":[],"follow_up_questions":[]}'
 
 def chunk(chunk_id: str) -> ChunkRecord:
     return ChunkRecord(
-        id=chunk_id, title=chunk_id, content=f"content of {chunk_id}",
-        mime_type="text/plain", metadata={"source_file": f"{chunk_id}.pdf"}, embedding=[],
+        id=chunk_id,
+        title=chunk_id,
+        content=f"content of {chunk_id}",
+        mime_type="text/plain",
+        metadata={"source_file": f"{chunk_id}.pdf"},
+        embedding=[],
     )
 
 
@@ -61,18 +65,12 @@ class CountingLLM:
         self.prompts: list[str] = []
 
     async def generate(self, messages, **kwargs):
-        self.prompts.append(
-            " ".join(c.text or "" for m in messages for c in m.content if c.type == "text")
-        )
-        return LLMMessage(
-            role=Roles.ASSISTANT, content=[MessageContent(type="text", text=self.reply)]
-        )
+        self.prompts.append(" ".join(c.text or "" for m in messages for c in m.content if c.type == "text"))
+        return LLMMessage(role=Roles.ASSISTANT, content=[MessageContent(type="text", text=self.reply)])
 
     async def generate_stream(self, messages, **kwargs):
         self.prompts.append("stream")
-        yield LLMMessage(
-            role=Roles.ASSISTANT, content=[MessageContent(type="text", text=ANSWER_JSON)]
-        )
+        yield LLMMessage(role=Roles.ASSISTANT, content=[MessageContent(type="text", text=ANSWER_JSON)])
 
 
 class UtilityLLM(CountingLLM):
@@ -85,15 +83,11 @@ class UtilityLLM(CountingLLM):
         text = " ".join(c.text or "" for m in messages for c in m.content if c.type == "text")
         self.prompts.append(text)
         reply = "expanded query one" if "search queries" in text else "hyde document"
-        return LLMMessage(
-            role=Roles.ASSISTANT, content=[MessageContent(type="text", text=reply)]
-        )
+        return LLMMessage(role=Roles.ASSISTANT, content=[MessageContent(type="text", text=reply)])
 
 
 def build(qe: int, hyde: bool, by_query=None, pool: int = 10, top_k: int = 3):
-    base = FakeBaseRetriever(
-        by_query or {"*": ["a", "b", "c", "d"]}, top_k=pool
-    )
+    base = FakeBaseRetriever(by_query or {"*": ["a", "b", "c", "d"]}, top_k=pool)
     rerank_llm = CountingLLM('{"ranking": [0, 1, 2, 3]}')
     reranker = RerankingRetriever(base, rerank_llm, top_k=top_k)
     agent = RAG(
@@ -109,9 +103,7 @@ def build(qe: int, hyde: bool, by_query=None, pool: int = 10, top_k: int = 3):
 
 def run(agent) -> None:
     async def drive():
-        async for _ in agent.answer_stream(
-            QueryWithContext(query="the original question", history=[])
-        ):
+        async for _ in agent.answer_stream(QueryWithContext(query="the original question", history=[])):
             pass
 
     asyncio.run(drive())
@@ -131,11 +123,12 @@ def test_the_reranker_llm_is_called_exactly_once(qe, hyde, variants):
     run(agent)
 
     assert len(base.queries_seen) == variants  # retrieval still runs per variant
-    assert len(rerank_llm.prompts) == 1        # ranking does not
+    assert len(rerank_llm.prompts) == 1  # ranking does not
 
 
 @pytest.mark.parametrize(
-    "qe,hyde", [(0, False), (0, True), (1, False), (1, True)],
+    "qe,hyde",
+    [(0, False), (0, True), (1, False), (1, True)],
     ids=["baseline", "hyde", "expansion", "hyde+expansion"],
 )
 def test_the_ranking_is_judged_against_the_users_question(qe, hyde):
@@ -153,7 +146,8 @@ def test_the_ranking_is_judged_against_the_users_question(qe, hyde):
 def test_chunks_found_only_by_one_variant_reach_the_reranker():
     """The point of expansion: a chunk only HyDE surfaces must still compete."""
     agent, _, rerank_llm = build(
-        qe=0, hyde=True,
+        qe=0,
+        hyde=True,
         by_query={"the original question": ["a", "b"], "hyde document": ["c", "d"]},
     )
 
@@ -166,21 +160,22 @@ def test_chunks_found_only_by_one_variant_reach_the_reranker():
 def test_the_merged_pool_is_capped_at_the_candidate_pool_size():
     """Unbounded merging would grow the rerank prompt with every variant."""
     agent, _, rerank_llm = build(
-        qe=0, hyde=True, pool=3,
+        qe=0,
+        hyde=True,
+        pool=3,
         by_query={"the original question": ["a", "b", "c"], "hyde document": ["d", "e", "f"]},
     )
 
     run(agent)
 
-    listed = sum(
-        f"content of {c}" in rerank_llm.prompts[0] for c in ["a", "b", "c", "d", "e", "f"]
-    )
+    listed = sum(f"content of {c}" in rerank_llm.prompts[0] for c in ["a", "b", "c", "d", "e", "f"])
     assert listed == 3
 
 
 def test_a_duplicate_hit_is_merged_not_listed_twice():
     agent, _, rerank_llm = build(
-        qe=0, hyde=True,
+        qe=0,
+        hyde=True,
         by_query={"the original question": ["a", "b"], "hyde document": ["b", "c"]},
     )
 
@@ -192,7 +187,8 @@ def test_a_duplicate_hit_is_merged_not_listed_twice():
 def test_the_stats_describe_the_single_merged_call():
     """With one call there is no last-write-wins ambiguity left to report."""
     agent, _, _ = build(
-        qe=0, hyde=True,
+        qe=0,
+        hyde=True,
         by_query={"the original question": ["a", "b"], "hyde document": ["c", "d"]},
     )
     reranker = agent.retrievers[0]

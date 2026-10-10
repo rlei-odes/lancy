@@ -83,9 +83,7 @@ class _Query:
 
 
 def dispatching(*entries, conv_kb="kb1", active="kb1"):
-    return DispatchingAgent(
-        FakePool(entries), conv_db=FakeConvDB(conv_kb), active_kb_id_fn=lambda: active
-    )
+    return DispatchingAgent(FakePool(entries), conv_db=FakeConvDB(conv_kb), active_kb_id_fn=lambda: active)
 
 
 def text(chunk) -> str:
@@ -166,8 +164,10 @@ def test_neither_entry_point_falls_back(method):
 def test_a_loaded_kb_still_answers():
     wanted = FakeAgent("kb-b")
     agent = dispatching(
-        FakeEntry(FakeAgent("kb-a"), "kb-a"), FakeEntry(wanted, "kb-b"),
-        conv_kb="kb-b", active="kb-a",
+        FakeEntry(FakeAgent("kb-a"), "kb-a"),
+        FakeEntry(wanted, "kb-b"),
+        conv_kb="kb-b",
+        active="kb-a",
     )
 
     assert "answer from kb-b" in streamed(agent)

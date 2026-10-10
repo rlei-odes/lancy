@@ -78,9 +78,11 @@ class BM25Retriever(Retriever[ChunkMatch]):
         scores: list[float] = self._bm25.get_scores(query_terms).tolist()
         ranked_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
         if filters:
+
             def _matches(i: int) -> bool:
                 m = self.corpus[i].metadata or {}
                 return all(str(m.get(k, "")) == str(v) for k, v in filters.items())
+
             ranked_indices = [i for i in ranked_indices if _matches(i)]
         top_indices = ranked_indices[: self.top_k]
         return [

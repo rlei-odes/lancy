@@ -114,7 +114,7 @@ def test_the_stream_emits_parseable_openai_chunks():
     response = ask(FakeAgent(), stream=True)
 
     payloads = [
-        json.loads(line[len("data: "):])
+        json.loads(line[len("data: ") :])
         for line in response.text.splitlines()
         if line.startswith("data: ") and not line.endswith("[DONE]")
     ]
@@ -130,11 +130,14 @@ def test_the_stream_emits_parseable_openai_chunks():
 def test_the_last_user_message_becomes_the_query():
     agent = FakeAgent()
 
-    ask(agent, messages=[
-        {"role": "user", "content": "first"},
-        {"role": "assistant", "content": "reply"},
-        {"role": "user", "content": "second"},
-    ])
+    ask(
+        agent,
+        messages=[
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "reply"},
+            {"role": "user", "content": "second"},
+        ],
+    )
 
     assert agent.seen.query == "second"
 
@@ -142,11 +145,14 @@ def test_the_last_user_message_becomes_the_query():
 def test_earlier_turns_become_history_without_the_query():
     agent = FakeAgent()
 
-    ask(agent, messages=[
-        {"role": "user", "content": "first"},
-        {"role": "assistant", "content": "reply"},
-        {"role": "user", "content": "second"},
-    ])
+    ask(
+        agent,
+        messages=[
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "reply"},
+            {"role": "user", "content": "second"},
+        ],
+    )
 
     texts = [c.text for m in agent.seen.history for c in m.content]
     assert texts == ["first", "reply"]
@@ -371,11 +377,14 @@ def test_the_endpoint_works_against_the_real_dispatching_agent(stream):
     """
     api = client(dispatching(FakeEntry(FakeAgent())))
 
-    response = api.post("/v1/chat/completions", json={
-        "model": "rag-assistant",
-        "messages": [{"role": "user", "content": "Why Python?"}],
-        "stream": stream,
-    })
+    response = api.post(
+        "/v1/chat/completions",
+        json={
+            "model": "rag-assistant",
+            "messages": [{"role": "user", "content": "Why Python?"}],
+            "stream": stream,
+        },
+    )
 
     assert response.status_code == 200
     assert ANSWER in response.text

@@ -81,6 +81,7 @@ async def _dispose_vs(vs_instance: object) -> None:
     except Exception as exc:
         log.warning(f"Pile: vector store dispose failed: {exc}")
 
+
 # Bounds on what one session can accumulate. A pile costs disk for the raw files
 # and again for its vectors, and processing occupies the one embedding model the
 # whole app shares — so this is capped rather than left open.
@@ -122,7 +123,7 @@ class PileInfo(BaseModel):
     # analysis reads chunk text by metadata and never embeds anything, so a
     # store built with a since-replaced embedding model still works for it.
     # Retrieval compares vectors and does not.
-    has_store: bool = False          # processed at least once — chunks exist
+    has_store: bool = False  # processed at least once — chunks exist
     embedding_current: bool = False  # those vectors match the active embedding config
 
 
@@ -315,16 +316,26 @@ def create_piles_router(
 
     def _to_info(pile: dict, active_key: str) -> dict:
         return {
-            **{k: pile[k] for k in (
-                "id", "name", "created_at", "processed_at", "status",
-                "error", "embedding_key", "vs_type", "chunk_count", "file_count",
-            )},
+            **{
+                k: pile[k]
+                for k in (
+                    "id",
+                    "name",
+                    "created_at",
+                    "processed_at",
+                    "status",
+                    "error",
+                    "embedding_key",
+                    "vs_type",
+                    "chunk_count",
+                    "file_count",
+                )
+            },
             "pending_files": len(list_pile_files(sqlite_path, pile["id"])),
             # "stale" counts: its store holds chunks for the files that were present
             # at the last run, which is exactly what batch analysis reads.
             "has_store": pile["status"] in ("ready", "stale"),
-            "embedding_current": bool(pile["embedding_key"])
-            and pile["embedding_key"] == active_key,
+            "embedding_current": bool(pile["embedding_key"]) and pile["embedding_key"] == active_key,
         }
 
     def _active_key() -> str:
@@ -382,9 +393,7 @@ def create_piles_router(
         owner_id = _owner(request)
         n_piles, _ = pile_usage(sqlite_path, owner_id)
         if n_piles >= MAX_PILES_PER_OWNER:
-            raise HTTPException(
-                409, f"Pile limit reached ({MAX_PILES_PER_OWNER}). Delete one first."
-            )
+            raise HTTPException(409, f"Pile limit reached ({MAX_PILES_PER_OWNER}). Delete one first.")
         pile_id = uuid.uuid4().hex
         try:
             create_pile(sqlite_path, pile_id, owner_id, cfg.name.strip())
@@ -418,8 +427,7 @@ def create_piles_router(
             conn_str = get_active_kb().vs_connection_string or ""
             if not conn_str:
                 log.warning(
-                    f"Pile {pile_id}: pgvector store left in place — no connection "
-                    "string available on the active KB"
+                    f"Pile {pile_id}: pgvector store left in place — no connection string available on the active KB"
                 )
             else:
                 try:
@@ -438,9 +446,7 @@ def create_piles_router(
         return {"deleted": pile_id}
 
     @router.post("/piles/{pile_id}/files", response_model=PileFileInfo)
-    async def upload_to_pile(
-        pile_id: str, request: Request, file: UploadFile = File(...)
-    ) -> dict:
+    async def upload_to_pile(pile_id: str, request: Request, file: UploadFile = File(...)) -> dict:
         owner_id = _owner(request)
         pile = _require_pile(pile_id, owner_id)
         if pile["status"] == "processing":
@@ -448,17 +454,14 @@ def create_piles_router(
 
         existing = list_pile_files(sqlite_path, pile_id)
         if len(existing) >= MAX_FILES_PER_PILE:
-            raise HTTPException(
-                409, f"This pile already holds the maximum of {MAX_FILES_PER_PILE} files"
-            )
+            raise HTTPException(409, f"This pile already holds the maximum of {MAX_FILES_PER_PILE} files")
 
         original = file.filename or "upload"
         suffix = Path(original).suffix.lower()
         if suffix not in _SUPPORTED_EXTS:
             raise HTTPException(
                 422,
-                f"Unsupported file type '{suffix or original}'. "
-                f"Supported extensions: {sorted(_SUPPORTED_EXTS)}",
+                f"Unsupported file type '{suffix or original}'. Supported extensions: {sorted(_SUPPORTED_EXTS)}",
             )
 
         limit_mb = get_active_kb().max_file_size_mb
@@ -481,9 +484,7 @@ def create_piles_router(
                 while chunk := await file.read(1024 * 1024):
                     written += len(chunk)
                     if written > limit_mb * 1_048_576:
-                        raise HTTPException(
-                            413, f"File too large: exceeds the {limit_mb} MB limit"
-                        )
+                        raise HTTPException(413, f"File too large: exceeds the {limit_mb} MB limit")
                     if written > remaining:
                         raise HTTPException(
                             413,
@@ -498,9 +499,7 @@ def create_piles_router(
 
         add_pile_file(sqlite_path, pile_id, filename, original, written)
         log.info(f"Pile {pile_id}: added '{filename}' ({written / 1_048_576:.1f} MB)")
-        row = next(
-            f for f in list_pile_files(sqlite_path, pile_id) if f["filename"] == filename
-        )
+        row = next(f for f in list_pile_files(sqlite_path, pile_id) if f["filename"] == filename)
         return row
 
     @router.delete("/piles/{pile_id}/files/{filename:path}")
@@ -519,18 +518,14 @@ def create_piles_router(
         return {"deleted": safe}
 
     @router.post("/piles/{pile_id}/process")
-    async def process_my_pile(
-        pile_id: str, request: Request, background_tasks: BackgroundTasks
-    ) -> dict:
+    async def process_my_pile(pile_id: str, request: Request, background_tasks: BackgroundTasks) -> dict:
         pile = _require_pile(pile_id, _owner(request))
         if pile["status"] == "processing":
             raise HTTPException(409, "Pile is already being processed")
         if not list_pile_files(sqlite_path, pile_id):
             raise HTTPException(400, "Pile is empty — upload a document first")
         if status_factory is not None and status_factory().get("indexing"):
-            raise HTTPException(
-                409, "Indexing is already running. Please try again shortly."
-            )
+            raise HTTPException(409, "Indexing is already running. Please try again shortly.")
 
         kb = _pile_kb(pile)
         key = embedding_key(kb)
@@ -544,8 +539,11 @@ def create_piles_router(
             try:
                 chunks, files = await process_callback(kb, reset)
                 finish_pile_processing(
-                    sqlite_path, pile_id,
-                    chunk_count=chunks, file_count=files, embedding_key=key,
+                    sqlite_path,
+                    pile_id,
+                    chunk_count=chunks,
+                    file_count=files,
+                    embedding_key=key,
                 )
                 log.info(f"Pile {pile_id} processed: {chunks} chunk(s) from {files} file(s)")
             except Exception as exc:

@@ -45,9 +45,7 @@ def extract_images(pdf_path: Path, save_dir: Path | None) -> list[tuple[int, int
     pipeline_options.do_ocr = False
     pipeline_options.generate_picture_images = True
 
-    converter = DocumentConverter(
-        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
-    )
+    converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
     result = converter.convert(str(pdf_path))
     sizes: list[tuple[int, int]] = []
     counter = 0
@@ -76,7 +74,7 @@ def main() -> None:
             sys.exit(1)
         save_dir = Path(args[idx + 1])
         save_dir.mkdir(parents=True, exist_ok=True)
-        args = args[:idx] + args[idx + 2:]
+        args = args[:idx] + args[idx + 2 :]
 
     pdfs = find_pdfs([Path(a) for a in args])
     if not pdfs:
@@ -91,7 +89,7 @@ def main() -> None:
     for pdf in pdfs:
         print(f"\n{pdf}")
         print(f"  {'#':<5} {'width':>6} {'height':>7} {'area':>10}  note")
-        print(f"  {'-'*5} {'-'*6} {'-'*7} {'-'*10}  ----")
+        print(f"  {'-' * 5} {'-' * 6} {'-' * 7} {'-' * 10}  ----")
         sizes = extract_images(pdf, save_dir)
         if not sizes:
             print("  (no images found)")
@@ -113,7 +111,7 @@ def main() -> None:
 
     thresholds = [1_000, 5_000, 10_000, 25_000, 50_000, 100_000]
     print(f"\n  {'threshold':>12}  {'filtered':>8}  {'remaining':>10}")
-    print(f"  {'-'*12}  {'-'*8}  {'-'*10}")
+    print(f"  {'-' * 12}  {'-' * 8}  {'-' * 10}")
     for t in thresholds:
         filtered = sum(1 for a in all_areas if a < t)
         print(f"  {t:>12,}  {filtered:>8} ({filtered * 100 // len(all_areas):2d}%)  {len(all_areas) - filtered:>10}")

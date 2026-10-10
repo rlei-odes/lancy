@@ -45,9 +45,7 @@ def id_file(tmp_path):
 
 
 def test_drops_blank_lines_and_comments(id_file):
-    ids, duplicates = batch_analyze.read_id_list(
-        id_file("# Kommentar\n\na.pdf\n  \nb.pdf\n# noch einer")
-    )
+    ids, duplicates = batch_analyze.read_id_list(id_file("# Kommentar\n\na.pdf\n  \nb.pdf\n# noch einer"))
 
     assert ids == ["a.pdf", "b.pdf"]
     assert duplicates == 0

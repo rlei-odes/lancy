@@ -90,6 +90,7 @@ from lancy.feature0_baseline_rag import (
     _make_retriever,
 )
 from lancy.llm_debug import DebugLLM, configure as _configure_llm_debug
+
 _configure_llm_debug(_ROOT / "logs" / "llm_debug.log")
 from lancy.ingestion import (
     _dispose_vs,
@@ -253,10 +254,18 @@ def _classify_stream_error(exc: BaseException, vector_store: Any, llm_model: str
     chain_mods = " ".join(mods)
 
     db_module_hit = any(s in chain_mods for s in ("sqlalchemy", "asyncpg", "psycopg"))
-    db_text_hit = any(s in error_lower for s in (
-        "asyncpg", "psycopg", "pgvector", "postgres",
-        "could not connect", "could not translate host name", "connect call failed",
-    ))
+    db_text_hit = any(
+        s in error_lower
+        for s in (
+            "asyncpg",
+            "psycopg",
+            "pgvector",
+            "postgres",
+            "could not connect",
+            "could not translate host name",
+            "connect call failed",
+        )
+    )
     # A refused pgvector connection surfaces as a bare OSError from asyncpg —
     # module "builtins", and its text varies by platform ("Connection refused"
     # vs "Connect call failed (host, port)"), so neither check above is
@@ -311,18 +320,14 @@ class CustomRAG(RAG):
         except Exception as exc:
             # Yield the error as a visible message so the frontend doesn't spin forever.
             # Common cases: model not pulled, Ollama not running, pgvector unreachable.
-            msg = _classify_stream_error(
-                exc, self.vector_store, getattr(self.llm, "model", "")
-            )
+            msg = _classify_stream_error(exc, self.vector_store, getattr(self.llm, "model", ""))
             log.error(f"Stream error: {exc}")
             yield AgentAnswer(content=[MessageContent(type="text", text=msg)])
         finally:
             _query_status.update({"active": False, "phase": "idle"})
 
     async def _answer_post_processing(self, answer: AgentAnswer) -> AgentAnswer:
-        json_answer = parse_llm_json_stream(
-            answer.content[0].text if answer.content else ""
-        )
+        json_answer = parse_llm_json_stream(answer.content[0].text if answer.content else "")
         content = json_answer.get("answer", "")
         # Fallback: if JSON parsing lost the content, use the raw accumulated text.
         # This prevents a silent empty-answer when the model output doesn't match
@@ -330,7 +335,7 @@ class CustomRAG(RAG):
         if not content and answer.content:
             content = answer.content[0].text
         relevant_source_ids = json_answer.get("used_sources_id", [])
-        follow_up_questions = json_answer.get("follow_up_questions", [])[:self.follow_up_count]
+        follow_up_questions = json_answer.get("follow_up_questions", [])[: self.follow_up_count]
         unique_sources = list({s.id: s for s in answer.sources}.values())
 
         # Replace any inline UUID references with clickable source citation links.
@@ -350,10 +355,7 @@ class CustomRAG(RAG):
         # Also handle [N]-style footnote citations (produced by models that don't follow
         # the (filename.pdf) format, e.g. mistral-nemo fallback).
         # Map [1] → used_sources_id[0], [2] → used_sources_id[1], etc.
-        ordered_sources = [
-            next((s for s in unique_sources if s.id == sid), None)
-            for sid in relevant_source_ids
-        ]
+        ordered_sources = [next((s for s in unique_sources if s.id == sid), None) for sid in relevant_source_ids]
         for i, source in enumerate((s for s in ordered_sources if s), 1):
             fname = source.metadata.get("source_file", "")
             if fname and f"[{i}]" in content:
@@ -434,16 +436,10 @@ def _assemble_components(
     # When reranking, fetch a larger candidate pool first
     retriever_k = cfg.reranking_candidate_pool if cfg.reranking_enabled else top_k
     semantic = _make_retriever(emb, vs, retriever_k, kb.nomic_prefix)
-    retrievers = (
-        [semantic, BM25Retriever(vs, top_k=retriever_k)]
-        if cfg.bm25_enabled
-        else [semantic]
-    )
+    retrievers = [semantic, BM25Retriever(vs, top_k=retriever_k)] if cfg.bm25_enabled else [semantic]
     hybrid = HybridRetriever(retrievers=retrievers, top_k=retriever_k)
 
-    _is_ollama_via_litellm = cfg.llm_backend == "litellm" and (
-        cfg.llm_model or ""
-    ).startswith("ollama/")
+    _is_ollama_via_litellm = cfg.llm_backend == "litellm" and (cfg.llm_model or "").startswith("ollama/")
     llm_fmt = (
         None
         if cfg.llm_backend == "ollama" or _is_ollama_via_litellm
@@ -471,9 +467,7 @@ def _assemble_components(
             custom_api_key=getattr(cfg, "custom_api_key", ""),
         )
     except ValueError as exc:
-        log.warning(
-            f"LLM build failed ({exc}), falling back to ollama/mistral-nemo:12b"
-        )
+        log.warning(f"LLM build failed ({exc}), falling back to ollama/mistral-nemo:12b")
         llm = AGENT_LLMS.get(
             backend="ollama",
             model_name="mistral-nemo:12b",
@@ -491,14 +485,8 @@ def _assemble_components(
     _utility_model_name = _utility_model_cfg if _has_separate else (cfg.llm_model or None)
     # For custom backend: allow utility LLM to hit a different endpoint (e.g., two vLLM
     # processes on different ports). Empty utility_custom_* falls back to main custom_*.
-    _util_base_url = (
-        getattr(cfg, "utility_custom_base_url", "").strip()
-        or getattr(cfg, "custom_base_url", "")
-    )
-    _util_api_key = (
-        getattr(cfg, "utility_custom_api_key", "").strip()
-        or getattr(cfg, "custom_api_key", "")
-    )
+    _util_base_url = getattr(cfg, "utility_custom_base_url", "").strip() or getattr(cfg, "custom_base_url", "")
+    _util_api_key = getattr(cfg, "utility_custom_api_key", "").strip() or getattr(cfg, "custom_api_key", "")
     try:
         utility_llm = AGENT_LLMS.get(
             backend=cfg.llm_backend,
@@ -517,16 +505,10 @@ def _assemble_components(
         if _has_separate:
             log.info(f"Utility LLM: {cfg.llm_backend}/{_utility_model_name}")
     except Exception as exc:
-        log.warning(
-            f"Utility LLM build failed ({exc}), using main LLM for preprocessing"
-        )
+        log.warning(f"Utility LLM build failed ({exc}), using main LLM for preprocessing")
         utility_llm = llm
 
-    final_retriever = (
-        RerankingRetriever(hybrid, utility_llm, top_k=top_k)
-        if cfg.reranking_enabled
-        else hybrid
-    )
+    final_retriever = RerankingRetriever(hybrid, utility_llm, top_k=top_k) if cfg.reranking_enabled else hybrid
 
     all_retrievers = [final_retriever]
     aux_stores: list = []
@@ -540,14 +522,10 @@ def _assemble_components(
             vs_connection_string=vs_conn,
             table_name=f"rag_{kb.id.replace('-', '_')}_images",
         )
-        image_retriever = _make_retriever(
-            image_emb, image_vs, cfg.image_retriever_top_k, False
-        )
+        image_retriever = _make_retriever(image_emb, image_vs, cfg.image_retriever_top_k, False)
         all_retrievers.append(image_retriever)
         aux_stores.append(image_vs)
-        log.info(
-            f"Image retrieval enabled: {kb.image_embedding_model} top_k={cfg.image_retriever_top_k}"
-        )
+        log.info(f"Image retrieval enabled: {kb.image_embedding_model} top_k={cfg.image_retriever_top_k}")
 
     try:
         base_prompt = cfg.system_prompt.strip() or _load_system_prompt()
@@ -573,8 +551,6 @@ def _assemble_components(
     return vs, agent, emb
 
 
-
-
 # ---------------------------------------------------------------------------
 # Server factory
 # ---------------------------------------------------------------------------
@@ -583,9 +559,7 @@ def build_server():
     session_cfg_path = _DB_DIR / "rag_config.json"
     try:
         session_cfg = (
-            RagConfig(**json.loads(session_cfg_path.read_text()))
-            if session_cfg_path.exists()
-            else RagConfig()
+            RagConfig(**json.loads(session_cfg_path.read_text())) if session_cfg_path.exists() else RagConfig()
         )
     except Exception:
         session_cfg = RagConfig()
@@ -627,6 +601,7 @@ def build_server():
         elif _conn.startswith("postgres://"):
             _conn = _conn.replace("postgres://", "postgresql+asyncpg://", 1)
         from sqlalchemy.ext.asyncio import create_async_engine as _cae
+
         _db_engine = _cae(_conn, pool_pre_ping=True)
         _conv_db = PostgreSQLConversationDatabase(_db_engine)
         _msg_db = PostgreSQLMessageDatabase(_db_engine)
@@ -636,6 +611,7 @@ def build_server():
         log.info(f"Conversation DB: PostgreSQL ({safe_conn_str(_database_url)})")
     else:
         from sqlalchemy.ext.asyncio import create_async_engine as _cae
+
         _db_engine = _cae(f"sqlite+aiosqlite:///{_DB_DIR}/conversations.db")
         _conv_db = SQLiteConversationDatabase(_db_engine)
         _msg_db = SQLiteMessageDatabase(_db_engine)
@@ -665,11 +641,7 @@ def build_server():
     def _conversation_metadata() -> dict:
         try:
             kb = kb_router.get_active_kb()
-            cfg = (
-                RagConfig(**json.loads(session_cfg_path.read_text()))
-                if session_cfg_path.exists()
-                else session_cfg
-            )
+            cfg = RagConfig(**json.loads(session_cfg_path.read_text())) if session_cfg_path.exists() else session_cfg
             return {
                 "kb_id": kb.id,
                 "kb_name": kb.name,
@@ -731,11 +703,7 @@ def build_server():
     # ── KB Router ─────────────────────────────────────────────────────────
     async def on_kb_activate(kb: KBInfo, reset: bool = False) -> None:
         try:
-            cfg = (
-                RagConfig(**json.loads(session_cfg_path.read_text()))
-                if session_cfg_path.exists()
-                else session_cfg
-            )
+            cfg = RagConfig(**json.loads(session_cfg_path.read_text())) if session_cfg_path.exists() else session_cfg
         except Exception:
             cfg = session_cfg
         if reset:
@@ -754,9 +722,7 @@ def build_server():
     async def _upload_cb(file_path: Path, kb: KBInfo, extra_metadata: dict) -> None:
         try:
             upload_cfg = (
-                RagConfig(**json.loads(session_cfg_path.read_text()))
-                if session_cfg_path.exists()
-                else session_cfg
+                RagConfig(**json.loads(session_cfg_path.read_text())) if session_cfg_path.exists() else session_cfg
             )
         except Exception:
             upload_cfg = session_cfg
@@ -774,8 +740,14 @@ def build_server():
                 table_name=f"rag_{kb.id.replace('-', '_')}",
             )
         await enqueue_upload(
-            file_path, kb, extra_metadata,
-            vs=vs, kb_router=kb_router, db_dir=_DB_DIR, db_engine=_db_engine, cfg=upload_cfg,
+            file_path,
+            kb,
+            extra_metadata,
+            vs=vs,
+            kb_router=kb_router,
+            db_dir=_DB_DIR,
+            db_engine=_db_engine,
+            cfg=upload_cfg,
         )
 
     kb_router = create_kb_router(
@@ -802,9 +774,7 @@ def build_server():
         """
         try:
             pile_cfg = (
-                RagConfig(**json.loads(session_cfg_path.read_text()))
-                if session_cfg_path.exists()
-                else session_cfg
+                RagConfig(**json.loads(session_cfg_path.read_text())) if session_cfg_path.exists() else session_cfg
             )
         except Exception:
             pile_cfg = session_cfg
@@ -852,6 +822,7 @@ def build_server():
         configure_loguru()
         if not _database_url:
             from lancy.database import _maybe_backup
+
             _maybe_backup(_DB_DIR / "conversations.db")
         await _conv_db.create_table()
         await _msg_db.create_table()
@@ -860,9 +831,11 @@ def build_server():
         await _user_db.create_table()
         asyncio.create_task(_auto_cleanup_loop())  # noqa: RUF006
         from sqlalchemy import text as _sa_text
+
         _pk = "id BIGSERIAL PRIMARY KEY" if _database_url else "id INTEGER PRIMARY KEY"
         async with _db_engine.begin() as _conn:
-            await _conn.execute(_sa_text(f"""
+            await _conn.execute(
+                _sa_text(f"""
                 CREATE TABLE IF NOT EXISTS ingest_events (
                     {_pk},
                     ts           TEXT    NOT NULL,
@@ -875,7 +848,8 @@ def build_server():
                     duration_ms  INTEGER,
                     error        TEXT
                 )
-            """))
+            """)
+            )
         try:
             entry = await pool.load(active_kb, session_cfg, _build_components)
             pool.set_active(active_kb.id)
@@ -914,8 +888,11 @@ def build_server():
         except Exception as exc:
             log.exception(f"Ingestion failed for KB '{kb.name}': {exc}")
             return ReindexResult(
-                chunks_indexed=0, files_processed=0,
-                files_skipped=0, files_skipped_store=0, files_skipped_batch=0,
+                chunks_indexed=0,
+                files_processed=0,
+                files_skipped=0,
+                files_skipped_store=0,
+                files_skipped_batch=0,
                 reset=reset,
             )
 
@@ -929,9 +906,7 @@ def build_server():
             entry = await pool.load(kb, cfg, _build_components)
             pool.set_active(kb.id)
         except EmbeddingConflict as exc:
-            log.warning(
-                f"KB '{kb.name}' indexed but not loaded into active pool: {exc}"
-            )
+            log.warning(f"KB '{kb.name}' indexed but not loaded into active pool: {exc}")
 
         # Use the actual VS total, not just the delta from this run.
         # When all files are already indexed (incremental run, nothing new),
@@ -967,20 +942,12 @@ def build_server():
 
     async def retrieve_callback(req: RetrieveRequest) -> RetrieveResponse:
         try:
-            cfg = (
-                RagConfig(**json.loads(session_cfg_path.read_text()))
-                if session_cfg_path.exists()
-                else RagConfig()
-            )
+            cfg = RagConfig(**json.loads(session_cfg_path.read_text())) if session_cfg_path.exists() else RagConfig()
         except Exception:
             cfg = RagConfig()
 
         top_k = cfg.retriever_top_k
-        fetch_k = (
-            cfg.reranking_candidate_pool
-            if req.reranking_enabled
-            else top_k + math.ceil(top_k * 0.4)
-        )
+        fetch_k = cfg.reranking_candidate_pool if req.reranking_enabled else top_k + math.ceil(top_k * 0.4)
 
         active_entry = pool.get_active()
         if active_entry is None:
@@ -990,9 +957,7 @@ def build_server():
 
         # Semantic retrieval — embed query and search VS directly
         emb_vectors = await emb.get_embeddings(req.query)
-        sem_results = await vs.get_chunks_by_embedding(
-            emb_vectors[0], fetch_k, req.filters or None
-        )
+        sem_results = await vs.get_chunks_by_embedding(emb_vectors[0], fetch_k, req.filters or None)
 
         # BM25 retrieval — lazy-init and cache per-KB retriever
         bm25_results: list = []
@@ -1005,9 +970,7 @@ def build_server():
             # Post-filter by source_file if requested (BM25 doesn't support native filters)
             if req.filters and req.filters.get("source_file"):
                 sf = req.filters["source_file"]
-                bm25_results = [
-                    c for c in bm25_results if c.metadata.get("source_file") == sf
-                ]
+                bm25_results = [c for c in bm25_results if c.metadata.get("source_file") == sf]
 
         # Build per-method score maps: {chunk_id: (rank, raw_score)}
         sem_map = {c.id: (i + 1, c.score) for i, c in enumerate(sem_results)}
@@ -1026,9 +989,7 @@ def build_server():
                 if cid in bm25_map:
                     score += 1.0 / (cfg.rrf_k + bm25_map[cid][0])
                 rrf_scores[cid] = score
-            ordered_ids = sorted(all_ids, key=lambda c: rrf_scores[c], reverse=True)[
-                :fetch_k
-            ]
+            ordered_ids = sorted(all_ids, key=lambda c: rrf_scores[c], reverse=True)[:fetch_k]
         elif sem_results:
             ordered_ids = [c.id for c in sem_results[:fetch_k]]
         else:
@@ -1044,7 +1005,9 @@ def build_server():
                 for i, cid in enumerate(ordered_ids):
                     pre_rerank_ranks[cid] = i + 1
                 reranker = RerankingRetriever(
-                    retriever=None, llm=utility_llm, top_k=top_k  # type: ignore[arg-type]
+                    retriever=None,
+                    llm=utility_llm,
+                    top_k=top_k,  # type: ignore[arg-type]
                 )
                 ranked_indices = await reranker._llm_rerank(req.query, candidates)
                 ordered_ids = [candidates[i].id for i in ranked_indices[:fetch_k]]
@@ -1118,6 +1081,7 @@ def build_server():
     app.include_router(branding_router)
 
     from fastapi.staticfiles import StaticFiles
+
     uploads_dir = _DB_DIR / "uploads"
     uploads_dir.mkdir(exist_ok=True)
     app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")

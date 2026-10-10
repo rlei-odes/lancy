@@ -94,10 +94,12 @@ class ChromaDBVectorStore(VectorStore):
         Scalar value → {field: {"$eq": value}}; list value → {field: {"$in": value}}.
         Multiple keys are combined with $and.
         """
+
         def _clause(k: str, v: Any) -> dict[str, Any]:
             if isinstance(v, list):
                 return {k: {"$in": v}}
             return {k: {"$eq": v}}
+
         items = list(filters.items())
         if len(items) == 1:
             k, v = items[0]

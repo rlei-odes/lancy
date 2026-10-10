@@ -125,9 +125,7 @@ def _run(kb) -> tuple:
 
 
 def test_failure_records_outcome_error_and_finished_at(kb, stale_status, monkeypatch):
-    _raise_from_vector_store(
-        monkeypatch, ConnectionRefusedError(111, "Connect call failed ('10.0.0.1', 5432)")
-    )
+    _raise_from_vector_store(monkeypatch, ConnectionRefusedError(111, "Connect call failed ('10.0.0.1', 5432)"))
 
     with pytest.raises(ConnectionRefusedError):
         _run(kb)

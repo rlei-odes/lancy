@@ -99,9 +99,7 @@ def test_deleting_a_pile_takes_its_file_rows(db, pile):
 
 
 def _make_ready(db, pile_id):
-    finish_pile_processing(
-        db, pile_id, chunk_count=42, file_count=1, embedding_key="local/nomic"
-    )
+    finish_pile_processing(db, pile_id, chunk_count=42, file_count=1, embedding_key="local/nomic")
 
 
 def test_adding_a_file_to_a_ready_pile_marks_it_stale(db, pile):
@@ -168,9 +166,7 @@ def test_a_crashed_run_still_leaves_the_backend_known(db, pile):
 
 def test_finish_records_counts_and_the_embedding_pair(db, pile):
     begin_pile_processing(db, pile, "chromadb")
-    finish_pile_processing(
-        db, pile, chunk_count=120, file_count=3, embedding_key="local/nomic-ai/nomic-embed-text-v1"
-    )
+    finish_pile_processing(db, pile, chunk_count=120, file_count=3, embedding_key="local/nomic-ai/nomic-embed-text-v1")
     row = get_pile(db, pile, OWNER)
     assert (row["status"], row["chunk_count"], row["file_count"]) == ("ready", 120, 3)
     assert row["embedding_key"] == "local/nomic-ai/nomic-embed-text-v1"
@@ -207,10 +203,10 @@ def test_replacing_a_file_does_not_double_count(db, pile):
     "original, expected",
     [
         ("report.pdf", "report.pdf"),
-        ("../../etc/passwd.pdf", "passwd.pdf"),          # directory parts stripped
+        ("../../etc/passwd.pdf", "passwd.pdf"),  # directory parts stripped
         ("/absolute/path/doc.pdf", "doc.pdf"),
         ("Angebot März 2026.pdf", "Angebot_M_rz_2026.pdf"),
-        ("..pdf", "upload.pdf"),                          # nothing usable left in the stem
+        ("..pdf", "upload.pdf"),  # nothing usable left in the stem
     ],
 )
 def test_filenames_are_made_safe_without_losing_the_extension(original, expected):

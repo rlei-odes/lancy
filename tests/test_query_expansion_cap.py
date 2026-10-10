@@ -35,9 +35,7 @@ class FakeLLM:
     async def generate(self, messages, max_tokens=None, **kwargs):
         self.max_tokens = max_tokens
         self.prompt = " ".join(c.text or "" for m in messages for c in m.content if c.type == "text")
-        return LLMMessage(
-            role=Roles.ASSISTANT, content=[MessageContent(type="text", text=self.reply)]
-        )
+        return LLMMessage(role=Roles.ASSISTANT, content=[MessageContent(type="text", text=self.reply)])
 
 
 def expand(reply: str, n: int = 1) -> list[str]:
@@ -49,9 +47,7 @@ def expand(reply: str, n: int = 1) -> list[str]:
 
 def test_a_repetition_loop_cannot_multiply_the_retrieval_work():
     """The production failure: 204 lines when one was asked for."""
-    loop = "\n".join(
-        ["cloud strategy elements", "cloud strategy components", "cloud strategy framework"] * 68
-    )
+    loop = "\n".join(["cloud strategy elements", "cloud strategy components", "cloud strategy framework"] * 68)
 
     assert len(expand(loop, n=1)) == 1
 
@@ -127,7 +123,7 @@ def test_the_bound_grows_with_the_number_of_queries():
 
 
 def test_the_prompt_asks_for_one_unambiguous_count():
-    """"Produce 1 queries total: some ... some ..." is what started the loop."""
+    """ "Produce 1 queries total: some ... some ..." is what started the loop."""
     assert "exactly 1" in ask(1).prompt
 
 

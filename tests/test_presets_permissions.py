@@ -31,8 +31,7 @@ def seed(db, *, name, protected, kb_id=None, user_id=None, type_="retrieval", da
     """Insert a preset directly, bypassing the permission rules under test."""
     with _connect(db) as conn:
         conn.execute(
-            "INSERT INTO presets (user_id, kb_id, type, name, data_json, protected) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO presets (user_id, kb_id, type, name, data_json, protected) VALUES (?, ?, ?, ?, ?, ?)",
             (user_id, kb_id, type_, name, json.dumps(data or {"retriever_top_k": 5}), protected),
         )
         conn.commit()

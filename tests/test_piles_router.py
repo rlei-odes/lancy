@@ -276,9 +276,7 @@ def test_a_reprocess_after_an_embedding_change_resets_the_store(ctx):
     so the store is rebuilt rather than extended."""
     pile_id = _create(ctx["client"])
     _upload(ctx["client"], pile_id)
-    finish_pile_processing(
-        ctx["db"], pile_id, chunk_count=5, file_count=1, embedding_key="local/some-old-model"
-    )
+    finish_pile_processing(ctx["db"], pile_id, chunk_count=5, file_count=1, embedding_key="local/some-old-model")
     r = ctx["client"].post(f"/api/v1/piles/{pile_id}/process", headers=ME)
     assert r.json()["reset"] is True
     assert ctx["processed"][-1][1] is True
@@ -289,7 +287,10 @@ def test_a_reprocess_on_the_same_embedding_extends_the_store(ctx):
     pile_id = _create(ctx["client"])
     _upload(ctx["client"], pile_id)
     finish_pile_processing(
-        ctx["db"], pile_id, chunk_count=5, file_count=1,
+        ctx["db"],
+        pile_id,
+        chunk_count=5,
+        file_count=1,
         embedding_key="local/nomic-ai/nomic-embed-text-v1",
     )
     r = ctx["client"].post(f"/api/v1/piles/{pile_id}/process", headers=ME)
@@ -302,9 +303,7 @@ def test_a_stale_embedding_still_counts_as_having_a_store(ctx):
     since-replaced model remains analyzable while not being retrieval-ready."""
     pile_id = _create(ctx["client"])
     _upload(ctx["client"], pile_id)
-    finish_pile_processing(
-        ctx["db"], pile_id, chunk_count=5, file_count=1, embedding_key="local/some-old-model"
-    )
+    finish_pile_processing(ctx["db"], pile_id, chunk_count=5, file_count=1, embedding_key="local/some-old-model")
     body = ctx["client"].get(f"/api/v1/piles/{pile_id}", headers=ME).json()
     assert body["has_store"] is True
     assert body["embedding_current"] is False
@@ -354,9 +353,7 @@ def test_the_ingestion_prepass_discovers_a_piles_uploads(ctx):
     ctx["client"].post(f"/api/v1/piles/{pile_id}/process", headers=ME)
 
     kb, _reset = ctx["processed"][0]
-    found = _collect_candidate_files(
-        [Path(d) for d in kb.data_dirs], max_file_size_mb=kb.max_file_size_mb
-    )
+    found = _collect_candidate_files([Path(d) for d in kb.data_dirs], max_file_size_mb=kb.max_file_size_mb)
     assert sorted(f.name for f in found) == ["contract.pdf", "notes.md", "sheet.xlsx"]
 
 
@@ -372,7 +369,5 @@ def test_the_prepass_applies_the_inherited_size_limit(ctx):
 
     # Write a file past the limit directly, bypassing the endpoint's own check.
     (ctx["piles_dir"] / pile_id / "huge.pdf").write_bytes(b"x" * (6 * 1_048_576))
-    found = _collect_candidate_files(
-        [Path(d) for d in kb.data_dirs], max_file_size_mb=kb.max_file_size_mb
-    )
+    found = _collect_candidate_files([Path(d) for d in kb.data_dirs], max_file_size_mb=kb.max_file_size_mb)
     assert [f.name for f in found] == ["small.pdf"]

@@ -139,9 +139,7 @@ def make_vector_store(
             conn = conn.replace("postgres://", "postgresql+asyncpg://", 1)
         engine = create_async_engine(conn, pool_pre_ping=True)
         dim = EMBEDDING_DIMS.get(embedding_model_name, _DEFAULT_EMBEDDING_DIM)
-        logger.info(
-            f"PGVectorStore: table={table_name!r} dim={dim} conn={safe_conn_str(conn)}"
-        )
+        logger.info(f"PGVectorStore: table={table_name!r} dim={dim} conn={safe_conn_str(conn)}")
         return PGVectorStore(engine=engine, table_name=table_name, embeddings_size=dim)
     else:
         if db_path is None:
@@ -163,8 +161,7 @@ def _task_prefixes(model_name: str) -> tuple[str, str] | None:
         return ("passage: ", "query: ")
     if "qwen" in name and "embedding" in name and "vl" not in name:
         instruction = (
-            "Given a question, retrieve relevant passages from technical "
-            "and compliance documents that answer it"
+            "Given a question, retrieve relevant passages from technical and compliance documents that answer it"
         )
         return ("", f"Instruct: {instruction}\nQuery:")
     return None
@@ -214,9 +211,7 @@ SYSTEM_PROMPT = (
     "- Distinguish between third-party verified claims (EPDs) and self-declared supplier claims."
 )
 
-_CHUNKERS: dict[
-    str, PDFChunker | ExcelChunker | MarkdownChunker | MarkItDownChunker | EmailChunker
-] = {
+_CHUNKERS: dict[str, PDFChunker | ExcelChunker | MarkdownChunker | MarkItDownChunker | EmailChunker] = {
     ".pdf": PDFChunker(),
     ".xlsx": ExcelChunker(),
     ".xls": ExcelChunker(),
@@ -266,9 +261,7 @@ def build_embedding_model(
     litellm → OpenAI-compatible API at LITELLM_BASE_URL (requires LITELLM_API_KEY).
     custom  → direct OpenAI-compatible API with explicit base URL + API key.
     """
-    backend = (
-        (embedding_backend or os.getenv("EMBEDDING_BACKEND", "local")).lower().strip()
-    )
+    backend = (embedding_backend or os.getenv("EMBEDDING_BACKEND", "local")).lower().strip()
     # backward-compat: 'openai' was renamed to 'custom'
     if backend == "openai":
         backend = "custom"
@@ -280,9 +273,7 @@ def build_embedding_model(
         base_url = f"{host}/v1"
         name = model_name or "nomic-embed-text"
         logger.info(f"Embedding backend: Ollama ({name}) @ {base_url}")
-        return OpenAIEmbeddings(
-            model_name=name, base_url=base_url, api_key="ollama", dimensions=None
-        )
+        return OpenAIEmbeddings(model_name=name, base_url=base_url, api_key="ollama", dimensions=None)
     elif backend == "litellm":
         name = model_name or "voyage/voyage-3"
         base_url = os.getenv("LITELLM_BASE_URL", "")
@@ -299,9 +290,7 @@ def build_embedding_model(
         url = custom_base_url.strip() or None
         key = custom_api_key.strip() or os.getenv("OPENAI_API_KEY", "") or None
         logger.info(f"Embedding backend: custom ({name}) @ {url or 'OpenAI default'}")
-        return OpenAIEmbeddings(
-            model_name=name, base_url=url, api_key=key, dimensions=None
-        )
+        return OpenAIEmbeddings(model_name=name, base_url=url, api_key=key, dimensions=None)
     elif backend == "qwen3vl":
         # Deferred import — loading torch + transformers at module level costs seconds
         # even when this backend is not used.
@@ -384,8 +373,7 @@ def get_shared_embedding_model(
 
         if _emb_cached is not None:
             logger.info(
-                f"Embedding config changed {_describe(_emb_cached_key)} -> "
-                f"{_describe(key)}; releasing old model"
+                f"Embedding config changed {_describe(_emb_cached_key)} -> {_describe(key)}; releasing old model"
             )
             _emb_cached = None
             _emb_cached_key = None
@@ -431,9 +419,7 @@ def build_llm(
         case "ollama":
             name = model_name or "mistral-nemo:12b"
             host = ollama_host or os.getenv("OLLAMA_HOST") or None
-            logger.info(
-                f"LLM backend: Ollama ({name}) host={host or 'localhost'} num_ctx={num_ctx}"
-            )
+            logger.info(f"LLM backend: Ollama ({name}) host={host or 'localhost'} num_ctx={num_ctx}")
             return OllamaLLM(
                 model_name=name,
                 temperature=temperature,
@@ -502,9 +488,7 @@ def build_llm(
                 response_format=response_format,
             )
         case _:
-            raise ValueError(
-                f"Unsupported backend {backend!r}. Choose 'ollama', 'litellm', or 'custom'."
-            )
+            raise ValueError(f"Unsupported backend {backend!r}. Choose 'ollama', 'litellm', or 'custom'.")
 
 
 # ─── LLM client reuse ─────────────────────────────────────────────────────────
@@ -685,11 +669,11 @@ def _split_chunk_by_tokens(chunk: Chunk, max_tokens: int) -> list[Chunk]:
 # ---------------------------------------------------------------------------
 
 _MARKDOWN_JUNK_RE = re.compile(
-    r"<!--.*?-->|"       # HTML comments  (<!-- image -->, etc.)
+    r"<!--.*?-->|"  # HTML comments  (<!-- image -->, etc.)
     r"!\[.*?\]\(.*?\)|"  # image embeds   ![]()
-    r"\[.*?\]\(.*?\)|"   # links          [text](url)
-    r"^#{1,6}\s*|"       # heading markers
-    r"^[-*_]{3,}\s*$",   # horizontal rules  ---, ***, ___
+    r"\[.*?\]\(.*?\)|"  # links          [text](url)
+    r"^#{1,6}\s*|"  # heading markers
+    r"^[-*_]{3,}\s*$",  # horizontal rules  ---, ***, ___
     re.MULTILINE | re.DOTALL,
 )
 
@@ -787,10 +771,7 @@ def _collect_candidate_files(
     candidates = [
         f
         for f in all_files
-        if (
-            f.suffix.lower() in _CHUNKERS
-            or (write_images and f.suffix.lower() in _IMAGE_EXTENSIONS)
-        )
+        if (f.suffix.lower() in _CHUNKERS or (write_images and f.suffix.lower() in _IMAGE_EXTENSIONS))
         and "EVALUATION" not in f.name
     ]
 
@@ -798,10 +779,7 @@ def _collect_candidate_files(
     for f in candidates:
         size_mb = f.stat().st_size / (1024 * 1024)
         if size_mb > max_file_size_mb:
-            logger.warning(
-                f"Skipping {f.name}: file too large "
-                f"({size_mb:.1f} MB > {max_file_size_mb} MB limit)"
-            )
+            logger.warning(f"Skipping {f.name}: file too large ({size_mb:.1f} MB > {max_file_size_mb} MB limit)")
             continue
         result.append(f)
 
@@ -816,8 +794,7 @@ def load_chunks(
     pdf_ocr_enabled: bool = True,
     max_chunk_tokens: int = 0,
     include_files: list[Path] | None = None,  # if set, skip data_dirs discovery
-    file_hashes: dict[Path, str]
-    | None = None,  # precomputed hashes for stamping chunks
+    file_hashes: dict[Path, str] | None = None,  # precomputed hashes for stamping chunks
     write_images: bool = False,  # extract images from PDFs and load standalone image files
 ) -> list[Chunk]:
     """Load documents and split them into chunks.
@@ -848,24 +825,16 @@ def load_chunks(
 
     if include_files is not None:
         supported_files = include_files
-        logger.info(
-            f"Chunking {len(supported_files)} files (pre-filtered by dedup pre-pass)"
-        )
+        logger.info(f"Chunking {len(supported_files)} files (pre-filtered by dedup pre-pass)")
     else:
-        supported_files = _collect_candidate_files(
-            dirs, max_file_size_mb, max_files, write_images=write_images
-        )
-        logger.info(
-            f"Chunking {len(supported_files)} files from {[str(d) for d in dirs]}"
-        )
+        supported_files = _collect_candidate_files(dirs, max_file_size_mb, max_files, write_images=write_images)
+        logger.info(f"Chunking {len(supported_files)} files from {[str(d) for d in dirs]}")
 
     for file_idx, file_path in enumerate(supported_files):
         ext = file_path.suffix.lower()
         try:
             if on_progress:
-                on_progress(
-                    file_path.name, file_idx, len(supported_files), len(all_chunks)
-                )
+                on_progress(file_path.name, file_idx, len(supported_files), len(all_chunks))
 
             if ext in _IMAGE_EXTENSIONS:
                 # Standalone image file — load as a single base64 chunk
@@ -887,12 +856,14 @@ def load_chunks(
                     _txt = file_path.read_text(encoding="utf-8")
                 except UnicodeDecodeError:
                     _txt = file_path.read_text(encoding="latin-1")
-                file_chunks = [Chunk(
-                    title=file_path.name,
-                    content=_txt,
-                    mime_type="text/plain",
-                    metadata={"chapters": []},
-                )]
+                file_chunks = [
+                    Chunk(
+                        title=file_path.name,
+                        content=_txt,
+                        mime_type="text/plain",
+                        metadata={"chapters": []},
+                    )
+                ]
             else:
                 chunker = _CHUNKERS[ext]
                 kwargs: dict = {}
@@ -919,9 +890,7 @@ def load_chunks(
             all_chunks.extend(file_chunks)
             logger.debug(f"  {file_path.name}: {len(file_chunks)} chunks")
             if on_progress:
-                on_progress(
-                    file_path.name, file_idx + 1, len(supported_files), len(all_chunks)
-                )
+                on_progress(file_path.name, file_idx + 1, len(supported_files), len(all_chunks))
         except Exception as exc:
             logger.opt(exception=True).warning(f"Skipping {file_path.name}: {type(exc).__name__}: {exc}")
 
@@ -949,10 +918,8 @@ async def build_vector_store(
     reset: bool = False,
     batch_size: int = 50,
     on_embed_progress=None,  # callable(batch_index, total_batches)
-    vector_store: VectorStore
-    | None = None,  # if provided, use instead of creating ChromaDB
-    existing_hashes: set[str]
-    | None = None,  # precomputed from pre-pass; avoids second metadata scan
+    vector_store: VectorStore | None = None,  # if provided, use instead of creating ChromaDB
+    existing_hashes: set[str] | None = None,  # precomputed from pre-pass; avoids second metadata scan
     use_task_prefix: bool = True,
 ) -> VectorStore:
     """Embed chunks and persist them in a vector store (ChromaDB or PGVector).
@@ -968,9 +935,7 @@ async def build_vector_store(
     if reset:
         if isinstance(vector_store, ChromaDBVectorStore):
             vector_store.client.delete_collection(vector_store.collection.name)
-            vector_store.collection = vector_store.client.create_collection(
-                name="default_collection"
-            )
+            vector_store.collection = vector_store.client.create_collection(name="default_collection")
             logger.info(f"Reset ChromaDB collection at {db_path}")
         else:
             await vector_store.clear()
@@ -1000,9 +965,7 @@ async def build_vector_store(
     if existing_hashes is None:
         existing_hashes = await vector_store.get_file_hashes()
         if existing_hashes:
-            logger.debug(
-                f"build_vector_store: {len(existing_hashes)} hashes already in store"
-            )
+            logger.debug(f"build_vector_store: {len(existing_hashes)} hashes already in store")
 
     # Group chunks by file_hash and filter out files already indexed.
     chunks_by_hash: dict[str, list[Chunk]] = {}
@@ -1102,9 +1065,7 @@ def build_agent(
         number_query_expansion=number_query_expansion,
         enable_hyde=enable_hyde,
     )
-    logger.info(
-        f"RAG agent ready (top_k={top_k}  query_expansion={number_query_expansion})"
-    )
+    logger.info(f"RAG agent ready (top_k={top_k}  query_expansion={number_query_expansion})")
     return agent
 
 

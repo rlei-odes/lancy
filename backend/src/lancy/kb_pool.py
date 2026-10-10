@@ -4,6 +4,7 @@ All KBs in the pool share one embedding model instance; (embedding_backend,
 embedding_model) must match for concurrent use. KBs with a different embedding
 config require a full pool reset before they can be loaded.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -96,9 +97,9 @@ class EmbeddingConflict(Exception):
 
 @dataclass
 class LoadedKB:
-    kb: Any       # KBInfo
-    vs: Any       # VectorStore
-    agent: Any    # CustomRAG
+    kb: Any  # KBInfo
+    vs: Any  # VectorStore
+    agent: Any  # CustomRAG
     probe_bm25: Any = None  # BM25Retriever | None, lazy-init per-KB cache for Retrieval Probe
 
 
@@ -237,11 +238,7 @@ class KBPool:
         return list(self._pool.values())
 
     def status(self) -> dict:
-        emb_key = (
-            {"backend": self._emb_key[0], "model": self._emb_key[1]}
-            if self._emb_key
-            else None
-        )
+        emb_key = {"backend": self._emb_key[0], "model": self._emb_key[1]} if self._emb_key else None
         return {
             "loaded": list(self._pool),
             "loading": list(self._loading),
@@ -285,9 +282,7 @@ class DispatchingAgent:
         conversation bound to KB X out of KB Y is indistinguishable, to the
         user, from a correct answer.
         """
-        kb_id = await self._resolve_kb_id(
-            getattr(query_with_context, "conversation_id", None)
-        )
+        kb_id = await self._resolve_kb_id(getattr(query_with_context, "conversation_id", None))
         return self._pool.get(kb_id), kb_id
 
     def _no_kb_answer(self, kb_id: str | None = None) -> Any:
@@ -300,8 +295,7 @@ class DispatchingAgent:
         from conversational_toolkit.llms.base import MessageContent
 
         text = (
-            f"Knowledge base '{kb_id}' is not loaded on the server. "
-            "Ask an administrator to activate it."
+            f"Knowledge base '{kb_id}' is not loaded on the server. Ask an administrator to activate it."
             if kb_id and self._pool.get_active() is not None
             else "No knowledge base is loaded. Please activate one first."
         )

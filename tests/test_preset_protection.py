@@ -157,6 +157,4 @@ def test_nobody_can_overwrite_a_fully_immutable_preset(db, role):
 
     save(db_path, role, "Frozen", {"retriever_top_k": 99}, user_id=None if role == "admin" else "u1")
 
-    assert named(db_path, "Frozen", user_id=None if role == "admin" else "u1")[0]["data"] == {
-        "retriever_top_k": 3
-    }
+    assert named(db_path, "Frozen", user_id=None if role == "admin" else "u1")[0]["data"] == {"retriever_top_k": 3}

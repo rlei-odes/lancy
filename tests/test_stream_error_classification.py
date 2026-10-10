@@ -56,7 +56,7 @@ def classify(exc, store=None):
 @pytest.mark.parametrize(
     "text",
     [
-        "[Errno 111] Connection refused",                    # the spelling that regressed
+        "[Errno 111] Connection refused",  # the spelling that regressed
         "Connect call failed ('10.0.0.1', 5432)",
         "[Errno 111] Connect call failed ('10.0.0.1', 5432)",
         "[Errno -2] Name or service not known",
@@ -76,9 +76,9 @@ def test_a_timeout_reaching_the_database_is_a_retrieval_failure():
     "text",
     [
         "could not connect to server",
-        "could not translate host name \"dbhost\" to address",
+        'could not translate host name "dbhost" to address',
         "asyncpg.exceptions.InvalidPasswordError",
-        "relation \"rag_kb1\" does not exist",  # names postgres via the driver below
+        'relation "rag_kb1" does not exist',  # names postgres via the driver below
     ],
     ids=["could-not-connect", "bad-host", "auth", "missing-table"],
 )
@@ -100,17 +100,27 @@ def test_a_sqlalchemy_wrapped_error_is_a_retrieval_failure():
 def test_a_refused_llm_connection_is_still_reported_as_an_llm_failure():
     """The case that a broader text match would have broken."""
     exc = wrapped(
-        "openai", "APIConnectionError", "Connection error.",
-        wrapped("httpx", "ConnectError", "[Errno 111] Connection refused",
-                ConnectionRefusedError("[Errno 111] Connection refused")),
+        "openai",
+        "APIConnectionError",
+        "Connection error.",
+        wrapped(
+            "httpx",
+            "ConnectError",
+            "[Errno 111] Connection refused",
+            ConnectionRefusedError("[Errno 111] Connection refused"),
+        ),
     )
 
     assert classify(exc) == LLM_DOWN
 
 
 def test_an_httpx_connect_error_is_an_llm_failure():
-    exc = wrapped("httpx", "ConnectError", "[Errno 111] Connection refused",
-                  ConnectionRefusedError("[Errno 111] Connection refused"))
+    exc = wrapped(
+        "httpx",
+        "ConnectError",
+        "[Errno 111] Connection refused",
+        ConnectionRefusedError("[Errno 111] Connection refused"),
+    )
 
     assert classify(exc) == LLM_DOWN
 

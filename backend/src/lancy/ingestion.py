@@ -65,6 +65,7 @@ def _clear_cuda_cache() -> None:
     """Free GPU memory held by docling's pipeline models between pipeline stages."""
     try:
         import torch
+
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             free, total = torch.cuda.mem_get_info()
@@ -96,9 +97,11 @@ def _chunking_pool_fn(
 ):
     """Top-level function executed in the chunking subprocess."""
     import logging as _log
+
     _log.basicConfig(level=_log.INFO, format="%(asctime)s [chunk-worker] %(levelname)s %(message)s")
     from pathlib import Path as _Path
     from lancy.feature0_baseline_rag import load_chunks as _load_chunks
+
     fp = _Path(file_path_str)
     return _load_chunks(
         include_files=[fp],
@@ -325,9 +328,7 @@ async def _caption_image_chunks(
                 1,
             )
         else:
-            text_chunks[chunk_idx].content = text_chunks[chunk_idx].content.replace(
-                "<!-- image -->", "", 1
-            )
+            text_chunks[chunk_idx].content = text_chunks[chunk_idx].content.replace("<!-- image -->", "", 1)
 
     # Images beyond available placeholders become standalone text chunks.
     for k in range(n_to_replace, n_images):
@@ -389,9 +390,7 @@ async def run_ingestion(
 
     loop = asyncio.get_event_loop()
     try:
-        data_dirs = [
-            Path(d) if Path(d).is_absolute() else _ROOT / d for d in kb.data_dirs
-        ]
+        data_dirs = [Path(d) if Path(d).is_absolute() else _ROOT / d for d in kb.data_dirs]
 
         vs_type = getattr(kb, "vs_type", "chromadb") or "chromadb"
         vs_conn = getattr(kb, "vs_connection_string", "") or ""
@@ -415,9 +414,7 @@ async def run_ingestion(
         if not reset:
             existing_hashes = await vs_for_query.get_file_hashes()
             if existing_hashes:
-                log.info(
-                    f"Dedup: {len(existing_hashes)} file hash(es) already in store"
-                )
+                log.info(f"Dedup: {len(existing_hashes)} file hash(es) already in store")
             else:
                 current_count = await vs_for_query.count()
                 if current_count > 0:
@@ -461,9 +458,7 @@ async def run_ingestion(
                     n_skipped_store += 1
                     skipped_store.append(f)
                 elif h in seen_hashes:
-                    log.warning(
-                        f"Skipping {f.name!r} — duplicate content in batch (hash={h[:8]}…)"
-                    )
+                    log.warning(f"Skipping {f.name!r} — duplicate content in batch (hash={h[:8]}…)")
                     n_skipped_batch += 1
                     skipped_batch.append(f)
                 else:
@@ -487,9 +482,7 @@ async def run_ingestion(
         ) = await loop.run_in_executor(None, _prepass)
 
         if not filtered_files:
-            log.info(
-                f"All files already indexed for KB '{kb.name}' — nothing to embed."
-            )
+            log.info(f"All files already indexed for KB '{kb.name}' — nothing to embed.")
             return 0, 0, n_skipped_store, n_skipped_batch
 
         total_files = len(filtered_files)
@@ -550,13 +543,15 @@ async def run_ingestion(
 
             h = file_hashes_map[file_path]
             size_mb = file_path.stat().st_size / 1_048_576
-            _index_status.update({
-                "phase": "chunking",
-                "current_file": file_path.name,
-                "file_index": i + 1,
-                "embed_batch": 0,
-                "embed_total_batches": 0,
-            })
+            _index_status.update(
+                {
+                    "phase": "chunking",
+                    "current_file": file_path.name,
+                    "file_index": i + 1,
+                    "embed_batch": 0,
+                    "embed_total_batches": 0,
+                }
+            )
 
             ram_gb = _available_ram_gb()
             ram_info = f", {ram_gb:.1f} GB RAM free" if ram_gb is not None else ""
@@ -565,7 +560,8 @@ async def run_ingestion(
             pool = _get_chunking_pool()
             future = pool.submit(
                 _chunking_pool_fn,
-                str(file_path), h,
+                str(file_path),
+                h,
                 kb.pdf_ocr_enabled,
                 getattr(kb, "max_chunk_tokens", 0),
                 kb.image_indexing_enabled or kb.image_captioning_enabled,
@@ -580,8 +576,13 @@ async def run_ingestion(
                 if db_engine is not None:
                     _ms = int((datetime.now(timezone.utc) - file_start).total_seconds() * 1000)
                     await _write_ingest_event(
-                        db_engine, kb.id, file_path.name, file_path.name, "timeout",
-                        file_size_mb=size_mb, duration_ms=_ms,
+                        db_engine,
+                        kb.id,
+                        file_path.name,
+                        file_path.name,
+                        "timeout",
+                        file_size_mb=size_mb,
+                        duration_ms=_ms,
                         error=f"Chunking timed out after {chunk_timeout}s",
                     )
                 continue
@@ -591,8 +592,13 @@ async def run_ingestion(
                 if db_engine is not None:
                     _ms = int((datetime.now(timezone.utc) - file_start).total_seconds() * 1000)
                     await _write_ingest_event(
-                        db_engine, kb.id, file_path.name, file_path.name, "crashed",
-                        file_size_mb=size_mb, duration_ms=_ms,
+                        db_engine,
+                        kb.id,
+                        file_path.name,
+                        file_path.name,
+                        "crashed",
+                        file_size_mb=size_mb,
+                        duration_ms=_ms,
                         error="Chunking subprocess crashed",
                     )
                 continue
@@ -604,8 +610,14 @@ async def run_ingestion(
                 if db_engine is not None:
                     _ms = int((datetime.now(timezone.utc) - file_start).total_seconds() * 1000)
                     await _write_ingest_event(
-                        db_engine, kb.id, file_path.name, file_path.name, "no_chunks",
-                        chunks=0, file_size_mb=size_mb, duration_ms=_ms,
+                        db_engine,
+                        kb.id,
+                        file_path.name,
+                        file_path.name,
+                        "no_chunks",
+                        chunks=0,
+                        file_size_mb=size_mb,
+                        duration_ms=_ms,
                     )
                 continue
 
@@ -618,7 +630,7 @@ async def run_ingestion(
                 image_chunks = []
                 before = len(text_chunks)
                 text_chunks = [c for c in text_chunks if _content_score(c.content) >= MIN_CONTENT_CHARS]
-                if (dropped := before - len(text_chunks)):
+                if dropped := before - len(text_chunks):
                     log.info(f"Post-captioning quality filter: dropped {dropped} near-empty chunk(s)")
 
             if not text_chunks:
@@ -711,8 +723,14 @@ async def run_ingestion(
             if db_engine is not None:
                 _ms = int((datetime.now(timezone.utc) - file_start).total_seconds() * 1000)
                 await _write_ingest_event(
-                    db_engine, kb.id, file_path.name, file_path.name, "ok",
-                    chunks=len(text_chunks), file_size_mb=size_mb, duration_ms=_ms,
+                    db_engine,
+                    kb.id,
+                    file_path.name,
+                    file_path.name,
+                    "ok",
+                    chunks=len(text_chunks),
+                    file_size_mb=size_mb,
+                    duration_ms=_ms,
                 )
 
         log.info(
@@ -725,12 +743,22 @@ async def run_ingestion(
             for f in skipped_store_files:
                 size_mb_f = round(f.stat().st_size / (1024 * 1024), 3)
                 await _write_ingest_event(
-                    db_engine, kb.id, f.name, f.name, "skipped", file_size_mb=size_mb_f,
+                    db_engine,
+                    kb.id,
+                    f.name,
+                    f.name,
+                    "skipped",
+                    file_size_mb=size_mb_f,
                 )
             for f in skipped_batch_files:
                 size_mb_f = round(f.stat().st_size / (1024 * 1024), 3)
                 await _write_ingest_event(
-                    db_engine, kb.id, f.name, f.name, "skipped_duplicate", file_size_mb=size_mb_f,
+                    db_engine,
+                    kb.id,
+                    f.name,
+                    f.name,
+                    "skipped_duplicate",
+                    file_size_mb=size_mb_f,
                 )
 
         if all_text_chunks:
@@ -781,6 +809,7 @@ async def _write_ingest_event(
 ) -> None:
     try:
         from sqlalchemy import text as _sa_text
+
         ts = datetime.now(timezone.utc).isoformat()
         async with db_engine.begin() as conn:
             await conn.execute(
@@ -790,10 +819,15 @@ async def _write_ingest_event(
                     "VALUES (:ts, :kb_id, :document_id, :filename, :status, :chunks, :file_size_mb, :duration_ms, :error)"
                 ),
                 {
-                    "ts": ts, "kb_id": kb_id, "document_id": document_id,
-                    "filename": filename, "status": status,
-                    "chunks": chunks, "file_size_mb": file_size_mb,
-                    "duration_ms": duration_ms, "error": error,
+                    "ts": ts,
+                    "kb_id": kb_id,
+                    "document_id": document_id,
+                    "filename": filename,
+                    "status": status,
+                    "chunks": chunks,
+                    "file_size_mb": file_size_mb,
+                    "duration_ms": duration_ms,
+                    "error": error,
                 },
             )
     except Exception as exc:
@@ -821,22 +855,24 @@ async def ingest_uploaded_file(
     _ingest_start = datetime.now(timezone.utc)
     _size_mb: float | None = None
     _event_written = False
-    _index_status.update({
-        "indexing": True,
-        "phase": "chunking",
-        "current_file": source_name,
-        "file_index": 1,
-        "total_files": 1,
-        "chunks_so_far": 0,
-        "embed_batch": 0,
-        "embed_total_batches": 0,
-        "captioning_enabled": kb.image_captioning_enabled,
-        "kb_name": kb.name,
-        "finished_at": "",
-        "last_result": None,
-        "outcome": "",
-        "error": "",
-    })
+    _index_status.update(
+        {
+            "indexing": True,
+            "phase": "chunking",
+            "current_file": source_name,
+            "file_index": 1,
+            "total_files": 1,
+            "chunks_so_far": 0,
+            "embed_batch": 0,
+            "embed_total_batches": 0,
+            "captioning_enabled": kb.image_captioning_enabled,
+            "kb_name": kb.name,
+            "finished_at": "",
+            "last_result": None,
+            "outcome": "",
+            "error": "",
+        }
+    )
 
     loop = asyncio.get_event_loop()
     try:
@@ -860,7 +896,8 @@ async def ingest_uploaded_file(
         pool = _get_chunking_pool()
         future = pool.submit(
             _chunking_pool_fn,
-            str(file_path), h,
+            str(file_path),
+            h,
             kb.pdf_ocr_enabled,
             getattr(kb, "max_chunk_tokens", 0),
             kb.image_indexing_enabled or kb.image_captioning_enabled,
@@ -879,8 +916,13 @@ async def ingest_uploaded_file(
             if db_engine is not None:
                 _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
                 await _write_ingest_event(
-                    db_engine, kb.id, document_id, source_name, "timeout",
-                    file_size_mb=_size_mb, duration_ms=_ms,
+                    db_engine,
+                    kb.id,
+                    document_id,
+                    source_name,
+                    "timeout",
+                    file_size_mb=_size_mb,
+                    duration_ms=_ms,
                     error=f"Chunking timed out after {chunk_timeout}s",
                 )
                 _event_written = True
@@ -890,8 +932,13 @@ async def ingest_uploaded_file(
             if db_engine is not None:
                 _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
                 await _write_ingest_event(
-                    db_engine, kb.id, document_id, source_name, "crashed",
-                    file_size_mb=_size_mb, duration_ms=_ms,
+                    db_engine,
+                    kb.id,
+                    document_id,
+                    source_name,
+                    "crashed",
+                    file_size_mb=_size_mb,
+                    duration_ms=_ms,
                     error="Chunking subprocess crashed (glibc heap corruption)",
                 )
                 _event_written = True
@@ -907,8 +954,14 @@ async def ingest_uploaded_file(
             if db_engine is not None:
                 _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
                 await _write_ingest_event(
-                    db_engine, kb.id, document_id, source_name, "no_chunks",
-                    chunks=0, file_size_mb=_size_mb, duration_ms=_ms,
+                    db_engine,
+                    kb.id,
+                    document_id,
+                    source_name,
+                    "no_chunks",
+                    chunks=0,
+                    file_size_mb=_size_mb,
+                    duration_ms=_ms,
                 )
             return
 
@@ -933,7 +986,7 @@ async def ingest_uploaded_file(
             image_chunks = []
             before = len(text_chunks)
             text_chunks = [c for c in text_chunks if _content_score(c.content) >= MIN_CONTENT_CHARS]
-            if (dropped := before - len(text_chunks)):
+            if dropped := before - len(text_chunks):
                 log.info(f"Post-captioning quality filter: dropped {dropped} near-empty chunk(s)")
         elif kb.image_captioning_enabled and image_chunks and cfg is None:
             log.warning(
@@ -1066,15 +1119,18 @@ async def ingest_uploaded_file(
         _index_status["last_result"] = result.model_dump()
         _index_status["finished_at"] = datetime.now(timezone.utc).isoformat()
         _index_status["outcome"] = "ok"
-        log.info(
-            f"Upload ingest complete: {len(chunks)} chunks from '{file_path.name}' "
-            f"(document_id='{document_id}')"
-        )
+        log.info(f"Upload ingest complete: {len(chunks)} chunks from '{file_path.name}' (document_id='{document_id}')")
         if db_engine is not None:
             _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
             await _write_ingest_event(
-                db_engine, kb.id, document_id, source_name, "success",
-                chunks=len(chunks), file_size_mb=_size_mb, duration_ms=_ms,
+                db_engine,
+                kb.id,
+                document_id,
+                source_name,
+                "success",
+                chunks=len(chunks),
+                file_size_mb=_size_mb,
+                duration_ms=_ms,
             )
             _event_written = True
     except Exception as exc:
@@ -1085,8 +1141,13 @@ async def ingest_uploaded_file(
         if db_engine is not None and not _event_written:
             _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
             await _write_ingest_event(
-                db_engine, kb.id, document_id, source_name, "crashed",
-                file_size_mb=_size_mb, duration_ms=_ms,
+                db_engine,
+                kb.id,
+                document_id,
+                source_name,
+                "crashed",
+                file_size_mb=_size_mb,
+                duration_ms=_ms,
                 error=str(exc)[:500],
             )
         raise
@@ -1118,7 +1179,9 @@ async def upload_worker() -> None:
         _index_status["queued"] = _upload_queue.qsize()
         try:
             await ingest_uploaded_file(
-                file_path, kb, extra_metadata,
+                file_path,
+                kb,
+                extra_metadata,
                 vs=vs,
                 kb_router=kb_router,
                 db_dir=db_dir,

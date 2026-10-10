@@ -64,9 +64,7 @@ class ContextWindowRetriever(Retriever[ChunkMatch]):
         # Fetch all neighbours in parallel using neutral {field: value} filter format.
         neighbour_lists = await asyncio.gather(
             *[
-                self.vector_store.get_chunks_by_filter(
-                    {"source_file": source, "chunk_index": idx + offset}
-                )
+                self.vector_store.get_chunks_by_filter({"source_file": source, "chunk_index": idx + offset})
                 for offset in offsets
             ]
         )

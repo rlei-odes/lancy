@@ -278,7 +278,7 @@ class AnalyzeDocumentResponse(BaseModel):
 
 
 _ANALYZE_TIMEOUT_S = 110  # Next.js proxy is 120s; stay under it so the script sees a clean error
-_BUDGET_FRACTION = 0.6    # match expand-context — leaves headroom for prompt + output
+_BUDGET_FRACTION = 0.6  # match expand-context — leaves headroom for prompt + output
 
 
 # ─── Router factory ───────────────────────────────────────────────────────────
@@ -291,12 +291,9 @@ def create_rag_router(
     prompts_dir: Path | None = None,  # directory containing system_prompt.*.md files
     status_factory: Callable | None = None,  # () -> dict with indexing progress
     query_status_factory: Callable | None = None,  # () -> dict with query phase
-    agent_rebuild_callback: Callable
-    | None = None,  # (config) -> None, rebuilds agent without reindex
-    cancel_callback: Callable
-    | None = None,  # () -> None, requests indexing cancellation
-    retrieve_callback: Callable
-    | None = None,  # async (RetrieveRequest) -> RetrieveResponse
+    agent_rebuild_callback: Callable | None = None,  # (config) -> None, rebuilds agent without reindex
+    cancel_callback: Callable | None = None,  # () -> None, requests indexing cancellation
+    retrieve_callback: Callable | None = None,  # async (RetrieveRequest) -> RetrieveResponse
     vs_by_kb_factory: Callable | None = None,  # (kb_id: str) -> VectorStore | None
     pile_store_factory: Callable | None = None,  # (pile_id, owner_id) -> async ctx mgr
 ) -> APIRouter:
@@ -415,13 +412,7 @@ def create_rag_router(
             count = await vs.count()
             try:
                 records = await vs.get_chunks_by_filter({})
-                files = sorted(
-                    {
-                        r.metadata.get("source_file", "unknown")
-                        for r in records
-                        if r.metadata
-                    }
-                )
+                files = sorted({r.metadata.get("source_file", "unknown") for r in records if r.metadata})
             except Exception:
                 files = []
             return StoreInfo(chunks=count, files=len(files), file_list=files)
@@ -449,9 +440,7 @@ def create_rag_router(
         GET /reindex-status for progress; last_result carries the final counts.
         """
         if status_factory is not None and status_factory().get("indexing"):
-            raise HTTPException(
-                status_code=409, detail="Indexierung läuft bereits. Bitte warten."
-            )
+            raise HTTPException(status_code=409, detail="Indexierung läuft bereits. Bitte warten.")
         cfg = _load_config()  # admin baseline only — reindex is admin-only
         log.info(f"Reindex requested: reset={req.reset}")
         background_tasks.add_task(rebuild_callback, cfg, req.reset)
@@ -577,10 +566,7 @@ def create_rag_router(
             has_more = len(chunks) > req.limit
             page = chunks[: req.limit]
             return ChunkBrowseResponse(
-                chunks=[
-                    ChunkBrowseItem(id=c.id, content=c.content, title=c.title, metadata=c.metadata)
-                    for c in page
-                ],
+                chunks=[ChunkBrowseItem(id=c.id, content=c.content, title=c.title, metadata=c.metadata) for c in page],
                 returned=len(page),
                 offset=req.offset,
                 has_more=has_more,
@@ -598,7 +584,9 @@ def create_rag_router(
             by_file[sf] = (cur[0] + 1, cur[1] + len(c.content or ""))
         return DocumentStatsResponse(
             stats=[
-                DocumentStat(source_file=sf, chunk_count=by_file.get(sf, (0, 0))[0], char_count=by_file.get(sf, (0, 0))[1])
+                DocumentStat(
+                    source_file=sf, chunk_count=by_file.get(sf, (0, 0))[0], char_count=by_file.get(sf, (0, 0))[1]
+                )
                 for sf in req.source_files
             ]
         )
@@ -616,13 +604,9 @@ def create_rag_router(
             if req.pile_id:
                 if pile_store_factory is None:
                     raise HTTPException(status_code=503, detail="Piles are not available.")
-                async with pile_store_factory(
-                    req.pile_id, http.headers.get("x-session-id")
-                ) as pile_vs:
+                async with pile_store_factory(req.pile_id, http.headers.get("x-session-id")) as pile_vs:
                     if pile_vs is None:
-                        raise HTTPException(
-                            status_code=404, detail="Pile not found or not yet processed."
-                        )
+                        raise HTTPException(status_code=404, detail="Pile not found or not yet processed.")
                     return await _collect_document_stats(pile_vs, req)
             vs = vector_store_factory()
             if vs is None:
@@ -667,20 +651,12 @@ def create_rag_router(
             if req.pile_id:
                 if pile_store_factory is None:
                     raise HTTPException(status_code=503, detail="Piles are not available.")
-                async with pile_store_factory(
-                    req.pile_id, http.headers.get("x-session-id")
-                ) as pile_vs:
+                async with pile_store_factory(req.pile_id, http.headers.get("x-session-id")) as pile_vs:
                     if pile_vs is None:
-                        raise HTTPException(
-                            status_code=404, detail="Pile not found or not yet processed."
-                        )
-                    chunks = await pile_vs.get_chunks_by_filter(
-                        filters={filter_field: filter_value}
-                    )
+                        raise HTTPException(status_code=404, detail="Pile not found or not yet processed.")
+                    chunks = await pile_vs.get_chunks_by_filter(filters={filter_field: filter_value})
             else:
-                vs = (
-                    vs_by_kb_factory(req.kb_id) if req.kb_id and vs_by_kb_factory else None
-                ) or vector_store_factory()
+                vs = (vs_by_kb_factory(req.kb_id) if req.kb_id and vs_by_kb_factory else None) or vector_store_factory()
                 if vs is None:
                     raise HTTPException(
                         status_code=404,
@@ -696,8 +672,12 @@ def create_rag_router(
         char_count = sum(len(c.content or "") for c in chunks)
         if not chunks:
             return AnalyzeDocumentResponse(
-                document_id=req.document_id, source_file=req.source_file,
-                chunk_count=0, char_count=0, result=None, skipped="no_chunks",
+                document_id=req.document_id,
+                source_file=req.source_file,
+                chunk_count=0,
+                char_count=0,
+                result=None,
+                skipped="no_chunks",
             )
 
         role = http.headers.get("x-user-role", "user")
@@ -706,17 +686,21 @@ def create_rag_router(
         budget_chars = int(cfg.num_ctx * _BUDGET_FRACTION * 3.5)  # ~3.5 chars per token
         if char_count > budget_chars:
             return AnalyzeDocumentResponse(
-                document_id=req.document_id, source_file=req.source_file,
-                chunk_count=len(chunks), char_count=char_count,
-                result=None, skipped="over_budget", budget_chars=budget_chars,
+                document_id=req.document_id,
+                source_file=req.source_file,
+                chunk_count=len(chunks),
+                char_count=char_count,
+                result=None,
+                skipped="over_budget",
+                budget_chars=budget_chars,
             )
 
         system_prompt_tpl = _read_analyze_prompt()
         if not system_prompt_tpl:
             raise HTTPException(status_code=500, detail="batch_analyze prompt template not found")
-        system_prompt = system_prompt_tpl.replace(
-            "{schema}", json.dumps(req.response_schema, indent=2)
-        ).replace("{user_prompt}", req.prompt)
+        system_prompt = system_prompt_tpl.replace("{schema}", json.dumps(req.response_schema, indent=2)).replace(
+            "{user_prompt}", req.prompt
+        )
 
         # Wrap chunks as <document><chunk id="…">…</chunk>…</document>. Single-document
         # variant of expand-context's <sources><source>…</source></sources>.
@@ -777,8 +761,11 @@ def create_rag_router(
             raise HTTPException(status_code=502, detail=f"LLM returned invalid JSON: {exc}")
 
         return AnalyzeDocumentResponse(
-            document_id=req.document_id, source_file=req.source_file,
-            chunk_count=len(chunks), char_count=char_count, result=parsed,
+            document_id=req.document_id,
+            source_file=req.source_file,
+            chunk_count=len(chunks),
+            char_count=char_count,
+            result=parsed,
         )
 
     return router

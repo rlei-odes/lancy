@@ -7,6 +7,7 @@ PUT /api/v1/branding  — admin-only (enforced at Next.js middleware layer)
 Config persisted in db/branding.json (gitignored).
 Uploaded avatars saved to db/uploads/ and served as static files at /uploads/.
 """
+
 from __future__ import annotations
 
 import json

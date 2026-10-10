@@ -32,7 +32,7 @@ SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 
 def ui_version() -> str:
     match = re.search(r'version:\s*"([^"]+)"', CONFIG_TS.read_text(encoding="utf-8"))
-    assert match, f"no `version: \"…\"` found in {CONFIG_TS.relative_to(REPO)}"
+    assert match, f'no `version: "…"` found in {CONFIG_TS.relative_to(REPO)}'
     return match.group(1)
 
 
@@ -46,9 +46,7 @@ def version_key(version: str) -> tuple[int, ...]:
 
 def git(*args: str) -> str | None:
     try:
-        out = subprocess.run(
-            ["git", *args], cwd=REPO, capture_output=True, text=True, timeout=10
-        )
+        out = subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.SubprocessError):
         return None
     return out.stdout.strip() if out.returncode == 0 else None
@@ -77,8 +75,7 @@ def test_ui_version_matches_the_newest_changelog_entry():
     newest = changelog_versions()[0]
 
     assert ui_version() == newest, (
-        f"config.ts says {ui_version()}, newest CHANGELOG entry is {newest} — "
-        "bump both together"
+        f"config.ts says {ui_version()}, newest CHANGELOG entry is {newest} — bump both together"
     )
 
 
@@ -92,9 +89,7 @@ def test_changelog_versions_are_unique():
 def test_changelog_is_in_descending_version_order():
     versions = [v for v in changelog_versions() if SEMVER.match(v)]
 
-    assert versions == sorted(versions, key=version_key, reverse=True), (
-        "CHANGELOG entries are not newest-first"
-    )
+    assert versions == sorted(versions, key=version_key, reverse=True), "CHANGELOG entries are not newest-first"
 
 
 @pytest.mark.skipif(not git("tag"), reason="repository has no tags")
@@ -108,8 +103,7 @@ def test_latest_tag_is_not_ahead_of_the_ui_version():
     latest = latest_tag()
 
     assert version_key(latest) <= version_key(ui_version()), (
-        f"latest tag is v{latest}, config.ts says {ui_version()} — "
-        "the tag is ahead of the version being developed"
+        f"latest tag is v{latest}, config.ts says {ui_version()} — the tag is ahead of the version being developed"
     )
 
 
@@ -118,9 +112,7 @@ def test_latest_tag_is_documented_in_the_changelog():
     """A tagged release nobody wrote an entry for is drift in the other direction."""
     latest = latest_tag()
 
-    assert latest in changelog_versions(), (
-        f"tag v{latest} has no `## [Lancy v{latest}]` entry in CHANGELOG.md"
-    )
+    assert latest in changelog_versions(), f"tag v{latest} has no `## [Lancy v{latest}]` entry in CHANGELOG.md"
 
 
 @pytest.mark.skipif(not git("tag"), reason="repository has no tags")

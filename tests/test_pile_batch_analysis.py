@@ -61,10 +61,12 @@ class FakeStore:
 
 
 KB_STORE = FakeStore([FakeChunk("corpus text", "kb-doc.pdf")])
-PILE_STORE = FakeStore([
-    FakeChunk("my first page", "mine.pdf"),
-    FakeChunk("my second page", "mine.pdf"),
-])
+PILE_STORE = FakeStore(
+    [
+        FakeChunk("my first page", "mine.pdf"),
+        FakeChunk("my second page", "mine.pdf"),
+    ]
+)
 
 
 @pytest.fixture
@@ -159,52 +161,84 @@ def test_stats_say_so_when_piles_are_not_wired(ctx):
 def test_analyze_reads_the_piles_store(ctx):
     """No prompt template exists in this fixture, so a 500 from the template lookup
     is proof the pile's chunks were found — an empty fetch returns 200/no_chunks."""
-    r = _analyze(ctx["client"], {
-        "source_file": "mine.pdf", "pile_id": "p-mine",
-        "prompt": "q", "response_schema": SCHEMA,
-    })
+    r = _analyze(
+        ctx["client"],
+        {
+            "source_file": "mine.pdf",
+            "pile_id": "p-mine",
+            "prompt": "q",
+            "response_schema": SCHEMA,
+        },
+    )
     assert r.status_code == 500
     assert "template" in r.json()["detail"].lower()
     assert ctx["opened"] == [("p-mine", "session-aaa")]
 
 
 def test_analyze_reports_no_chunks_for_a_document_outside_the_pile(ctx):
-    r = _analyze(ctx["client"], {
-        "source_file": "kb-doc.pdf", "pile_id": "p-mine",
-        "prompt": "q", "response_schema": SCHEMA,
-    })
+    r = _analyze(
+        ctx["client"],
+        {
+            "source_file": "kb-doc.pdf",
+            "pile_id": "p-mine",
+            "prompt": "q",
+            "response_schema": SCHEMA,
+        },
+    )
     assert r.status_code == 200
     assert r.json()["skipped"] == "no_chunks"
 
 
 def test_analyze_on_another_sessions_pile_is_404(ctx):
-    r = _analyze(ctx["client"], {
-        "source_file": "mine.pdf", "pile_id": "p-mine",
-        "prompt": "q", "response_schema": SCHEMA,
-    }, THEM)
+    r = _analyze(
+        ctx["client"],
+        {
+            "source_file": "mine.pdf",
+            "pile_id": "p-mine",
+            "prompt": "q",
+            "response_schema": SCHEMA,
+        },
+        THEM,
+    )
     assert r.status_code == 404
 
 
 def test_analyze_rejects_a_pile_and_a_kb_together(ctx):
     """Silently preferring one would answer from a corpus the caller did not name."""
-    r = _analyze(ctx["client"], {
-        "source_file": "mine.pdf", "pile_id": "p-mine", "kb_id": "default",
-        "prompt": "q", "response_schema": SCHEMA,
-    })
+    r = _analyze(
+        ctx["client"],
+        {
+            "source_file": "mine.pdf",
+            "pile_id": "p-mine",
+            "kb_id": "default",
+            "prompt": "q",
+            "response_schema": SCHEMA,
+        },
+    )
     assert r.status_code == 422
 
 
 def test_analyze_still_requires_exactly_one_document_identifier(ctx):
-    r = _analyze(ctx["client"], {
-        "pile_id": "p-mine", "prompt": "q", "response_schema": SCHEMA,
-    })
+    r = _analyze(
+        ctx["client"],
+        {
+            "pile_id": "p-mine",
+            "prompt": "q",
+            "response_schema": SCHEMA,
+        },
+    )
     assert r.status_code == 422
 
 
 def test_analyze_says_so_when_piles_are_not_wired(ctx):
     client = ctx["build"](False)
-    r = _analyze(client, {
-        "source_file": "mine.pdf", "pile_id": "p-mine",
-        "prompt": "q", "response_schema": SCHEMA,
-    })
+    r = _analyze(
+        client,
+        {
+            "source_file": "mine.pdf",
+            "pile_id": "p-mine",
+            "prompt": "q",
+            "response_schema": SCHEMA,
+        },
+    )
     assert r.status_code == 503

@@ -56,10 +56,12 @@ class PGVectorStore(VectorStore):
     async def create_table(self) -> None:
         async with self.engine.begin() as session:
             await session.run_sync(self.metadata.create_all)
-            await session.execute(text(
-                f"CREATE INDEX IF NOT EXISTS {self.table_name}_embedding_hnsw_idx "
-                f"ON {self.table_name} USING hnsw (embedding vector_cosine_ops)"
-            ))
+            await session.execute(
+                text(
+                    f"CREATE INDEX IF NOT EXISTS {self.table_name}_embedding_hnsw_idx "
+                    f"ON {self.table_name} USING hnsw (embedding vector_cosine_ops)"
+                )
+            )
 
     async def clear(self) -> None:
         """Remove all rows from the table (keeps table structure intact)."""
@@ -238,14 +240,10 @@ class PGVectorStore(VectorStore):
         await self._ensure_initialized()
         async with self.SessionLocal() as session:
             result = await session.execute(
-                select(self.table.c.id).where(
-                    self.table.c.chunk_metadata["document_id"].astext == document_id
-                )
+                select(self.table.c.id).where(self.table.c.chunk_metadata["document_id"].astext == document_id)
             )
             ids = [row[0] for row in result]
             if ids:
-                await session.execute(
-                    self.table.delete().where(self.table.c.id.in_(ids))
-                )
+                await session.execute(self.table.delete().where(self.table.c.id.in_(ids)))
                 await session.commit()
             return len(ids)
