@@ -43,10 +43,10 @@ const NewMessageInput = React.forwardRef<HTMLTextAreaElement, TextareaProps>(({ 
     }, [inputValue]);
 
     return (
-        <div className="w-full border border-border rounded-lg bg-input text-foreground pb-2 focus:shadow-sm focus:drop-shadow-sm">
+        <div className="w-full border border-border rounded-lg bg-input text-foreground pb-2 focus:shadow-xs focus:drop-shadow-xs">
             <textarea
                 className={cn(
-                    "w-full max-h-52 px-4 pt-4 resize-none overflow-hidden bg-input rounded-lg text-foreground placeholder:text-foreground/50 placeholder:text-ellipsis placeholder:text-nowrap placeholder:overflow-hidden  focus:outline-none transition duration-300 ease-in-out",
+                    "w-full max-h-52 px-4 pt-4 resize-none overflow-hidden bg-input rounded-lg text-foreground placeholder:text-foreground/50 placeholder:text-ellipsis placeholder:text-nowrap placeholder:overflow-hidden  focus:outline-hidden transition duration-300 ease-in-out",
                     className,
                 )}
                 onKeyDown={(e) => handleKeyPress(e)}

@@ -82,7 +82,7 @@ export default function AdminPage() {
                                 className={cn(
                                     "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
                                     activeTab === tab.id
-                                        ? "bg-background border border-border text-foreground shadow-sm"
+                                        ? "bg-background border border-border text-foreground shadow-xs"
                                         : "text-muted-foreground hover:text-foreground hover:bg-background/50"
                                 )}
                             >

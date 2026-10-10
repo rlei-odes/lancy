@@ -310,7 +310,7 @@ export const PileManager: FunctionComponent<{ active?: boolean }> = ({ active = 
                             onChange={(e) => setNewName(e.target.value)}
                             onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
                             placeholder={t("piles.newPlaceholder")}
-                            className="flex-1 min-w-0 bg-background border border-border rounded-md px-2 py-1.5 text-xs outline-none focus:border-muted-foreground/50 placeholder:text-muted-foreground/40"
+                            className="flex-1 min-w-0 bg-background border border-border rounded-md px-2 py-1.5 text-xs outline-hidden focus:border-muted-foreground/50 placeholder:text-muted-foreground/40"
                         />
                         <button
                             onClick={handleCreate}
@@ -336,7 +336,7 @@ export const PileManager: FunctionComponent<{ active?: boolean }> = ({ active = 
                                     className={cn(
                                         "text-left rounded-lg border px-3 py-2 transition-colors",
                                         selected?.id === p.id
-                                            ? "border-border bg-card shadow-sm"
+                                            ? "border-border bg-card shadow-xs"
                                             : "border-transparent bg-muted/30 hover:bg-muted/60"
                                     )}
                                 >
@@ -368,7 +368,7 @@ export const PileManager: FunctionComponent<{ active?: boolean }> = ({ active = 
                         onDragLeave={onDragLeave}
                         onDrop={onDrop}
                         className={cn(
-                            "rounded-xl border bg-card shadow-sm overflow-hidden transition-colors",
+                            "rounded-xl border bg-card shadow-xs overflow-hidden transition-colors",
                             dragOver ? "border-primary ring-2 ring-primary/30" : "border-border"
                         )}
                     >

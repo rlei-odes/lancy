@@ -370,7 +370,7 @@ export const ChunkBrowser: FunctionComponent<{ active: boolean }> = ({ active })
                 </div>
             )}
             {/* Filter controls */}
-            <div className="max-w-2xl rounded-xl border border-border bg-card shadow-sm p-4 flex flex-col gap-3">
+            <div className="max-w-2xl rounded-xl border border-border bg-card shadow-xs p-4 flex flex-col gap-3">
                 <div className="flex flex-wrap items-center gap-3">
                     <label className="text-xs text-muted-foreground shrink-0">
                         {t("explorer.browserFileLabel")}
@@ -387,7 +387,7 @@ export const ChunkBrowser: FunctionComponent<{ active: boolean }> = ({ active })
                                 onChange={handleFileInputChange}
                                 onFocus={() => fileInput && setShowFileSuggestions(true)}
                                 placeholder={t("explorer.browserFileAll")}
-                                className="text-xs [font-family:inherit] bg-transparent outline-none flex-1 min-w-0"
+                                className="text-xs [font-family:inherit] bg-transparent outline-hidden flex-1 min-w-0"
                             />
                             {(fileInput || selectedFile) && (
                                 <button onClick={handleFileClear} className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
@@ -452,7 +452,7 @@ export const ChunkBrowser: FunctionComponent<{ active: boolean }> = ({ active })
                                 onChange={e => setExtraFilters(prev =>
                                     prev.map((r, ri) => ri === i ? { ...r, key: e.target.value } : r)
                                 )}
-                                className="text-xs [font-family:inherit] bg-muted border border-border text-foreground rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors flex-1"
+                                className="text-xs [font-family:inherit] bg-muted border border-border text-foreground rounded px-2 py-1 focus:outline-hidden focus:border-blue-400 transition-colors flex-1"
                             >
                                 <option value="">{t("explorer.browserFilterKeyPlaceholder")}</option>
                                 {options.map(k => <option key={k} value={k}>{k}</option>)}
@@ -468,7 +468,7 @@ export const ChunkBrowser: FunctionComponent<{ active: boolean }> = ({ active })
                                     prev.map((r, ri) => ri === i ? { ...r, value: e.target.value } : r)
                                 )}
                                 placeholder={t("explorer.browserFilterValuePlaceholder")}
-                                className="text-xs [font-family:inherit] bg-muted border border-border text-foreground rounded px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors flex-1"
+                                className="text-xs [font-family:inherit] bg-muted border border-border text-foreground rounded px-2 py-1 focus:outline-hidden focus:border-blue-400 transition-colors flex-1"
                             />
                             <button
                                 onClick={() => setExtraFilters(prev => prev.filter((_, ri) => ri !== i))}
@@ -512,7 +512,7 @@ export const ChunkBrowser: FunctionComponent<{ active: boolean }> = ({ active })
                         <div className="flex-1 h-px bg-border" />
                     </div>
 
-                    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+                    <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>

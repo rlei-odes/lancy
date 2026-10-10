@@ -55,7 +55,7 @@ const MessageEdit = React.forwardRef<HTMLTextAreaElement, TextareaProps>(({ clas
                 <textarea
                     className={cn(
                         className,
-                        "w-full max-h-48 resize-none bg-input overflow-hidden text-foreground placeholder:text-foreground/50 placeholder:text-ellipsis placeholder:text-nowrap placeholder:overflow-hidden focus:outline-none",
+                        "w-full max-h-48 resize-none bg-input overflow-hidden text-foreground placeholder:text-foreground/50 placeholder:text-ellipsis placeholder:text-nowrap placeholder:overflow-hidden focus:outline-hidden",
                     )}
                     onKeyDown={(e) => handleKeyPress(e)}
                     ref={textareaRef}

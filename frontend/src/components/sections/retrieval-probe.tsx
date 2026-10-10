@@ -126,7 +126,7 @@ export const RetrievalProbe: FunctionComponent = () => {
     return (
         <div className="flex flex-col gap-6 w-full">
             {/* Query input card */}
-            <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+            <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
                 <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted/30">
                     <FlaskConical className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-medium">{t("explorer.probeTitle")}</span>
@@ -142,7 +142,7 @@ export const RetrievalProbe: FunctionComponent = () => {
                         placeholder={t("explorer.queryPlaceholder")}
                         rows={3}
                         maxLength={4000}
-                        className="w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground/50 outline-none leading-relaxed"
+                        className="w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground/50 outline-hidden leading-relaxed"
                     />
 
                     <div className="flex flex-wrap items-center gap-3">
@@ -161,7 +161,7 @@ export const RetrievalProbe: FunctionComponent = () => {
                                 value={sourceFilter}
                                 onChange={(e) => setSourceFilter(e.target.value)}
                                 placeholder={t("explorer.sourceFilterPlaceholder")}
-                                className="text-xs bg-transparent outline-none placeholder:text-muted-foreground/40 text-muted-foreground w-44"
+                                className="text-xs bg-transparent outline-hidden placeholder:text-muted-foreground/40 text-muted-foreground w-44"
                             />
                         </div>
 

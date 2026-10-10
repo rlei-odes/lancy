@@ -77,7 +77,7 @@ export const BrandingSettings: FunctionComponent = () => {
                     onChange={(e) => setName(e.target.value)}
                     maxLength={80}
                     placeholder={config.agent.name}
-                    className="w-full text-sm border border-border rounded-md px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="w-full text-sm border border-border rounded-md px-3 py-2 bg-background text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary"
                 />
             </div>
 

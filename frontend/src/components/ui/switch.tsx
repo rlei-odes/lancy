@@ -8,7 +8,7 @@ import { cn } from "@/lib/lorem";
 const Switch = React.forwardRef<React.ElementRef<typeof SwitchPrimitives.Root>, React.ComponentPropsWithoutRef<typeof SwitchPrimitives.Root>>(({ className, ...props }, ref) => (
     <SwitchPrimitives.Root
         className={cn(
-            "peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 bg-primary",
+            "peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50 bg-primary",
             className,
         )}
         {...props}
