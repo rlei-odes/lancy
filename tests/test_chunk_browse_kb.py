@@ -1,9 +1,10 @@
-"""Intent: the chunk browser reads the KB the session selected, not the pool's global active one.
+"""Intent: Explorer tools read the KB the session selected, not the pool's global active one.
 
 Selecting a KB that is already in the pool is session-local — the frontend stores
 the id and sends it per request, without moving the pool's shared active pointer.
-`POST /rag/chunks` and `GET /rag/store-info` (the browser's file list) therefore
-take a `kb_id`:
+`POST /rag/chunks`, `GET /rag/store-info` (the chunk browser's file list),
+`POST /rag/document-stats` and `POST /rag/analyze-document` (batch analysis)
+therefore take a `kb_id`:
 
   - `kb_id` reads that KB's store, even when another KB is globally active
   - a `kb_id` that is not loaded is a 404 rather than a silent fallback to the
@@ -91,3 +92,23 @@ def test_store_info_without_kb_id_uses_the_active_kb(client):
     resp = client.get("/api/v1/rag/store-info")
     assert resp.status_code == 200, resp.text
     assert resp.json()["file_list"] == ["standard.pdf"]
+
+
+def test_document_stats_kb_id_reads_that_kb(client):
+    resp = client.post("/api/v1/rag/document-stats", json={"source_files": ["other.pdf"], "kb_id": "other"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["stats"][0]["chunk_count"] == 1
+
+
+def test_document_stats_unloaded_kb_id_is_404(client):
+    resp = client.post("/api/v1/rag/document-stats", json={"source_files": ["x.pdf"], "kb_id": "missing"})
+    assert resp.status_code == 404
+
+
+def test_analyze_document_unloaded_kb_id_is_404_not_a_fallback(client):
+    resp = client.post(
+        "/api/v1/rag/analyze-document",
+        json={"source_file": "standard.pdf", "prompt": "Q", "response_schema": {}, "kb_id": "missing"},
+    )
+    assert resp.status_code == 404
+    assert "missing" in resp.json()["detail"]

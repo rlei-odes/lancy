@@ -219,6 +219,14 @@ class DocumentStatsRequest(BaseModel):
     Resolved against the calling session's own piles, so another owner's pile is
     indistinguishable from one that does not exist.
     """
+    kb_id: str | None = Field(default=None, max_length=100)
+    """Read from this KB instead of the active one. Mutually exclusive with `pile_id`."""
+
+    @model_validator(mode="after")
+    def one_source(self) -> "DocumentStatsRequest":
+        if self.pile_id and self.kb_id:
+            raise ValueError("Provide either pile_id or kb_id, not both.")
+        return self
 
 
 class DocumentStat(BaseModel):
@@ -628,9 +636,17 @@ def create_rag_router(
                     if pile_vs is None:
                         raise HTTPException(status_code=404, detail="Pile not found or not yet processed.")
                     return await _collect_document_stats(pile_vs, req)
-            vs = vector_store_factory()
-            if vs is None:
-                raise HTTPException(status_code=404, detail="No active KB.")
+            if req.kb_id and vs_by_kb_factory:
+                vs = vs_by_kb_factory(req.kb_id)
+                if vs is None:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"KB '{req.kb_id}' is not loaded — activate it before requesting document stats.",
+                    )
+            else:
+                vs = vector_store_factory()
+                if vs is None:
+                    raise HTTPException(status_code=404, detail="No active KB.")
             return await _collect_document_stats(vs, req)
         except HTTPException:
             raise
@@ -661,6 +677,18 @@ def create_rag_router(
         skipped (not truncated) — the response reports `skipped="over_budget"` so the
         batch script can log a row and continue.
         """
+        return await _analyze_one(
+            req,
+            owner_id=http.headers.get("x-session-id"),
+            role=http.headers.get("x-user-role", "user"),
+        )
+
+    async def _analyze_one(req: AnalyzeDocumentRequest, *, owner_id: str | None, role: str) -> AnalyzeDocumentResponse:
+        """The analysis behind /analyze-document, callable without a request.
+
+        Batch jobs run in the background after their request has returned, so they
+        pass the caller's identity explicitly. Failures raise HTTPException either way.
+        """
         filter_field = "document_id" if req.document_id else "source_file"
         filter_value = req.document_id or req.source_file
 
@@ -671,17 +699,22 @@ def create_rag_router(
             if req.pile_id:
                 if pile_store_factory is None:
                     raise HTTPException(status_code=503, detail="Piles are not available.")
-                async with pile_store_factory(req.pile_id, http.headers.get("x-session-id")) as pile_vs:
+                async with pile_store_factory(req.pile_id, owner_id) as pile_vs:
                     if pile_vs is None:
                         raise HTTPException(status_code=404, detail="Pile not found or not yet processed.")
                     chunks = await pile_vs.get_chunks_by_filter(filters={filter_field: filter_value})
             else:
-                vs = (vs_by_kb_factory(req.kb_id) if req.kb_id and vs_by_kb_factory else None) or vector_store_factory()
-                if vs is None:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"KB {req.kb_id!r} not found." if req.kb_id else "No active KB.",
-                    )
+                if req.kb_id and vs_by_kb_factory:
+                    vs = vs_by_kb_factory(req.kb_id)
+                    if vs is None:
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"KB '{req.kb_id}' is not loaded — activate it before analyzing documents.",
+                        )
+                else:
+                    vs = vector_store_factory()
+                    if vs is None:
+                        raise HTTPException(status_code=404, detail="No active KB.")
                 chunks = await vs.get_chunks_by_filter(filters={filter_field: filter_value})
         except HTTPException:
             raise
@@ -700,9 +733,7 @@ def create_rag_router(
                 skipped="no_chunks",
             )
 
-        role = http.headers.get("x-user-role", "user")
-        user_id = http.headers.get("x-session-id")
-        cfg = _load_config(user_id=user_id, role=role)
+        cfg = _load_config(user_id=owner_id, role=role)
         budget_chars = int(cfg.num_ctx * _BUDGET_FRACTION * 3.5)  # ~3.5 chars per token
         if char_count > budget_chars:
             return AnalyzeDocumentResponse(
@@ -788,4 +819,5 @@ def create_rag_router(
             result=parsed,
         )
 
+    router.analyze_one = _analyze_one  # type: ignore[attr-defined]  # attached for main.py (batch jobs)
     return router

@@ -67,6 +67,10 @@ All `/api/admin/*` endpoints require admin. The table below is the full access m
 | `/api/v1/rag/status` | GET | 401 | ✓ | ✓ |
 | `/api/v1/rag/litellm-models` | GET | 401 | ✓ | ✓ |
 | `/api/v1/rag/ollama-models` | GET | 401 | ✓ | ✓ |
+| `/api/v1/batch/question-sets` | GET | 401 | ✓ | ✓ |
+| `/api/v1/batch/question-sets/{name}` | PUT, DELETE | 401 | ✓ | ✓ |
+| `/api/v1/batch/job` | GET, POST, DELETE | 401 | ✓ | ✓ |
+| `/api/v1/batch/job/cancel` | POST | 401 | ✓ | ✓ |
 | `/api/v1/branding` | GET | - | - | - |
 | `/api/v1/branding` | PUT | 401 | 403 | ✓ |
 | `/api/v1/branding/avatar` | DELETE | 401 | 403 | ✓ |
@@ -758,7 +762,8 @@ Meant for headless batch use — for example the [scripts/batch-analyze.py](../.
 | `source_file` | string | The filename as ingested. Provide **exactly one** of this or `document_id`. |
 | `prompt` | string | Natural-language questions to answer per document. |
 | `response_schema` | object | JSON Schema for the LLM output. On OpenAI-compatible backends (`custom`, `litellm`, OpenAI-native) the schema is enforced at decode time via `response_format: json_schema` with `strict: true`; on Ollama, `format: "json"` is used and the schema only guides via the prompt. |
-| `kb_id` | string | Optional. Target a specific KB instead of the currently active one. |
+| `kb_id` | string | Optional. Target a specific KB instead of the currently active one. Must be loaded in the KB pool. |
+| `pile_id` | string | Optional. Analyze a document in one of the caller's own piles instead. Mutually exclusive with `kb_id`. |
 
 **Example:**
 
@@ -799,7 +804,7 @@ curl -X POST http://localhost:3000/api/v1/rag/analyze-document \
 - `"no_chunks"` — no chunk matches the identifier in the target KB.
 - `"over_budget"` — the document's total `char_count` exceeds `num_ctx × 0.6 × 3.5` (~60 % context budget, same as expand-context). Increase `num_ctx` in the RAG panel or pre-summarise the document if you want it in scope.
 
-**Errors:** `422` on invalid request (both / neither identifier, missing fields), `404` if `kb_id` is set but not found, `502` if the LLM call fails or returns invalid JSON, `504` if the LLM exceeds the 110 s timeout.
+**Errors:** `422` on invalid request (both / neither identifier, missing fields), `404` if `kb_id` is set but not loaded in the KB pool (there is no fallback to the active KB), `502` if the LLM call fails or returns invalid JSON, `504` if the LLM exceeds the 110 s timeout.
 
 ```
 GET /rag/analyze-prompt-template
@@ -807,7 +812,50 @@ GET /rag/analyze-prompt-template
 
 Returns `{"template": "..."}` — the raw system prompt template (`batch_analyze.custom.md` if present, else `batch_analyze.default.md`) with its `{user_prompt}` and `{schema}` placeholders unsubstituted. The Batch Analysis UI tab renders it with both filled in so the user sees the complete prompt before running, without the frontend keeping its own copy that could drift from the file actually used. `404` if no template file is found.
 
-**Preflight support:** `POST /rag/document-stats` takes an optional `id_field` (`source_file` by default, or `document_id`) alongside its `source_files` list, so a batch keyed by upload-time ids can be size-checked the same way. Identifiers with no matching chunks come back as `chunk_count: 0`, which is how the UI distinguishes "missing from the KB" from "too large for the context budget" before spending any LLM call. Capped at 100 identifiers per request.
+**Preflight support:** `POST /rag/document-stats` takes an optional `id_field` (`source_file` by default, or `document_id`) alongside its `source_files` list, so a batch keyed by upload-time ids can be size-checked the same way. Identifiers with no matching chunks come back as `chunk_count: 0`, which is how the UI distinguishes "missing from the KB" from "too large for the context budget" before spending any LLM call. Capped at 100 identifiers per request. Like `analyze-document`, it takes an optional `kb_id` (404 if not loaded) or `pile_id`.
+
+---
+
+### Batch Jobs
+
+The Batch Analysis tab runs on the server: a job analyzes its documents one after another in a background task and records each result in `user_config.db` as it finishes. The browser that started it can leave, reload or close; the tab polls `GET /batch/job` every 2 s while a job runs. Jobs and question sets belong to the caller's session (`x-session-id`), the same identity piles use.
+
+```
+GET    /batch/job
+POST   /batch/job
+POST   /batch/job/cancel
+DELETE /batch/job
+```
+
+Each session has at most one job. `GET` returns it with its results, or `null`.
+
+`POST` starts a run. **Request:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ids` | string[] | Identifiers to analyze (up to 5,000). |
+| `id_field` | string | `source_file` (default) or `document_id`. |
+| `prompt` | string | The questions, as for `analyze-document`. |
+| `response_schema` | object | JSON Schema for each document's answer. |
+| `questions` | object[] | Display form of the questions (`field`, `question`, `type`, `choices`), returned with the job so its results stay labelled after the editor changes. Not part of the job's definition. |
+| `kb_id` / `pile_id` | string | Optional source, as for `analyze-document`. |
+| `replace` | bool | Confirms discarding an existing job with a different definition. |
+
+A job's **definition** is its source, `id_field`, `prompt` and `response_schema`. Starting a run with the definition of the existing job extends that job: new identifiers are appended, documents with a result are skipped, and failed ones are retried, so adding one document and running again analyzes only that document. A different definition would make the existing results answers to other questions, so it is refused with `409` unless `replace: true` is sent, which discards the old job and its results. `409` also if a job is already running.
+
+Per-document outcomes are recorded like `analyze-document`'s: `ok`, `no_chunks`, `over_budget`, or `error:HTTP <code> <detail>`. A failure ends that document, not the job.
+
+**Job status:** `running`, `done`, `cancelled` (after `POST /batch/job/cancel`, which stops between documents), `failed` (the runner itself crashed; `error` holds the exception class), or `interrupted`. A backend restart kills the task without a chance to record it, so jobs still marked `running` are set to `interrupted` at startup; running the same definition again continues with the documents still missing.
+
+`DELETE` discards the job and its results; `409` while it runs.
+
+```
+GET    /batch/question-sets
+PUT    /batch/question-sets/{name}
+DELETE /batch/question-sets/{name}
+```
+
+Named question sets, per session. `PUT` takes `{"rows": [{"question", "type", "choices"}, …]}` (1–50 rows) and creates or overwrites the set; names are 1–100 characters and may contain `/`. `GET` lists the sets sorted by name with their rows.
 
 ---
 

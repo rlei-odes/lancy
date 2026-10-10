@@ -191,6 +191,49 @@ def init_db(db_path: Path) -> None:
                 PRIMARY KEY (pile_id, filename)
             )
         """)
+        # Batch analysis: named question sets, and one job per owner. A job is the
+        # run definition (source, id field, prompt, schema) plus its per-document
+        # results, so a run survives the browser that started it.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS batch_question_sets (
+                owner_id   TEXT NOT NULL,
+                name       TEXT NOT NULL,
+                rows_json  TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (owner_id, name)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS batch_jobs (
+                owner_id         TEXT PRIMARY KEY,
+                status           TEXT NOT NULL,
+                kb_id            TEXT,
+                pile_id          TEXT,
+                id_field         TEXT NOT NULL,
+                prompt           TEXT NOT NULL,
+                schema_json      TEXT NOT NULL,
+                questions_json   TEXT NOT NULL,
+                ids_json         TEXT NOT NULL,
+                current_ident    TEXT NOT NULL DEFAULT '',
+                cancel_requested INTEGER NOT NULL DEFAULT 0,
+                error            TEXT NOT NULL DEFAULT '',
+                started_at       TEXT NOT NULL,
+                updated_at       TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS batch_results (
+                owner_id    TEXT NOT NULL,
+                ident       TEXT NOT NULL,
+                status      TEXT NOT NULL,
+                chunk_count INTEGER NOT NULL DEFAULT 0,
+                char_count  INTEGER NOT NULL DEFAULT 0,
+                result_json TEXT,
+                elapsed_s   REAL NOT NULL DEFAULT 0,
+                finished_at TEXT NOT NULL,
+                PRIMARY KEY (owner_id, ident)
+            )
+        """)
         conn.commit()
 
 
@@ -479,6 +522,22 @@ def set_pile_status(db_path: Path, pile_id: str, status: str, error: str = "") -
             conn.commit()
 
 
+def fail_interrupted_piles(db_path: Path) -> int:
+    """Mark piles left 'processing' by a previous process as failed.
+
+    Processing runs as a task inside the backend process, so a restart kills it
+    without a chance to record that. Called once at startup; without it the pile
+    stays 'processing' and every edit or reprocess of it answers 409.
+    """
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            n = conn.execute(
+                "UPDATE piles SET status = 'failed', error = 'Interrupted' WHERE status = 'processing'"
+            ).rowcount
+            conn.commit()
+    return n
+
+
 def begin_pile_processing(db_path: Path, pile_id: str, vs_type: str) -> None:
     """Mark a pile as processing and record which store backend it is building into.
 
@@ -624,3 +683,240 @@ def migrate_json_presets(db_path: Path, db_dir: Path) -> None:
 
     if migrated:
         log.info(f"Migrated {migrated} preset(s) from JSON files to SQLite")
+
+
+# ─── batch analysis CRUD ──────────────────────────────────────────────────────
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def list_question_sets(db_path: Path, owner_id: str) -> list[dict]:
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT name, rows_json, updated_at FROM batch_question_sets WHERE owner_id = ? ORDER BY name COLLATE NOCASE",
+            (owner_id,),
+        ).fetchall()
+    return [{"name": n, "rows": json.loads(r), "updated_at": u} for n, r, u in rows]
+
+
+def save_question_set(db_path: Path, owner_id: str, name: str, rows: list[dict]) -> None:
+    """Insert or overwrite the owner's set of this name."""
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO batch_question_sets (owner_id, name, rows_json, updated_at) VALUES (?, ?, ?, ?)",
+                (owner_id, name, json.dumps(rows), _now()),
+            )
+            conn.commit()
+
+
+def delete_question_set(db_path: Path, owner_id: str, name: str) -> bool:
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            deleted = conn.execute(
+                "DELETE FROM batch_question_sets WHERE owner_id = ? AND name = ?", (owner_id, name)
+            ).rowcount
+            conn.commit()
+    return bool(deleted)
+
+
+_BATCH_JOB_COLS = (
+    "status",
+    "kb_id",
+    "pile_id",
+    "id_field",
+    "prompt",
+    "schema_json",
+    "questions_json",
+    "ids_json",
+    "current_ident",
+    "cancel_requested",
+    "error",
+    "started_at",
+    "updated_at",
+)
+
+
+def get_batch_job(db_path: Path, owner_id: str) -> dict | None:
+    """The owner's job with its results in the order they finished, or None."""
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            f"SELECT {', '.join(_BATCH_JOB_COLS)} FROM batch_jobs WHERE owner_id = ?", (owner_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        results = conn.execute(
+            "SELECT ident, status, chunk_count, char_count, result_json, elapsed_s FROM batch_results "
+            "WHERE owner_id = ? ORDER BY finished_at, rowid",
+            (owner_id,),
+        ).fetchall()
+    job = dict(zip(_BATCH_JOB_COLS, row))
+    job["schema"] = json.loads(job.pop("schema_json"))
+    job["questions"] = json.loads(job.pop("questions_json"))
+    job["ids"] = json.loads(job.pop("ids_json"))
+    job["cancel_requested"] = bool(job["cancel_requested"])
+    job["results"] = [
+        {
+            "ident": i,
+            "status": s,
+            "chunk_count": cc,
+            "char_count": ch,
+            "result": json.loads(r) if r else None,
+            "elapsed_s": e,
+        }
+        for i, s, cc, ch, r, e in results
+    ]
+    return job
+
+
+def replace_batch_job(
+    db_path: Path,
+    owner_id: str,
+    *,
+    kb_id: str | None,
+    pile_id: str | None,
+    id_field: str,
+    prompt: str,
+    schema: dict,
+    questions: list[dict],
+    ids: list[str],
+) -> None:
+    """Start a new running job for the owner, discarding the previous job and its results."""
+    now = _now()
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            conn.execute("DELETE FROM batch_results WHERE owner_id = ?", (owner_id,))
+            conn.execute(
+                "INSERT OR REPLACE INTO batch_jobs (owner_id, status, kb_id, pile_id, id_field, prompt, "
+                "schema_json, questions_json, ids_json, started_at, updated_at) "
+                "VALUES (?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    owner_id,
+                    kb_id,
+                    pile_id,
+                    id_field,
+                    prompt,
+                    json.dumps(schema),
+                    json.dumps(questions),
+                    json.dumps(ids),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+
+
+def resume_batch_job(db_path: Path, owner_id: str, ids: list[str], questions: list[dict]) -> None:
+    """Restart the owner's existing job over `ids`, keeping finished results.
+
+    Error results are dropped so those documents are tried again. `questions` is
+    rewritten because it only carries display text — the prompt and schema, which
+    decide whether results are reusable, are unchanged by definition.
+    """
+    now = _now()
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            conn.execute("DELETE FROM batch_results WHERE owner_id = ? AND status LIKE 'error%'", (owner_id,))
+            conn.execute(
+                "UPDATE batch_jobs SET status = 'running', ids_json = ?, questions_json = ?, current_ident = '', "
+                "cancel_requested = 0, error = '', started_at = ?, updated_at = ? WHERE owner_id = ?",
+                (json.dumps(ids), json.dumps(questions), now, now, owner_id),
+            )
+            conn.commit()
+
+
+def set_batch_current(db_path: Path, owner_id: str, ident: str) -> None:
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            conn.execute(
+                "UPDATE batch_jobs SET current_ident = ?, updated_at = ? WHERE owner_id = ?",
+                (ident, _now(), owner_id),
+            )
+            conn.commit()
+
+
+def add_batch_result(
+    db_path: Path,
+    owner_id: str,
+    ident: str,
+    *,
+    status: str,
+    chunk_count: int,
+    char_count: int,
+    result: dict | None,
+    elapsed_s: float,
+) -> None:
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO batch_results "
+                "(owner_id, ident, status, chunk_count, char_count, result_json, elapsed_s, finished_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    owner_id,
+                    ident,
+                    status,
+                    chunk_count,
+                    char_count,
+                    json.dumps(result) if result is not None else None,
+                    elapsed_s,
+                    _now(),
+                ),
+            )
+            conn.commit()
+
+
+def finish_batch_job(db_path: Path, owner_id: str, status: str, error: str = "") -> None:
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            conn.execute(
+                "UPDATE batch_jobs SET status = ?, error = ?, current_ident = '', updated_at = ? WHERE owner_id = ?",
+                (status, error, _now(), owner_id),
+            )
+            conn.commit()
+
+
+def request_batch_cancel(db_path: Path, owner_id: str) -> bool:
+    """Flag the owner's running job to stop after the current document."""
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            updated = conn.execute(
+                "UPDATE batch_jobs SET cancel_requested = 1 WHERE owner_id = ? AND status = 'running'", (owner_id,)
+            ).rowcount
+            conn.commit()
+    return bool(updated)
+
+
+def delete_batch_job(db_path: Path, owner_id: str) -> None:
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            conn.execute("DELETE FROM batch_results WHERE owner_id = ?", (owner_id,))
+            conn.execute("DELETE FROM batch_jobs WHERE owner_id = ?", (owner_id,))
+            conn.commit()
+
+
+def interrupt_running_batch_jobs(db_path: Path) -> int:
+    """Mark jobs left 'running' by a previous process as interrupted.
+
+    A job runs as a task inside the backend process, so a restart kills it without
+    a chance to record that. Called once at startup; the finished results stay and
+    a resume picks up the documents still missing.
+    """
+    with _sqlite_lock:
+        with _connect(db_path) as conn:
+            n = conn.execute(
+                "UPDATE batch_jobs SET status = 'interrupted', current_ident = '', updated_at = ? "
+                "WHERE status = 'running'",
+                (_now(),),
+            ).rowcount
+            conn.commit()
+    return n
+
+
+def batch_cancel_requested(db_path: Path, owner_id: str) -> bool | None:
+    """Whether the owner's job was asked to stop; None if the job no longer exists."""
+    with _connect(db_path) as conn:
+        row = conn.execute("SELECT cancel_requested FROM batch_jobs WHERE owner_id = ?", (owner_id,)).fetchone()
+    return None if row is None else bool(row[0])

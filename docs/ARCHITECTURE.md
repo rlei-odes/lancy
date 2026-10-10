@@ -169,7 +169,9 @@ process pool as an admin reindex, so the two must not overlap: `POST
 /piles/{id}/process` returns 409 while `_index_status["indexing"]` is set. Pile runs
 pass `db_engine=None`, keeping user filenames out of the admin's `ingest_events`
 provenance log, and report a neutral `kb_name` so the shared index-status badge does
-not publish one user's pile names to everyone.
+not publish one user's pile names to everyone. Processing runs inside the backend
+process, so a restart ends it unrecorded; `create_piles_router` marks piles still
+`processing` as `failed` (`Interrupted`) at startup, which unlocks them for a new run.
 
 **Consumption.** `POST /rag/document-stats` and `POST /rag/analyze-document` accept a
 `pile_id` and resolve it through `open_pile_store`, which opens the store directly —
@@ -178,6 +180,30 @@ no embedding model. The store is closed before the LLM call, so a pgvector pile 
 not hold a connection pool open across a generation. The factory is injected into
 `create_rag_router` rather than imported, because `lancy.ingestion` imports
 `rag_router` and the reverse edge would cycle.
+
+### Batch Analysis Jobs
+
+A batch run is a server-side job (`batch_router.py`), so it does not depend on the
+browser that started it. `POST /batch/job` records the job in `user_config.db` and
+starts a background task that analyzes the documents one after another, writing each
+result as it finishes; the Batch Analysis tab polls `GET /batch/job` while the job runs.
+Each document goes through the same function as `POST /rag/analyze-document`, which
+`create_rag_router` exposes as `router.analyze_one` for `main.py` to inject. The job
+passes the caller's session id and role explicitly, because the request has returned
+by the time the task runs.
+
+**One job per session, keyed by definition.** A job's definition is its source
+(`kb_id` or `pile_id`), `id_field`, prompt and schema. Rerunning the same definition
+extends the job and analyzes only documents without a result, including failed ones.
+A different definition would leave the stored results answering other questions, so
+it replaces the job, and only after the caller confirms (`replace: true`).
+
+**Restarts.** The task lives in the backend process, so a restart ends it without a
+chance to record that. `create_batch_router` marks jobs still `running` as
+`interrupted` at startup; the finished results stay, and rerunning the definition
+continues with the missing documents.
+
+Question sets are stored per session in the same database (`batch_question_sets`).
 
 ### Ingestion Pipeline
 

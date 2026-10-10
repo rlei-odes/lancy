@@ -5,6 +5,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.4.2] — 2026-10-10 · rlei-odes
+
+### Added — Batch analysis runs on the server
+
+- A run is a background job in the backend that records each document's result as it finishes. The page can be left, reloaded or closed; coming back shows the run with its documents and results.
+- Running again with the same questions and source analyzes only documents that are new or failed. Changed questions replace the previous results after a confirmation.
+- A progress bar splits ok, skipped and failed documents, and shows the document in flight, elapsed time and the time remaining.
+- A run cut short by a backend restart is marked interrupted and continues where it stopped.
+
+### Added — Saved question sets
+
+- Batch analysis question sets can be saved by name, loaded into the editor and deleted. They are stored per session in `user_config.db`.
+
+### Fixed — Explorer reads the selected knowledge base
+
+- The chunk browser, its file filter and batch analysis read the knowledge base selected in the sidebar instead of the server-wide active one. A selected knowledge base that is not loaded returns 404 rather than quietly answering from another one.
+
+### Fixed — Piles stuck in processing
+
+- A pile whose processing was cut short by a backend restart is marked failed at startup and can be processed again, instead of staying locked.
+
+### Fixed — Tooling
+
+- CI installs a matched CPU `torch` and `torchvision` pair.
+- The `@types/node` lock entry satisfies vite 8's peer range, which silences the npm install warning.
+
+---
+
 ## [Lancy v0.4.1] — 2026-10-10 · rlei-odes
 
 ### Added — Backend uptime in the footer

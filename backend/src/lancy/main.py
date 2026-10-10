@@ -104,6 +104,7 @@ from lancy.ingestion import (
 from lancy.kb_pool import DispatchingAgent, EmbeddingConflict, KBPool
 from lancy.admin_router import create_admin_router, run_auto_cleanup
 from lancy.auth_router import create_auth_router
+from lancy.batch_router import create_batch_router
 from lancy.branding_router import create_branding_router
 from lancy.kb_router import KBInfo, create_kb_router
 from lancy.openai_compat_router import create_openai_compat_router
@@ -1059,6 +1060,7 @@ def build_server():
         retrieve_callback=retrieve_callback,
     )
     app.include_router(rag_router)
+    app.include_router(create_batch_router(_DB_DIR, rag_router.analyze_one))  # type: ignore[attr-defined]
 
     # ── OpenAI-compatible endpoint ────────────────────────────────────────
     openai_router = create_openai_compat_router(dispatching_agent)

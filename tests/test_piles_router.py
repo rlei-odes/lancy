@@ -15,6 +15,8 @@ The contract pinned down here:
   - processing refuses to start while an admin reindex holds the embedding model
   - a failed run records the exception *class*, never its message, which can carry a
     connection string or a local path
+  - a pile left 'processing' by a restart is marked failed at startup, so it can be
+    processed again instead of staying locked
 """
 
 import json
@@ -24,7 +26,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from lancy.database import finish_pile_processing, get_pile
+from lancy.database import begin_pile_processing, finish_pile_processing, get_pile
 from lancy.kb_router import KBInfo
 from lancy.piles_router import MAX_PILES_PER_OWNER, create_piles_router
 
@@ -217,6 +219,26 @@ def test_processing_inherits_the_active_kbs_ingestion_config(ctx):
     # Its data dir is the pile's own upload directory, and its id namespaces the store.
     assert kb.data_dirs == [str(ctx["piles_dir"] / pile_id)]
     assert kb.id == f"pile_{pile_id}"
+
+
+def test_a_restart_unlocks_a_pile_left_processing(ctx, tmp_path):
+    """Processing runs inside the backend process; a restart kills it mid-run and
+    nothing records that. Without the startup reset the pile stays 'processing'
+    forever, and every endpoint that edits or reprocesses it answers 409."""
+    pile_id = _create(ctx["client"])
+    _upload(ctx["client"], pile_id)
+    begin_pile_processing(ctx["db"], pile_id, "chromadb")
+
+    create_piles_router(  # a new process starting up
+        db_dir=tmp_path / "db",
+        piles_dir=tmp_path / "user-piles",
+        get_active_kb=lambda: ACTIVE_KB,
+        process_callback=lambda kb, reset: None,
+    )
+
+    pile = get_pile(ctx["db"], pile_id, "session-aaa")
+    assert (pile["status"], pile["error"]) == ("failed", "Interrupted")
+    assert ctx["client"].post(f"/api/v1/piles/{pile_id}/process", headers=ME).status_code == 200
 
 
 def test_processing_does_not_leak_the_pile_name_into_the_shared_status(ctx):

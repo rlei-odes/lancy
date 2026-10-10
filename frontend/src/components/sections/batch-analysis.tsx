@@ -3,16 +3,22 @@
 import React, { FunctionComponent, useCallback, useEffect, useRef, useState } from "react";
 import {
     AlertTriangle,
+    CheckCircle2,
     ChevronDown,
     ChevronRight,
     ChevronUp,
+    Clock,
     Download,
     FileStack,
     ListChecks,
     Loader2,
+    PauseCircle,
     Plus,
+    Save,
+    StopCircle,
     Trash2,
     Upload,
+    XCircle,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/lorem";
@@ -20,6 +26,8 @@ import { fetchPile, fetchPiles, type Pile } from "@/components/sections/pile-man
 
 const API_BASE = "";
 const STORAGE_KEY = "batchAnalysisQuestions";
+const SET_STORAGE_KEY = "batchAnalysisQuestionSet";  // name of the loaded set, if any
+const POLL_MS = 2_000;         // while a job is running — same cadence as pile processing
 const BUDGET_FRACTION = 0.6;   // mirrors _BUDGET_FRACTION in rag_router.py
 const CHARS_PER_TOKEN = 3.5;   // same approximation the backend uses
 const STATS_BATCH = 100;       // DocumentStatsRequest caps source_files at 100
@@ -68,6 +76,64 @@ interface ResultRow {
     [field: string]: string | number | boolean | null;
 }
 
+/** A question as stored server-side — in a saved set, or with a job for labelling its results. */
+export interface StoredQuestion {
+    question: string;
+    type: FieldType;
+    choices: string;
+}
+
+export interface QuestionSet {
+    name: string;
+    rows: StoredQuestion[];
+}
+
+/** The display form a job carries; also what the JSON download states. */
+export interface JobQuestion {
+    field: string;
+    question: string;
+    type: FieldType;
+    choices?: string[];
+}
+
+export interface JobResult {
+    ident: string;
+    status: string;
+    chunk_count: number;
+    char_count: number;
+    result: Record<string, unknown> | null;
+    elapsed_s: number;
+}
+
+export type JobStatus = "running" | "done" | "cancelled" | "interrupted" | "failed";
+
+export interface BatchJob {
+    status: JobStatus;
+    kb_id: string | null;
+    pile_id: string | null;
+    id_field: IdField;
+    prompt: string;
+    schema: Record<string, unknown>;
+    questions: JobQuestion[];
+    ids: string[];
+    current_ident: string;
+    cancel_requested: boolean;
+    error: string;
+    started_at: string;
+    updated_at: string;
+    results: JobResult[];
+}
+
+/** What decides whether a job's results answer the current questions. Mirrors
+ *  `_definition()` in batch_router.py. */
+export interface JobDefinition {
+    kbId: string | null;
+    pileId: string | null;
+    idField: IdField;
+    prompt: string;
+    schema: Record<string, unknown>;
+}
+
 // ─── Question rows → prompt + schema ──────────────────────────────────────────
 
 function newRow(): QuestionRow {
@@ -89,7 +155,7 @@ export function fieldName(index: number): string {
 
 /** `question3_how_many_towers_are_menti` — the export header only. Keeps the number so
  *  columns stay in question order, appends a slug so the CSV is readable on its own. */
-export function exportColumn(row: QuestionRow, index: number): string {
+export function exportColumn(row: Pick<QuestionRow, "question">, index: number): string {
     const slug = row.question
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "_")
@@ -170,6 +236,99 @@ export function parseIdList(text: string): { ids: string[]; duplicates: number }
     return { ids, duplicates };
 }
 
+// ─── Question sets ────────────────────────────────────────────────────────────
+
+/** Drop the React key — it identifies a row on screen, not a question. */
+export function toStoredRows(rows: QuestionRow[]): StoredQuestion[] {
+    return rows.map(({ question, type, choices }) => ({ question, type, choices }));
+}
+
+const FIELD_TYPES: FieldType[] = ["text", "boolean", "number", "choice"];
+
+/** Saved sets come back from the server; anything malformed is dropped rather than
+ *  trusted, and a set that leaves nothing usable yields the usual single empty row. */
+export function fromStoredRows(stored: unknown): QuestionRow[] {
+    const rows = (Array.isArray(stored) ? stored : [])
+        .filter((s): s is StoredQuestion => !!s && typeof s.question === "string")
+        .map((s) => ({
+            ...newRow(),
+            question: s.question,
+            type: FIELD_TYPES.includes(s.type) ? s.type : "text",
+            choices: typeof s.choices === "string" ? s.choices : "",
+        }));
+    return rows.length ? rows : [newRow()];
+}
+
+export function sameQuestions(rows: QuestionRow[], stored: StoredQuestion[]): boolean {
+    return JSON.stringify(toStoredRows(rows)) === JSON.stringify(toStoredRows(fromStoredRows(stored)));
+}
+
+// ─── Jobs ─────────────────────────────────────────────────────────────────────
+
+export function jobQuestions(rows: QuestionRow[]): JobQuestion[] {
+    return rows.map((r, i) => ({
+        field: fieldName(i),
+        question: r.question.trim(),
+        type: r.type,
+        ...(r.type === "choice" ? { choices: parseChoices(r.choices) } : {}),
+    }));
+}
+
+/** Key order must not decide equality — the backend compares with sort_keys. */
+export function stableStringify(v: unknown): string {
+    if (Array.isArray(v)) return `[${v.map(stableStringify).join(",")}]`;
+    if (v && typeof v === "object") {
+        const entries = Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+        return `{${entries.map(([k, val]) => `${JSON.stringify(k)}:${stableStringify(val)}`).join(",")}}`;
+    }
+    return JSON.stringify(v);
+}
+
+export function sameDefinition(job: BatchJob, def: JobDefinition): boolean {
+    return (
+        (job.kb_id ?? null) === def.kbId &&
+        (job.pile_id ?? null) === def.pileId &&
+        job.id_field === def.idField &&
+        job.prompt === def.prompt &&
+        stableStringify(job.schema) === stableStringify(def.schema)
+    );
+}
+
+/** The identifiers a run would analyze: everything ready, minus what the job already
+ *  answered — but only when the job answers the same questions. Failed documents
+ *  count as unanswered, so they are retried. */
+export function idsToRun(job: BatchJob | null, ready: string[], def: JobDefinition): string[] {
+    if (!job || !sameDefinition(job, def)) return ready;
+    const answered = new Set(job.results.filter((r) => !r.status.startsWith("error")).map((r) => r.ident));
+    return ready.filter((id) => !answered.has(id));
+}
+
+export function jobCounts(job: BatchJob): { total: number; done: number; ok: number; skipped: number; errors: number } {
+    let ok = 0, skipped = 0, errors = 0;
+    for (const r of job.results) {
+        if (r.status === "ok") ok++;
+        else if (r.status.startsWith("error")) errors++;
+        else skipped++;
+    }
+    return { total: Math.max(job.ids.length, job.results.length), done: job.results.length, ok, skipped, errors };
+}
+
+/** `45s`, `4m 05s`, `1h 02m` — compact enough for a status line in any language. */
+export function formatDuration(seconds: number): string {
+    const s = Math.max(0, Math.round(seconds));
+    if (s < 60) return `${s}s`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+    return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
+}
+
+export function toResultRow(r: JobResult): ResultRow {
+    const row: ResultRow = { _id: r.ident, _status: r.status, _chunk_count: r.chunk_count, _char_count: r.char_count };
+    for (const [k, v] of Object.entries(r.result ?? {})) {
+        row[k] = typeof v === "object" && v !== null ? JSON.stringify(v) : (v as string | number | boolean);
+    }
+    return row;
+}
+
 // ─── Export helpers ───────────────────────────────────────────────────────────
 
 export function csvCell(v: unknown): string {
@@ -208,10 +367,18 @@ async function fetchTemplate(): Promise<string> {
     return (await r.json()).template ?? "";
 }
 
+// The session's selected KB (set by the RAG config panel). Selecting a pooled KB is
+// session-local, so requests must name it — the backend's default is the pool's
+// global active KB, which may be a different one.
+function selectedKbId(): string | null {
+    return sessionStorage.getItem("lancy_selected_kb_id");
+}
+
 async function fetchDocStats(
     ids: string[],
     idField: IdField,
-    pileId: string | null
+    pileId: string | null,
+    kbId: string | null
 ): Promise<DocumentStat[]> {
     const out: DocumentStat[] = [];
     for (let i = 0; i < ids.length; i += STATS_BATCH) {
@@ -222,7 +389,7 @@ async function fetchDocStats(
             body: JSON.stringify({
                 source_files: ids.slice(i, i + STATS_BATCH),
                 id_field: idField,
-                ...(pileId ? { pile_id: pileId } : {}),
+                ...(pileId ? { pile_id: pileId } : kbId ? { kb_id: kbId } : {}),
             }),
         });
         if (!r.ok) {
@@ -234,45 +401,21 @@ async function fetchDocStats(
     return out;
 }
 
-async function analyzeOne(
-    ident: string,
-    idField: IdField,
-    prompt: string,
-    schema: Record<string, unknown>,
-    pileId: string | null
-): Promise<ResultRow> {
-    let r: Response;
-    try {
-        r = await fetch(`${API_BASE}/api/v1/rag/analyze-document`, {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                [idField]: ident,
-                prompt,
-                response_schema: schema,
-                ...(pileId ? { pile_id: pileId } : {}),
-            }),
-        });
-    } catch (e) {
-        return { _id: ident, _status: `error:${e instanceof Error ? e.message : "network"}`, _chunk_count: 0, _char_count: 0 };
-    }
+async function batchRequest<T>(path: string, init?: RequestInit): Promise<T> {
+    const r = await fetch(`${API_BASE}/api/v1/batch${path}`, {
+        credentials: "include",
+        ...init,
+        headers: init?.body ? { "Content-Type": "application/json" } : undefined,
+    });
     if (!r.ok) {
-        const detail = (await r.text()).slice(0, 200).trim();
-        return { _id: ident, _status: `error:HTTP ${r.status} ${detail}`, _chunk_count: 0, _char_count: 0 };
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { detail?: string }).detail ?? `HTTP ${r.status}`);
     }
-    const data = await r.json();
-    const row: ResultRow = {
-        _id: ident,
-        _status: data.skipped ?? "ok",
-        _chunk_count: data.chunk_count ?? 0,
-        _char_count: data.char_count ?? 0,
-    };
-    for (const [k, v] of Object.entries(data.result ?? {})) {
-        row[k] = typeof v === "object" && v !== null ? JSON.stringify(v) : (v as string | number | boolean);
-    }
-    return row;
+    return r.json();
 }
+
+const fetchJob = () => batchRequest<BatchJob | null>("/job");
+const fetchQuestionSets = () => batchRequest<QuestionSet[]>("/question-sets");
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
 
@@ -290,6 +433,95 @@ const Card: FunctionComponent<{ step: number; title: string; icon: React.ReactNo
         <div className="p-4">{children}</div>
     </div>
 );
+
+/** Live view of the server-side job: a segmented bar (ok / skipped / error), the
+ *  document in flight, timing, and what the user may do meanwhile. */
+const BatchStatus: FunctionComponent<{ job: BatchJob }> = ({ job }) => {
+    const { t } = useTranslation("app");
+    const running = job.status === "running";
+
+    // Ticks the elapsed clock between polls; the bar itself moves with the poll.
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        if (!running) return;
+        const id = setInterval(() => setNow(Date.now()), 1_000);
+        return () => clearInterval(id);
+    }, [running]);
+
+    const c = jobCounts(job);
+    const pct = (n: number) => (c.total ? (n / c.total) * 100 : 0);
+    const remaining = c.total - c.done;
+    const timed = job.results.filter((r) => r.elapsed_s > 0);
+    const avg = timed.length ? timed.reduce((a, r) => a + r.elapsed_s, 0) / timed.length : 0;
+    const elapsed = ((running ? now : Date.parse(job.updated_at)) - Date.parse(job.started_at)) / 1000;
+
+    const head = {
+        running:     { icon: <Loader2 className="h-4 w-4 animate-spin text-primary" />, label: t("explorer.batchStatusRunning") },
+        done:        { icon: <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, label: t("explorer.batchStatusDone") },
+        cancelled:   { icon: <StopCircle className="h-4 w-4 text-muted-foreground" />, label: t("explorer.batchStatusCancelled") },
+        interrupted: { icon: <PauseCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />, label: t("explorer.batchStatusInterrupted") },
+        failed:      { icon: <XCircle className="h-4 w-4 text-destructive" />, label: t("explorer.batchStatusFailed") },
+    }[job.status];
+
+    return (
+        <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2.5">
+            <div className="flex items-center gap-2">
+                {head.icon}
+                <span className="text-sm font-medium">{head.label}</span>
+                <span className="ml-auto text-xs font-mono text-muted-foreground">
+                    {t("explorer.batchProgress", { done: c.done, total: c.total })} · {Math.round(pct(c.done))}%
+                </span>
+            </div>
+
+            <div className="relative h-2.5 w-full rounded-full bg-muted overflow-hidden flex">
+                <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${pct(c.ok)}%` }} />
+                <div className="h-full bg-amber-500 transition-all duration-500" style={{ width: `${pct(c.skipped)}%` }} />
+                <div className="h-full bg-destructive transition-all duration-500" style={{ width: `${pct(c.errors)}%` }} />
+                {running && remaining > 0 && (
+                    // The document in flight: one slot wide, pulsing.
+                    <div className="h-full bg-primary/40 animate-pulse" style={{ width: `${pct(1)}%` }} />
+                )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />{t("explorer.batchStatusOk", { n: c.ok })}
+                </span>
+                <span className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-amber-500" />{t("explorer.batchStatusSkipped", { n: c.skipped })}
+                </span>
+                <span className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-destructive" />{t("explorer.batchStatusErrors", { n: c.errors })}
+                </span>
+                <span className="ml-auto flex items-center gap-1.5 font-mono">
+                    <Clock className="h-3 w-3" />
+                    {t("explorer.batchStatusElapsed", { time: formatDuration(elapsed) })}
+                    {running && avg > 0 && remaining > 0 && ` · ${t("explorer.batchEta", { time: formatDuration(avg * remaining) })}`}
+                </span>
+            </div>
+
+            {running && (job.cancel_requested ? (
+                <p className="text-xs text-amber-600 dark:text-amber-400">{t("explorer.batchStatusStopping")}</p>
+            ) : job.current_ident && (
+                <p className="text-xs font-mono truncate" title={job.current_ident}>
+                    {t("explorer.batchStatusCurrent", { name: job.current_ident })}
+                </p>
+            ))}
+            {running && (
+                <p className="text-xs text-muted-foreground">{t("explorer.batchStatusLeaveHint")}</p>
+            )}
+            {job.status === "interrupted" && remaining > 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">{t("explorer.batchStatusInterruptedHint", { n: remaining })}</p>
+            )}
+            {job.status === "cancelled" && remaining > 0 && (
+                <p className="text-xs text-muted-foreground">{t("explorer.batchStatusResumeHint", { n: remaining })}</p>
+            )}
+            {job.status === "failed" && job.error && (
+                <p className="text-xs text-destructive font-mono">{job.error}</p>
+            )}
+        </div>
+    );
+};
 
 const inputCls =
     "bg-background border border-border rounded-md px-2 py-1.5 text-xs outline-hidden focus:border-muted-foreground/50 transition-colors";
@@ -312,15 +544,23 @@ export const BatchAnalysis: FunctionComponent = () => {
     const [verification, setVerification] = useState<Verification | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    const [running, setRunning] = useState(false);
-    const [results, setResults] = useState<ResultRow[]>([]);
-    const [elapsed, setElapsed] = useState<number[]>([]);
-    const cancelRef = useRef(false);
+    // The server-side job: the run's definition, progress and results.
+    const [job, setJob] = useState<BatchJob | null>(null);
+    const [starting, setStarting] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
+
+    // Read in an effect, not during render: sessionStorage does not exist server-side.
+    const [kbId, setKbId] = useState<string | null>(null);
+
+    const [sets, setSets] = useState<QuestionSet[]>([]);
+    const [setName, setSetName] = useState<string | null>(null);        // the loaded set
+    const [saveAsName, setSaveAsName] = useState<string | null>(null);  // null = input hidden
+    const [setNotice, setSetNotice] = useState<string | null>(null);
 
     // Restore the question set — without raw mode a reload would otherwise lose it
     useEffect(() => {
         try {
+            setSetName(localStorage.getItem(SET_STORAGE_KEY));
             const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
             if (Array.isArray(saved) && saved.length) { setRows(saved); return; }
         } catch { /* corrupt entry — fall through to the seed row */ }
@@ -330,6 +570,42 @@ export const BatchAnalysis: FunctionComponent = () => {
     useEffect(() => {
         if (rows.length) localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
     }, [rows]);
+
+    useEffect(() => {
+        try {
+            if (setName) localStorage.setItem(SET_STORAGE_KEY, setName);
+            else localStorage.removeItem(SET_STORAGE_KEY);
+        } catch { /* storage unavailable — the loaded name is a convenience only */ }
+    }, [setName]);
+
+    useEffect(() => { fetchQuestionSets().then(setSets).catch(() => {}); }, []);
+
+    useEffect(() => {
+        setKbId(selectedKbId());
+        const handler = () => { setKbId(selectedKbId()); setVerification(null); };
+        window.addEventListener("lancy-kb-changed", handler);
+        return () => window.removeEventListener("lancy-kb-changed", handler);
+    }, []);
+
+    // Coming back to the page: show the job, and the documents it was run over.
+    useEffect(() => {
+        fetchJob()
+            .then((j) => {
+                setJob(j);
+                if (!j) return;
+                setDocText(j.ids.join("\n"));
+                setPileId(j.pile_id);
+                setIdField(j.id_field);
+            })
+            .catch(() => {});
+    }, []);
+
+    const jobStatus = job?.status;
+    useEffect(() => {
+        if (jobStatus !== "running") return;
+        const id = setInterval(() => { fetchJob().then(setJob).catch(() => {}); }, POLL_MS);
+        return () => clearInterval(id);
+    }, [jobStatus]);
 
     useEffect(() => { fetchTemplate().then(setTemplate).catch(() => {}); }, []);
 
@@ -347,7 +623,6 @@ export const BatchAnalysis: FunctionComponent = () => {
     const selectPile = useCallback(async (id: string | null) => {
         setPileId(id);
         setVerification(null);
-        setResults([]);
         setError(null);
         if (id === null) {
             setDocText("");
@@ -362,25 +637,26 @@ export const BatchAnalysis: FunctionComponent = () => {
         }
     }, []);
 
-    // Warn before a reload throws away an in-flight run
-    useEffect(() => {
-        if (!running) return;
-        const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
-        window.addEventListener("beforeunload", handler);
-        return () => window.removeEventListener("beforeunload", handler);
-    }, [running]);
-
     const { ids, duplicates } = parseIdList(docText);
     const issues = validateRows(rows);
     const schema = buildSchema(rows);
     const prompt = buildPrompt(rows);
-    const meta = ["_id", "_status", "_chunk_count", "_char_count"];
-    const columns = [...meta, ...rows.map((_, i) => fieldName(i))];
-    const exportHeaders = [...meta, ...rows.map(exportColumn)];
+    const sourceKb = pileId ? null : kbId;
+    const definition: JobDefinition = { kbId: sourceKb, pileId, idField, prompt, schema };
 
-    const done = new Set(results.map((r) => r._id));
-    const todo = (verification?.ready ?? []).filter((i) => !done.has(i));
-    const avgSeconds = elapsed.length ? elapsed.reduce((a, b) => a + b, 0) / elapsed.length : 0;
+    const running = job?.status === "running";
+    const todo = idsToRun(job, verification?.ready ?? [], definition);
+
+    // Results are labelled by the questions they answer, which are the job's — the
+    // editor may already hold different ones.
+    const jobQs = job?.questions ?? [];
+    const results = job ? job.results.map(toResultRow) : [];
+    const meta = ["_id", "_status", "_chunk_count", "_char_count"];
+    const columns = [...meta, ...jobQs.map((q) => q.field)];
+    const exportHeaders = [...meta, ...jobQs.map(exportColumn)];
+
+    const loadedSet = sets.find((s) => s.name === setName) ?? null;
+    const setModified = !!loadedSet && !sameQuestions(rows, loadedSet.rows);
 
     const patchRow = (key: string, patch: Partial<QuestionRow>) =>
         setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -408,7 +684,7 @@ export const BatchAnalysis: FunctionComponent = () => {
         try {
             const cfg = await fetchConfig();
             const budgetChars = Math.floor(cfg.num_ctx * BUDGET_FRACTION * CHARS_PER_TOKEN);
-            const stats = await fetchDocStats(ids, idField, pileId);
+            const stats = await fetchDocStats(ids, idField, pileId, sourceKb);
             const byId = new Map(stats.map((s) => [s.source_file, s]));
 
             const ready: string[] = [];
@@ -429,21 +705,92 @@ export const BatchAnalysis: FunctionComponent = () => {
         } finally {
             setVerifying(false);
         }
-    }, [ids, duplicates, idField, pileId]);
+    }, [ids, duplicates, idField, pileId, sourceKb]);
 
-    const handleRun = useCallback(async () => {
-        cancelRef.current = false;
-        setRunning(true);
+    const handleRun = async () => {
         setError(null);
-        for (const ident of todo) {
-            if (cancelRef.current) break;
-            const t0 = performance.now();
-            const row = await analyzeOne(ident, idField, prompt, schema, pileId);
-            setResults((prev) => [...prev, row]);
-            setElapsed((prev) => [...prev, (performance.now() - t0) / 1000]);
+        // Results of a job with other questions or another source would read as
+        // answers to these questions, so the server replaces that job — after a yes.
+        const replace = !!job && job.results.length > 0 && !sameDefinition(job, definition);
+        if (replace && !window.confirm(t("explorer.batchConfirmReplace", { n: job.results.length }))) return;
+        setStarting(true);
+        try {
+            setJob(await batchRequest<BatchJob>("/job", {
+                method: "POST",
+                body: JSON.stringify({
+                    ids: todo,
+                    id_field: idField,
+                    prompt,
+                    response_schema: schema,
+                    questions: jobQuestions(rows),
+                    ...(pileId ? { pile_id: pileId } : sourceKb ? { kb_id: sourceKb } : {}),
+                    replace,
+                }),
+            }));
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not start the analysis");
+        } finally {
+            setStarting(false);
         }
-        setRunning(false);
-    }, [todo, idField, prompt, schema, pileId]);
+    };
+
+    const handleStop = async () => {
+        try {
+            await batchRequest("/job/cancel", { method: "POST" });
+            setJob(await fetchJob());
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not stop the analysis");
+        }
+    };
+
+    const handleClear = async () => {
+        try {
+            await batchRequest("/job", { method: "DELETE" });
+            setJob(null);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not clear the results");
+        }
+    };
+
+    // ── Question sets ─────────────────────────────────────────────────────────
+
+    const loadSet = (name: string) => {
+        const target = sets.find((s) => s.name === name);
+        if (!target) return;
+        const unsaved = rows.some((r) => r.question.trim()) && !sameQuestions(rows, target.rows) && (!loadedSet || setModified);
+        if (unsaved && !window.confirm(t("explorer.batchSetsConfirmLoad", { name }))) return;
+        setRows(fromStoredRows(target.rows));
+        setSetName(name);
+    };
+
+    const saveSet = async (name: string) => {
+        const n = name.trim();
+        if (!n) return;
+        try {
+            await batchRequest(`/question-sets/${encodeURIComponent(n)}`, {
+                method: "PUT",
+                body: JSON.stringify({ rows: toStoredRows(rows) }),
+            });
+            setSets(await fetchQuestionSets());
+            setSetName(n);
+            setSaveAsName(null);
+            setSetNotice(t("explorer.batchSetsSaved", { name: n }));
+            setTimeout(() => setSetNotice(null), 2_500);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not save the question set");
+        }
+    };
+
+    const deleteSet = async () => {
+        if (!setName || !window.confirm(t("explorer.batchSetsConfirmDelete", { name: setName }))) return;
+        try {
+            await batchRequest(`/question-sets/${encodeURIComponent(setName)}`, { method: "DELETE" });
+            setSets(await fetchQuestionSets());
+            setSetName(null);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not delete the question set");
+        }
+    };
 
     const statusTone = (status: string) =>
         status === "ok" ? "text-emerald-600 dark:text-emerald-400"
@@ -523,6 +870,83 @@ export const BatchAnalysis: FunctionComponent = () => {
             {/* 2 — Questions */}
             <Card step={2} title={t("explorer.batchQuestionsTitle")} icon={<ListChecks className="h-4 w-4 text-muted-foreground" />}>
                 <div className="flex flex-col gap-3">
+                    {/* Saved question sets — loading one makes it the active set in the editor */}
+                    <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-border">
+                        <label className="text-xs text-muted-foreground">{t("explorer.batchSetsLabel")}</label>
+                        <select
+                            value={setName ?? ""}
+                            onChange={(e) => e.target.value && loadSet(e.target.value)}
+                            disabled={running}
+                            className={cn(inputCls, "min-w-48")}
+                        >
+                            <option value="">{t("explorer.batchSetsUnsaved")}</option>
+                            {sets.map((s) => (
+                                <option key={s.name} value={s.name}>{s.name}</option>
+                            ))}
+                        </select>
+                        {setModified && (
+                            <span className="text-xs text-amber-600 dark:text-amber-400">{t("explorer.batchSetsModified")}</span>
+                        )}
+                        {saveAsName === null ? (
+                            <>
+                                {loadedSet && (
+                                    <button
+                                        onClick={() => saveSet(loadedSet.name)}
+                                        disabled={!setModified || issues.length > 0}
+                                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs border border-border hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        <Save className="h-3.5 w-3.5" /> {t("explorer.batchSetsSave")}
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => setSaveAsName(loadedSet ? "" : setName ?? "")}
+                                    disabled={issues.length > 0}
+                                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs border border-border hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    {!loadedSet && <Save className="h-3.5 w-3.5" />} {t("explorer.batchSetsSaveAs")}
+                                </button>
+                                {loadedSet && (
+                                    <button
+                                        onClick={deleteSet}
+                                        title={t("explorer.batchSetsDelete")}
+                                        className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
+                                    >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                )}
+                            </>
+                        ) : (
+                            <form
+                                className="flex items-center gap-2"
+                                onSubmit={(e) => { e.preventDefault(); saveSet(saveAsName); }}
+                            >
+                                <input
+                                    autoFocus
+                                    value={saveAsName}
+                                    onChange={(e) => setSaveAsName(e.target.value)}
+                                    maxLength={100}
+                                    placeholder={t("explorer.batchSetsNamePlaceholder")}
+                                    className={cn(inputCls, "min-w-48")}
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={!saveAsName.trim()}
+                                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    <Save className="h-3.5 w-3.5" /> {t("explorer.batchSetsSave")}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setSaveAsName(null)}
+                                    className="px-2.5 py-1.5 rounded-md text-xs border border-border hover:bg-muted transition-colors"
+                                >
+                                    {t("explorer.batchSetsCancel")}
+                                </button>
+                            </form>
+                        )}
+                        {setNotice && <span className="text-xs text-emerald-600 dark:text-emerald-400">{setNotice}</span>}
+                    </div>
+
                     {rows.map((row, i) => {
                         const choices = parseChoices(row.choices);
                         return (
@@ -679,23 +1103,25 @@ export const BatchAnalysis: FunctionComponent = () => {
                         </button>
                         {running ? (
                             <button
-                                onClick={() => { cancelRef.current = true; }}
-                                className="flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium border border-destructive/40 text-destructive hover:bg-destructive/10 transition-colors"
+                                onClick={handleStop}
+                                disabled={job?.cancel_requested}
+                                className="flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium border border-destructive/40 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                                 {t("explorer.batchStop")}
                             </button>
                         ) : (
                             <button
                                 onClick={handleRun}
-                                disabled={!verification || todo.length === 0}
+                                disabled={!verification || todo.length === 0 || starting}
                                 className="flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             >
+                                {starting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                                 {t("explorer.batchRun", { n: todo.length })}
                             </button>
                         )}
-                        {results.length > 0 && !running && (
+                        {job && !running && (
                             <button
-                                onClick={() => { setResults([]); setElapsed([]); }}
+                                onClick={handleClear}
                                 className="px-2.5 py-1.5 rounded-md text-xs border border-border hover:bg-muted transition-colors"
                             >
                                 {t("explorer.batchClearResults")}
@@ -744,19 +1170,7 @@ export const BatchAnalysis: FunctionComponent = () => {
                         </div>
                     )}
 
-                    {(running || results.length > 0) && (
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground font-mono">
-                            {running && <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />}
-                            <span>
-                                {t("explorer.batchProgress", {
-                                    done: results.length,
-                                    total: results.length + todo.length,
-                                })}
-                                {running && avgSeconds > 0 &&
-                                    ` · ${t("explorer.batchEta", { seconds: Math.round(avgSeconds * todo.length) })}`}
-                            </span>
-                        </div>
-                    )}
+                    {job && <BatchStatus job={job} />}
                 </div>
             </Card>
 
@@ -777,15 +1191,7 @@ export const BatchAnalysis: FunctionComponent = () => {
                                     "results.json",
                                     // Carries the questions alongside the answers — the CSV can only
                                     // fit them into the header, JSON can state them properly.
-                                    JSON.stringify({
-                                        questions: rows.map((r, i) => ({
-                                            field: fieldName(i),
-                                            question: r.question.trim(),
-                                            type: r.type,
-                                            ...(r.type === "choice" ? { choices: parseChoices(r.choices) } : {}),
-                                        })),
-                                        results,
-                                    }, null, 2),
+                                    JSON.stringify({ questions: jobQs, results }, null, 2),
                                     "application/json"
                                 )}
                                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs border border-border hover:bg-muted transition-colors"
@@ -803,7 +1209,7 @@ export const BatchAnalysis: FunctionComponent = () => {
                                         // downloads carry the spelled-out header instead.
                                         <th
                                             key={c}
-                                            title={i >= meta.length ? rows[i - meta.length]?.question : undefined}
+                                            title={i >= meta.length ? jobQs[i - meta.length]?.question : undefined}
                                             className="text-left font-mono font-medium text-muted-foreground px-3 py-2 whitespace-nowrap"
                                         >
                                             {c}

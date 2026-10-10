@@ -46,6 +46,7 @@ from lancy.database import (
     create_pile,
     delete_pile,
     delete_pile_file,
+    fail_interrupted_piles,
     finish_pile_processing,
     get_pile,
     init_db,
@@ -295,6 +296,9 @@ def create_piles_router(
     # Idempotent, and it keeps this router usable without depending on the order
     # routers happen to be constructed in.
     init_db(sqlite_path)
+    interrupted = fail_interrupted_piles(sqlite_path)
+    if interrupted:
+        log.info(f"Marked {interrupted} pile(s) failed: processing was interrupted by the restart")
 
     _owner = pile_owner_id
 
