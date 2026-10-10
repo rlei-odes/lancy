@@ -106,6 +106,7 @@ from lancy.admin_router import create_admin_router, run_auto_cleanup
 from lancy.auth_router import create_auth_router
 from lancy.batch_router import create_batch_router
 from lancy.branding_router import create_branding_router
+from lancy.database import fail_interrupted_piles, interrupt_running_batch_jobs
 from lancy.kb_router import KBInfo, create_kb_router
 from lancy.openai_compat_router import create_openai_compat_router
 from lancy.piles_router import create_piles_router, open_pile_store
@@ -821,6 +822,15 @@ def build_server():
     async def _startup() -> None:
         asyncio.create_task(upload_worker())  # noqa: RUF006
         configure_loguru()
+        # Work that ran as a task in the previous process ended with it, unrecorded.
+        # This belongs here and not in the routers: spawned chunking workers re-import
+        # this module and rebuild every router while the server runs, but only the
+        # serving process runs the lifespan.
+        _user_config_db = _DB_DIR / "user_config.db"
+        if n := fail_interrupted_piles(_user_config_db):
+            log.info(f"Marked {n} pile(s) failed: processing was interrupted by the restart")
+        if n := interrupt_running_batch_jobs(_user_config_db):
+            log.info(f"Marked {n} batch job(s) interrupted by the restart")
         if not _database_url:
             from lancy.database import _maybe_backup
 

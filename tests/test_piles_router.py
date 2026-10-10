@@ -16,7 +16,8 @@ The contract pinned down here:
   - a failed run records the exception *class*, never its message, which can carry a
     connection string or a local path
   - a pile left 'processing' by a restart is marked failed at startup, so it can be
-    processed again instead of staying locked
+    processed again instead of staying locked — but building the router has no such
+    side effect, because spawned chunking workers rebuild it mid-run
 """
 
 import json
@@ -26,7 +27,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from lancy.database import begin_pile_processing, finish_pile_processing, get_pile
+from lancy.database import begin_pile_processing, fail_interrupted_piles, finish_pile_processing, get_pile
 from lancy.kb_router import KBInfo
 from lancy.piles_router import MAX_PILES_PER_OWNER, create_piles_router
 
@@ -221,20 +222,33 @@ def test_processing_inherits_the_active_kbs_ingestion_config(ctx):
     assert kb.id == f"pile_{pile_id}"
 
 
-def test_a_restart_unlocks_a_pile_left_processing(ctx, tmp_path):
-    """Processing runs inside the backend process; a restart kills it mid-run and
-    nothing records that. Without the startup reset the pile stays 'processing'
-    forever, and every endpoint that edits or reprocesses it answers 409."""
+def test_building_the_router_leaves_a_processing_pile_alone(ctx, tmp_path):
+    """The chunking pool spawns worker processes, and each one re-imports lancy.main
+    and so rebuilds every router. Construction must therefore have no side effects on
+    shared state, or a worker would mark the pile it is processing as interrupted."""
     pile_id = _create(ctx["client"])
     _upload(ctx["client"], pile_id)
     begin_pile_processing(ctx["db"], pile_id, "chromadb")
 
-    create_piles_router(  # a new process starting up
+    create_piles_router(  # what a spawned chunking worker does on import
         db_dir=tmp_path / "db",
         piles_dir=tmp_path / "user-piles",
         get_active_kb=lambda: ACTIVE_KB,
         process_callback=lambda kb, reset: None,
     )
+
+    assert get_pile(ctx["db"], pile_id, "session-aaa")["status"] == "processing"
+
+
+def test_the_startup_reset_unlocks_a_pile_left_processing(ctx):
+    """Processing runs inside the backend process; a restart kills it mid-run and
+    nothing records that. Without the reset the pile stays 'processing' forever, and
+    every endpoint that edits or reprocesses it answers 409."""
+    pile_id = _create(ctx["client"])
+    _upload(ctx["client"], pile_id)
+    begin_pile_processing(ctx["db"], pile_id, "chromadb")
+
+    assert fail_interrupted_piles(ctx["db"]) == 1  # main.py's startup hook
 
     pile = get_pile(ctx["db"], pile_id, "session-aaa")
     assert (pile["status"], pile["error"]) == ("failed", "Interrupted")

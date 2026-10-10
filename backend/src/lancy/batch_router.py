@@ -40,7 +40,6 @@ from lancy.database import (
     finish_batch_job,
     get_batch_job,
     init_db,
-    interrupt_running_batch_jobs,
     list_question_sets,
     replace_batch_job,
     request_batch_cancel,
@@ -103,9 +102,6 @@ def create_batch_router(db_dir, analyze_one: AnalyzeOne) -> APIRouter:
     router = APIRouter(prefix="/api/v1/batch")
     sqlite_path = db_dir / "user_config.db"
     init_db(sqlite_path)
-    interrupted = interrupt_running_batch_jobs(sqlite_path)
-    if interrupted:
-        log.info(f"Marked {interrupted} batch job(s) interrupted by the restart")
 
     # Owners whose job task is alive in this process. The database status alone
     # cannot guard a double click: both requests would read 'not running'.

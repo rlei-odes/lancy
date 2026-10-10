@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from lancy.batch_router import create_batch_router
-from lancy.database import get_batch_job, replace_batch_job, request_batch_cancel
+from lancy.database import get_batch_job, interrupt_running_batch_jobs, replace_batch_job, request_batch_cancel
 from lancy.rag_router import AnalyzeDocumentResponse
 
 ME = {"x-session-id": "session-aaa", "x-user-role": "user"}
@@ -145,9 +145,9 @@ def test_cancel_without_a_running_job_is_409(ctx):
     assert ctx["client"].post("/api/v1/batch/job/cancel", headers=ME).status_code == 409
 
 
-def test_restart_marks_running_job_interrupted_and_resume_continues(ctx):
+def _running_job(db):
     replace_batch_job(
-        ctx["db"],
+        db,
         "session-aaa",
         kb_id=None,
         pile_id=None,
@@ -157,12 +157,24 @@ def test_restart_marks_running_job_interrupted_and_resume_continues(ctx):
         questions=[{"question": "Q1"}],
         ids=["a.pdf", "b.pdf"],
     )
-    client = ctx["build"]()  # a new process starting up
+
+
+def test_building_the_router_leaves_a_running_job_alone(ctx):
+    """Spawned chunking workers re-import lancy.main and rebuild every router while
+    the server runs, so construction must not touch a job that is in progress."""
+    _running_job(ctx["db"])
+    ctx["build"]()  # what a spawned chunking worker does on import
+    assert get_batch_job(ctx["db"], "session-aaa")["status"] == "running"
+
+
+def test_startup_reset_marks_running_job_interrupted_and_resume_continues(ctx):
+    _running_job(ctx["db"])
+    assert interrupt_running_batch_jobs(ctx["db"]) == 1  # main.py's startup hook
 
     assert get_batch_job(ctx["db"], "session-aaa")["status"] == "interrupted"
-    client.post("/api/v1/batch/job", json=body(["a.pdf", "b.pdf"]), headers=ME)
+    ctx["client"].post("/api/v1/batch/job", json=body(["a.pdf", "b.pdf"]), headers=ME)
     assert _idents(ctx) == ["a.pdf", "b.pdf"]
-    assert client.get("/api/v1/batch/job", headers=ME).json()["status"] == "done"
+    assert ctx["client"].get("/api/v1/batch/job", headers=ME).json()["status"] == "done"
 
 
 def test_discard_removes_job_and_results(ctx):

@@ -170,8 +170,8 @@ process pool as an admin reindex, so the two must not overlap: `POST
 pass `db_engine=None`, keeping user filenames out of the admin's `ingest_events`
 provenance log, and report a neutral `kb_name` so the shared index-status badge does
 not publish one user's pile names to everyone. Processing runs inside the backend
-process, so a restart ends it unrecorded; `create_piles_router` marks piles still
-`processing` as `failed` (`Interrupted`) at startup, which unlocks them for a new run.
+process, so a restart ends it unrecorded; the startup hook in `main.py` marks piles
+still `processing` as `failed` (`Interrupted`), which unlocks them for a new run.
 
 **Consumption.** `POST /rag/document-stats` and `POST /rag/analyze-document` accept a
 `pile_id` and resolve it through `open_pile_store`, which opens the store directly —
@@ -199,9 +199,11 @@ A different definition would leave the stored results answering other questions,
 it replaces the job, and only after the caller confirms (`replace: true`).
 
 **Restarts.** The task lives in the backend process, so a restart ends it without a
-chance to record that. `create_batch_router` marks jobs still `running` as
-`interrupted` at startup; the finished results stay, and rerunning the definition
-continues with the missing documents.
+chance to record that. The startup hook in `main.py` marks jobs still `running` as
+`interrupted`; the finished results stay, and rerunning the definition continues
+with the missing documents. Both resets run in the lifespan rather than in router
+construction: the chunking pool spawns worker processes, which re-import `lancy.main`
+and rebuild every router while the server is running.
 
 Question sets are stored per session in the same database (`batch_question_sets`).
 
