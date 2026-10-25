@@ -136,8 +136,8 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
     const { t } = useTranslation("app");
 
     const setConversationId = (conversationId: Conversation["id"]) => {
-        // The chat runs on two pages while the new one is built; keep the user on theirs.
-        const base = router.pathname.startsWith("/next") ? "/next" : "";
+        // The classic chat stays reachable at /legacy; keep its users there.
+        const base = router.pathname.startsWith("/legacy") ? "/legacy" : "";
         router.push(conversationId ? `${base}/c/${conversationId}` : base || "/", undefined, { shallow: true });
     };
 

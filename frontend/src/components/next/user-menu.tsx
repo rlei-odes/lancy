@@ -80,7 +80,7 @@ export const UserMenu: FunctionComponent = () => {
                         </DropdownMenuItem>
                     )}
                     <DropdownMenuItem asChild className="gap-2 py-2.5">
-                        <Link href="/">
+                        <Link href="/legacy">
                             <HistoryIcon className="h-4 w-4" />
                             {t("next.classicView")}
                         </Link>

@@ -4,7 +4,7 @@ A preset is a named snapshot of settings that can be loaded in one click. Lancy 
 
 | Kind | Snapshots | Effect | Who may write |
 |---|---|---|---|
-| **Retrieval** | top-K, BM25, RRF-K, query expansion, HyDE, reranking, candidate pool | Immediate, per query | Admins (shared) and users (their own) |
+| **Retrieval** | top-K, BM25, RRF-K, query expansion, HyDE, reranking, candidate pool | Immediate, per query | Admins only |
 | **KB** | embedding model and backend, chunking, OCR, vector store, image indexing | Requires a re-index | Admins only |
 
 ---
@@ -27,17 +27,17 @@ Seeded presets live in `backend/src/lancy/seeds/presets.json` and are inserted o
 
 ## The `Default` retrieval preset
 
-`Default` is the company-wide baseline. It is special in one way: **switching to a knowledge base loads it**, replacing the current retrieval settings. It is matched by that exact name.
+`Default` is the company-wide baseline. It is special in one way: **switching knowledge base in the settings panel loads it**, replacing the retrieval settings shown there. It is matched by that exact name. Switching knowledge base in the chat only selects it and changes no settings.
 
-It is also what seeds a user's very first session, before they have adjusted anything.
+To change the `Default` preset:
 
-To change what everyone gets:
-
-1. Log in as admin and select any knowledge base.
-2. Adjust the retrieval settings in the RAG Parameters panel.
+1. Log in as admin and open **Admin → Knowledge & RAG**.
+2. Adjust the retrieval settings.
 3. Click the save icon next to the Retrieval preset dropdown, type `Default`, confirm.
 
-The edit is stored globally, not against the KB you happened to have open, so it applies everywhere. It keeps its `·` level, so users still cannot overwrite it.
+The edit is stored globally, not against the KB you happened to have open. It keeps its `·` level.
+
+A preset only changes what the panel shows. What every user's questions run with is what the admin last saved with the **Save** button at the bottom of the panel.
 
 The same applies to `Fast`, `Multi-Document` and `Quality`: an admin saving under one of those names updates that shared preset for everyone.
 
@@ -45,9 +45,9 @@ The same applies to `Fast`, `Multi-Document` and `Quality`: an admin saving unde
 
 ## What users can do
 
-Users load any preset, including the admin ones, and save their own under any name that is not taken by a protected preset. Personal presets are stored against the user's identity and are invisible to everyone else. A user who tries to save over `Default` gets an explicit error rather than a silent no-op.
+Users see the settings and presets read-only, in the settings panel of the Advanced Features page. They cannot save settings: `POST /api/v1/rag/config` is admin-only, because a settings save rebuilds the agents everyone answers with. Every user's questions run with the settings the admin saved.
 
-Note that a user's own preset is **not** re-applied when they switch KB — `Default` is. They have to re-select their preset afterwards.
+Retrieval settings users saved in earlier versions are still in `user_config.db` but no longer applied.
 
 ---
 

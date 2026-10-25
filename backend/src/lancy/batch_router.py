@@ -96,7 +96,7 @@ def create_batch_router(db_dir, analyze_one: AnalyzeOne) -> APIRouter:
     Args:
         db_dir:      Directory holding user_config.db.
         analyze_one: rag_router's per-document analysis — async
-                     (AnalyzeDocumentRequest, *, owner_id, role) -> AnalyzeDocumentResponse,
+                     (AnalyzeDocumentRequest, *, owner_id) -> AnalyzeDocumentResponse,
                      raising HTTPException on failure.
     """
     router = APIRouter(prefix="/api/v1/batch")
@@ -107,7 +107,7 @@ def create_batch_router(db_dir, analyze_one: AnalyzeOne) -> APIRouter:
     # cannot guard a double click: both requests would read 'not running'.
     running: set[str] = set()
 
-    async def _run(owner_id: str, role: str) -> None:
+    async def _run(owner_id: str) -> None:
         try:
             job = get_batch_job(sqlite_path, owner_id)
             if job is None:
@@ -130,7 +130,7 @@ def create_batch_router(db_dir, analyze_one: AnalyzeOne) -> APIRouter:
                     pile_id=job["pile_id"],
                 )
                 try:
-                    resp = await analyze_one(req, owner_id=owner_id, role=role)
+                    resp = await analyze_one(req, owner_id=owner_id)
                     status = resp.skipped or "ok"
                     chunk_count, char_count, result = resp.chunk_count, resp.char_count, resp.result
                 except HTTPException as exc:
@@ -220,7 +220,7 @@ def create_batch_router(db_dir, analyze_one: AnalyzeOne) -> APIRouter:
             )
 
         running.add(owner_id)
-        background_tasks.add_task(_run, owner_id, request.headers.get("x-user-role", "user"))
+        background_tasks.add_task(_run, owner_id)
         return get_batch_job(sqlite_path, owner_id) or {}
 
     @router.post("/job/cancel")

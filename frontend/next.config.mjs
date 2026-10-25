@@ -11,6 +11,13 @@ console.log("[Next] build with chunk: ", !disableChunk);
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+    async redirects() {
+        // Bookmarks of /next and its conversations lead to the chat, which lives at / now.
+        return [
+            { source: "/next", destination: "/", permanent: false },
+            { source: "/next/c/:conversationId", destination: "/c/:conversationId", permanent: false },
+        ];
+    },
     async rewrites() {
         // Backend läuft immer lokal auf Port 8080.
         // Next.js proxied diese Pfade server-seitig — der Browser sieht nur eine Domain.
@@ -24,7 +31,7 @@ const nextConfig = {
             { source: "/v1/:path*",    destination: `${backend}/v1/:path*` },
             { source: "/files/:path*", destination: `${backend}/files/:path*` },
             { source: "/c/:conversationId", destination: "/" },
-            { source: "/next/c/:conversationId", destination: "/next" },
+            { source: "/legacy/c/:conversationId", destination: "/legacy" },
         ];
     },
     env: {

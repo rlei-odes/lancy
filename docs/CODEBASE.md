@@ -22,15 +22,20 @@ An orientation guide to the repository layout. See [ARCHITECTURE.md](ARCHITECTUR
 │       ├── chunking/                 # PDF, EPUB, DOCX, Markdown chunkers
 │       ├── embeddings/               # SentenceTransformer, Ollama, LiteLLM
 │       ├── llms/                     # OpenAI, Ollama, Anthropic, LiteLLM
-│       ├── retriever/                # BM25, semantic, hybrid retriever
+│       ├── retriever/                # BM25 (+ text_analysis: stop words, stemming), semantic, hybrid, reranking
 │       └── vectorstores/             # ChromaDB, pgvector
 │
 ├── frontend/
 │   └── src/
+│       ├── components/next/          # Chat page: sidebar, messages, composer, document panel
 │       ├── components/sections/
-│       │   ├── rag-config-panel.tsx  # RAG Parameters panel
-│       │   └── sidebar/              # History, session labels, config badges
+│       │   ├── rag-config-panel.tsx  # RAG settings (admin page and sidebar)
+│       │   └── sidebar/              # Classic chat sidebar: history, session labels, badges
+│       ├── components/template/      # Classic chat (/legacy)
 │       └── pages/
+│           ├── index.tsx             # Chat (/, /c/{id})
+│           ├── legacy.tsx            # Classic chat (/legacy, /legacy/c/{id})
+│           ├── admin.tsx             # Admin; first tab: Knowledge & RAG settings
 │           ├── login.tsx
 │           └── api/auth/
 │

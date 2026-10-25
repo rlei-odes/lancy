@@ -1370,6 +1370,7 @@ export const RagConfigPanel: FunctionComponent<{ layout?: "sidebar" | "page" }> 
                 </div>
 
                 {/* Retrieval presets */}
+                <fieldset disabled={!isAdmin} className={roFieldset}>
                 <div className="space-y-1">
                     <div className="text-[9px] text-muted-foreground uppercase tracking-widest font-semibold">{t("rag.presetRetrievalLabel")}</div>
                     <div className="flex items-center gap-1.5">
@@ -1413,6 +1414,7 @@ export const RagConfigPanel: FunctionComponent<{ layout?: "sidebar" | "page" }> 
                         </div>
                     )}
                 </div>
+                </fieldset>
 
                 {/* KB config presets */}
                 <fieldset disabled={!isAdmin} className={roFieldset}>
@@ -1477,7 +1479,9 @@ export const RagConfigPanel: FunctionComponent<{ layout?: "sidebar" | "page" }> 
                     {sections.prompt && (
                         <div className="pt-1 space-y-0 divide-y divide-border">
                             <FieldRow label={t("rag.fieldFollowUp")} hint={t("rag.fieldFollowUpHint")}>
-                                <NumberInput value={session.follow_up_count} min={0} max={10} step={1} onChange={(v) => updateSession("follow_up_count", v)} />
+                                <fieldset disabled={!isAdmin} className={roFieldset}>
+                                    <NumberInput value={session.follow_up_count} min={0} max={10} step={1} onChange={(v) => updateSession("follow_up_count", v)} />
+                                </fieldset>
                             </FieldRow>
                             <div className="flex flex-col gap-1 py-2">
                                 <label className="text-xs text-foreground font-medium">{t("rag.fieldSystemPrompt")}</label>
@@ -1814,6 +1818,7 @@ export const RagConfigPanel: FunctionComponent<{ layout?: "sidebar" | "page" }> 
                 <div>
                     <SectionHeader title={t("rag.sectionRetrieval")} open={sections.retrieval} onToggle={() => toggle("retrieval")} effect={retrievalDirty ? "reindex" : "instant"} effectTitle={retrievalDirty ? t("rag.effectReindex") : t("rag.effectInstant")} />
                     {sections.retrieval && (
+                        <fieldset disabled={!isAdmin} className={roFieldset}>
                         <div className="pt-1 space-y-0 divide-y divide-border">
                             <FieldRow label={t("rag.fieldTopK")} hint={t("rag.fieldTopKHint")}>
                                 <NumberInput value={session.retriever_top_k} min={1} max={30} onChange={(v) => {
@@ -1926,6 +1931,7 @@ export const RagConfigPanel: FunctionComponent<{ layout?: "sidebar" | "page" }> 
                                 </div>
                             )}
                         </div>
+                        </fieldset>
                     )}
                 </div>
             </div>
@@ -1949,7 +1955,7 @@ export const RagConfigPanel: FunctionComponent<{ layout?: "sidebar" | "page" }> 
                 {dirty && <div className="text-[9px] text-amber-400 text-center">{t("rag.unsavedChanges")}</div>}
                 <button
                     onClick={saveAll}
-                    disabled={!dirty || status.type === "loading"}
+                    disabled={!dirty || status.type === "loading" || !isAdmin}
                     title={t("rag.btnSaveTitle")}
                     className={`w-full text-xs py-1.5 rounded font-medium transition-all duration-150 ${
                         dirty ? "bg-blue-600 hover:bg-blue-500 text-white" : "bg-muted text-muted-foreground cursor-not-allowed"

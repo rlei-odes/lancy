@@ -17,21 +17,22 @@ retrieval settings, and generation stats — no black box. Investigate your docu
 | Area | Description |
 |------|-------------|
 | **Multi-KB concurrent pool** | Multiple knowledge bases loaded simultaneously — different conversations can query different KBs at the same time, no restart required. All concurrently active KBs must share the same embedding backend and model; switching to a KB with a different embedding config requires a pool reset (`?reset=true`) |
-| **Hybrid retrieval** | BM25 + semantic search fused via Reciprocal Rank Fusion (RRF) |
-| **Query techniques** | Query expansion, HyDE, LLM reranking — all configurable per session |
+| **Hybrid retrieval** | BM25 + semantic search fused via Reciprocal Rank Fusion (RRF). Keyword search drops stop words and stems words for German, English, French and Italian, matching across languages within a chunk |
+| **Query techniques** | Query expansion, HyDE, LLM reranking — set by the admin per deployment. The reranker judges each candidate on its whole content |
 | **Ingestion deduplication** | SHA-256 content hashing prevents duplicate chunks across runs and within a single batch — dedup happens before parsing, so no wasted embedding work |
 | **Image retrieval** | Dual-collection pipeline: images extracted from PDFs and standalone files are embedded separately (Qwen3-VL) and injected into LLM context alongside text chunks |
 | **Image captioning** | Optional KB-level feature: at ingest time the main LLM generates a text caption for each extracted image and stores it inline in the text chunk, making image content searchable via standard BM25/semantic/RRF retrieval without a separate VL model at query time |
 | **Structured outputs** | Evidence-level tagging per claim: VERIFIED / CLAIMED / MISSING / MIXED |
-| **RAG config panel** | Collapsible right-side panel with presets and live parameter tuning |
+| **Chat with document panel** | Next to each answer, every document the search found: which passages were cited, which were sent to the model, which the reranker discarded, and whether semantic or keyword search found them. Documents appear while the answer is still being written. Tick documents to answer the next question from them in full |
+| **Admin RAG settings** | All RAG settings on the admin page, with presets; users answer with the admin's settings and see them read-only |
 | **Retrieval Probe** | Test queries against the retrieval pipeline without the LLM — returns ranked chunks with per-method scores (BM25, semantic, RRF), reranking cut-off visualised, and a lookahead window showing what the RAG discards |
 | **Chunk Browser** | Browse the raw vector store by metadata filter (file, author, document class, and more); paginated server-side so large KBs are never fully loaded; expandable rows render chunk content as markdown |
 | **Batch Analysis** | Ask the same set of questions of many documents at once and get a table back: questions are built as typed rows (text / yes-no / number / choice), from which the prompt and a strict JSON Schema are generated together so they cannot drift apart. Preflight reports model, per-document context budget, and which documents are missing or too large before any LLM call is spent. The run happens on the server, so the page can be left or closed while it works; results fill a live table and export as CSV or JSON. Running again with the same questions analyzes only documents that are new or failed. Question sets can be saved by name and loaded again. Runs against a knowledge base or against one of your own document piles. Same pipeline is scriptable headlessly via `scripts/batch-analyze.py` |
 | **Document piles** | Upload your own documents without touching the shared corpus. A pile is private to your session, processed on demand into its own vector store, and selectable as the source for Batch Analysis. Embedding, chunking and store backend are inherited from the active KB, so a pile needs no configuration of its own |
 | **KB Analytics** | Pre-computed health dashboard per KB: chunk size distribution, chunks-per-document histogram, stacked ingestion history, and a summary strip with avg / P50 / P95 chunk sizes — zero query-time cost |
-| **Transparent sessions** | Per-conversation config snapshot: KB · LLM · T= · emb: · k= · BM25 · Rerank · HyDE displayed as badges |
+| **Transparent sessions** | Per-conversation config snapshot; each answer shows its knowledge base, chunks retrieved and sent, and reranker swaps |
 | **Generation stats** | Query duration, tokens/second, and model name shown per response |
-| **Source citations** | Every answer links back to the source chunks it was grounded on |
+| **Source citations** | Every answer links back to the source documents it was grounded on; a citation opens its document in the panel |
 | **Indexing control** | Real-time progress, mid-run cancellation, guard against concurrent indexing |
 | **OpenAI-compatible API** | `POST /v1/chat/completions` — works with Open WebUI, curl, n8n, Cursor |
 | **Multiple LLM backends** | Ollama (local), OpenAI, Anthropic, LiteLLM — switchable at runtime |
@@ -69,7 +70,7 @@ The Retrieval Probe lets you test queries against the full retrieval pipeline wi
 
 The result list visualises the `top_k` cut-off: chunks inside `top_k` render normally; chunks beyond it are dimmed and labelled, so you can see exactly what the RAG would discard. When reranking is enabled, the pool of reranker candidates is shown the same way. This makes the effect of tuning `top_k`, toggling BM25, or enabling reranking immediately legible without running a full chat query.
 
-Accessible from the Retrieval Explorer page (`/explorer → Retrieval Probe tab`), alongside the RAG Config sidebar.
+Accessible from the Retrieval Explorer page (`/explorer → Retrieval Probe tab`), alongside the RAG settings sidebar.
 
 ### Chunk Browser
 

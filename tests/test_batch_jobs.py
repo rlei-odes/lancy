@@ -35,9 +35,9 @@ def body(ids, prompt="Q1", **extra):
 def ctx(tmp_path):
     state: dict = {"calls": [], "fail": set(), "on_call": None}
 
-    async def analyze_one(req, *, owner_id, role):
+    async def analyze_one(req, *, owner_id):
         ident = req.source_file or req.document_id
-        state["calls"].append({"ident": ident, "owner": owner_id, "role": role, "kb": req.kb_id, "pile": req.pile_id})
+        state["calls"].append({"ident": ident, "owner": owner_id, "kb": req.kb_id, "pile": req.pile_id})
         if state["on_call"]:
             state["on_call"](ident)
         if ident in state["fail"]:
@@ -84,7 +84,7 @@ def test_job_analyzes_every_document_and_records_results(ctx):
 
 def test_job_passes_source_and_identity_to_the_analysis(ctx):
     ctx["client"].post("/api/v1/batch/job", json=body(["a.pdf"], kb_id="other"), headers=ME)
-    assert ctx["calls"] == [{"ident": "a.pdf", "owner": "session-aaa", "role": "user", "kb": "other", "pile": None}]
+    assert ctx["calls"] == [{"ident": "a.pdf", "owner": "session-aaa", "kb": "other", "pile": None}]
 
 
 def test_failure_is_recorded_per_document_and_the_job_continues(ctx):

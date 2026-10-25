@@ -28,15 +28,11 @@ from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
 from lancy.database import (
-    USER_RETRIEVAL_FIELDS,
     get_presets,
-    get_default_preset,
-    get_user_retrieval,
     init_db,
     migrate_json_presets,
     save_presets,
     seed_presets,
-    set_user_retrieval,
 )
 from lancy.feature0_baseline_rag import ANALYZE_LLMS
 
@@ -355,8 +351,13 @@ def create_rag_router(
                     return content
         return ""
 
-    def _load_config(user_id: str | None = None, role: str = "user") -> RagConfig:
-        # 1. Admin baseline from rag_config.json
+    def _load_config() -> RagConfig:
+        """The admin's settings, which every user answers with.
+
+        Users no longer get a personal overlay: a settings save rebuilds the shared
+        agents with the saver's config, so an overlay never stayed personal — it
+        changed retrieval for everyone and kept overriding the admin's later saves.
+        """
         cfg = RagConfig()
         if config_path.exists():
             try:
@@ -366,47 +367,25 @@ def create_rag_router(
             except Exception as exc:
                 log.warning(f"Could not load rag_config.json: {exc} — using defaults")
         cfg.system_prompt = _read_custom_prompt()
-        # 2. Overlay user-scoped retrieval fields from SQLite (admin writes go
-        # straight to rag_config.json, never to this table — so admin reads
-        # must skip the overlay too, or they'd always hit the "first visit"
-        # seed fallback below and clobber the baseline they just saved).
-        if role != "admin" and user_id:
-            user_data = get_user_retrieval(sqlite_path, user_id)
-            if user_data:
-                overlay = {k: v for k, v in user_data.items() if k in USER_RETRIEVAL_FIELDS}
-                cfg = cfg.model_copy(update=overlay)
-            else:
-                # First visit — seed the user's session from the Default preset
-                default_preset = get_default_preset(sqlite_path)
-                if default_preset:
-                    overlay = {k: v for k, v in default_preset.items() if k in USER_RETRIEVAL_FIELDS}
-                    cfg = cfg.model_copy(update=overlay)
         return cfg
 
-    def _save_config(cfg: RagConfig, user_id: str | None, role: str) -> None:
-        if role == "admin":
-            # Admin writes update the shared baseline for everyone
-            _write_custom_prompt(cfg.system_prompt)
-            data = cfg.model_dump()
-            data.pop("system_prompt", None)
-            config_path.write_text(json.dumps(data, indent=2))
-        elif user_id:
-            # Users may only persist retrieval fields to their own SQLite row
-            data = cfg.model_dump()
-            retrieval = {k: data[k] for k in USER_RETRIEVAL_FIELDS if k in data}
-            set_user_retrieval(sqlite_path, user_id, retrieval)
+    def _save_config(cfg: RagConfig) -> None:
+        _write_custom_prompt(cfg.system_prompt)
+        data = cfg.model_dump()
+        data.pop("system_prompt", None)
+        config_path.write_text(json.dumps(data, indent=2))
 
     @router.get("/config", response_model=RagConfig)
-    async def get_config(request: Request) -> RagConfig:
-        user_id = request.headers.get("x-session-id")
-        role = request.headers.get("x-user-role", "user")
-        return _load_config(user_id, role)
+    async def get_config() -> RagConfig:
+        return _load_config()
 
     @router.post("/config", response_model=RagConfig)
     async def save_config(request: Request, cfg: RagConfig, background_tasks: BackgroundTasks) -> RagConfig:
-        user_id = request.headers.get("x-session-id")
         role = request.headers.get("x-user-role", "user")
-        _save_config(cfg, user_id, role)
+        if role != "admin":
+            # Settings are shared: saving them rebuilds the agents everyone answers with.
+            raise HTTPException(status_code=403, detail="Only an admin can change the RAG settings.")
+        _save_config(cfg)
         log.info(
             f"Session config saved: role={role} llm={cfg.llm_backend}/{cfg.llm_model} "
             f"top_k={cfg.retriever_top_k} temp={cfg.llm_temperature}"
@@ -459,7 +438,7 @@ def create_rag_router(
         """
         if status_factory is not None and status_factory().get("indexing"):
             raise HTTPException(status_code=409, detail="Indexierung läuft bereits. Bitte warten.")
-        cfg = _load_config()  # admin baseline only — reindex is admin-only
+        cfg = _load_config()
         log.info(f"Reindex requested: reset={req.reset}")
         background_tasks.add_task(rebuild_callback, cfg, req.reset)
         return {"started": True}
@@ -682,10 +661,9 @@ def create_rag_router(
         return await _analyze_one(
             req,
             owner_id=http.headers.get("x-session-id"),
-            role=http.headers.get("x-user-role", "user"),
         )
 
-    async def _analyze_one(req: AnalyzeDocumentRequest, *, owner_id: str | None, role: str) -> AnalyzeDocumentResponse:
+    async def _analyze_one(req: AnalyzeDocumentRequest, *, owner_id: str | None) -> AnalyzeDocumentResponse:
         """The analysis behind /analyze-document, callable without a request.
 
         Batch jobs run in the background after their request has returned, so they
@@ -736,7 +714,7 @@ def create_rag_router(
                 skipped="no_chunks",
             )
 
-        cfg = _load_config(user_id=owner_id, role=role)
+        cfg = _load_config()
         budget_chars = int(cfg.num_ctx * _BUDGET_FRACTION * 3.5)  # ~3.5 chars per token
         if char_count > budget_chars:
             return AnalyzeDocumentResponse(

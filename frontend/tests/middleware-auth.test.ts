@@ -130,6 +130,7 @@ const ADMIN_ONLY: [string, string][] = [
     ["POST", "/api/v1/kb/default/deactivate"],
     ["POST", "/api/v1/rag/reindex"],
     ["POST", "/api/v1/rag/reindex-cancel"],
+    ["POST", "/api/v1/rag/config"],
     ["GET", "/api/admin/users"],
     ["POST", "/api/admin/anything"],
     // NOTE: PUT /api/v1/branding and DELETE /api/v1/branding/avatar are declared
@@ -150,6 +151,7 @@ describe("role=user", () => {
         ["GET", "/api/v1/kb"],
         ["GET", "/api/v1/kb/pool"],
         ["POST", "/api/v1/rag/query"],
+        ["GET", "/api/v1/rag/config"],
         ["POST", "/api/v1/rag/analyze-document"],
         ["GET", "/api/v1/branding"],
         // Piles are a per-session feature, so every one of these must stay open to
