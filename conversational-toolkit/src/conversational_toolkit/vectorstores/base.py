@@ -11,6 +11,7 @@ from typing import Union, Any
 
 import numpy as np
 from numpy.typing import NDArray
+from pydantic import Field
 
 from conversational_toolkit.chunking.base import Chunk
 
@@ -23,9 +24,16 @@ class ChunkRecord(Chunk):
 
 
 class ChunkMatch(ChunkRecord):
-    """A 'ChunkRecord' returned from a similarity search, augmented with a relevance score."""
+    """A 'ChunkRecord' returned from a similarity search, augmented with a relevance score.
+
+    'ranks' records how the chunk was found: each search method that returned it
+    ('semantic', 'bm25') maps to its best 1-based rank there, and 'pre_rerank' to
+    its position before an LLM reranker reordered the pool. Fusion steps merge it,
+    so the chunk that reaches the LLM still says where it came from.
+    """
 
     score: float
+    ranks: dict[str, int] = Field(default_factory=dict)
 
 
 class VectorStore(ABC):

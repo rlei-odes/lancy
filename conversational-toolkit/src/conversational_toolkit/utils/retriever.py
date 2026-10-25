@@ -3,7 +3,7 @@ from textwrap import dedent
 from typing import Sequence
 
 from conversational_toolkit.llms.base import LLM, LLMMessage, Roles, MessageContent
-from conversational_toolkit.vectorstores.base import ChunkRecord
+from conversational_toolkit.vectorstores.base import ChunkMatch, ChunkRecord
 
 
 async def make_query_standalone(llm: LLM, history: list[LLMMessage], query: str) -> str:
@@ -162,11 +162,20 @@ def reciprocal_rank_fusion(search_results: Sequence[Sequence[ChunkRecord]], k: i
                 fused_scores[chunk.id] = score
             else:
                 fused_scores[chunk.id] += score
+                if isinstance(chunk, ChunkMatch) and isinstance(chunk_map[chunk.id], ChunkMatch):
+                    chunk = chunk.model_copy(update={"ranks": merge_ranks(chunk_map[chunk.id].ranks, chunk.ranks)})
             chunk_map[chunk.id] = chunk
 
     sorted_results = sorted(fused_scores.items(), key=lambda item: item[1], reverse=True)
 
     return [chunk_map[chunk_id] for chunk_id, _ in sorted_results]
+
+
+def merge_ranks(a: dict[str, int], b: dict[str, int]) -> dict[str, int]:
+    """Combine two 'ChunkMatch.ranks', keeping the best (lowest) rank per method."""
+    return {method: min(a.get(method, rank), rank) for method, rank in b.items()} | {
+        method: rank for method, rank in a.items() if method not in b
+    }
 
 
 def build_query_with_chunks(user_query: str = "", chunks: list[ChunkRecord] | None = None) -> str:

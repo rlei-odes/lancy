@@ -139,6 +139,7 @@ class RerankingRetriever(Retriever[ChunkMatch]):
                     metadata=chunk.metadata,
                     embedding=chunk.embedding,
                     score=score,
+                    ranks={**getattr(chunk, "ranks", {}), "pre_rerank": original_idx + 1},
                 )
             )
         return results

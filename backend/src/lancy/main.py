@@ -366,6 +366,7 @@ class CustomRAG(RAG):
         return AgentAnswer(
             content=[MessageContent(type="text", text=content)],
             sources=[s for s in unique_sources if s.id in relevant_source_ids],
+            retrieved=answer.retrieved,
             follow_up_questions=follow_up_questions,
             retrieval_stats=answer.retrieval_stats,
         )

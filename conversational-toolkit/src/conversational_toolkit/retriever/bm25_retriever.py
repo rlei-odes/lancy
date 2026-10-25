@@ -85,6 +85,8 @@ class BM25Retriever(Retriever[ChunkMatch]):
 
             ranked_indices = [i for i in ranked_indices if _matches(i)]
         top_indices = ranked_indices[: self.top_k]
+        # A zero score means no query term occurs in the chunk: it only fills
+        # top_k, so it is not reported as a keyword match.
         return [
             ChunkMatch(
                 id=self.corpus[i].id,
@@ -94,8 +96,9 @@ class BM25Retriever(Retriever[ChunkMatch]):
                 metadata=self.corpus[i].metadata,
                 embedding=self.corpus[i].embedding,
                 score=scores[i],
+                ranks={"bm25": rank} if scores[i] > 0 else {},
             )
-            for i in top_indices
+            for rank, i in enumerate(top_indices, start=1)
         ]
 
     def invalidate_cache(self) -> None:

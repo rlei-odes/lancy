@@ -10,6 +10,7 @@ import asyncio
 from typing import Any
 
 from conversational_toolkit.retriever.base import Retriever
+from conversational_toolkit.utils.retriever import merge_ranks
 from conversational_toolkit.vectorstores.base import ChunkMatch, ChunkRecord
 
 
@@ -39,11 +40,13 @@ class HybridRetriever(Retriever[ChunkMatch]):
     def _rrf_merge(self, results_per_retriever: list[list[ChunkRecord]]) -> list[ChunkMatch]:
         fused_scores: dict[str, float] = {}
         chunk_map: dict[str, ChunkRecord] = {}
+        ranks: dict[str, dict[str, int]] = {}
 
         for ranked_list in results_per_retriever:
             for rank, chunk in enumerate(ranked_list, start=1):
                 fused_scores[chunk.id] = fused_scores.get(chunk.id, 0.0) + 1.0 / (self.rrf_k + rank)
                 chunk_map[chunk.id] = chunk
+                ranks[chunk.id] = merge_ranks(ranks.get(chunk.id, {}), getattr(chunk, "ranks", {}))
 
         return [
             ChunkMatch(
@@ -54,6 +57,7 @@ class HybridRetriever(Retriever[ChunkMatch]):
                 metadata=chunk_map[cid].metadata,
                 embedding=chunk_map[cid].embedding,
                 score=fused_scores[cid],
+                ranks=ranks[cid],
             )
             for cid in sorted(fused_scores, key=lambda c: fused_scores[c], reverse=True)
         ]

@@ -199,6 +199,7 @@ class RAG(Agent):
                         content=[MessageContent(type="text", text=content)],
                         role=Roles.ASSISTANT,
                         sources=sources,
+                        retrieved=sources,
                         retrieval_stats=retrieval_stats,
                     )
                 )
