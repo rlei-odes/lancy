@@ -172,6 +172,22 @@ def test_the_reranker_records_where_a_chunk_came_from():
     ]
 
 
+class RankLLM:
+    async def generate(self, messages, **kwargs):
+        return LLMMessage(role=Roles.ASSISTANT, content=[MessageContent(type="text", text='{"ranking": [2, 0, 1]}')])
+
+
+def test_the_reranker_hands_back_what_it_discarded():
+    """The candidates that missed the cut are part of what the search found."""
+    base = FixedRetriever({"*": [match("a", semantic=1), match("b", semantic=2), match("c", bm25=1)]})
+    reranker = RerankingRetriever(base, RankLLM(), top_k=2)
+
+    kept, discarded = run(reranker.rank_pool(["q"], rank_query="q"))
+
+    assert [c.id for c in kept] == ["c", "a"]
+    assert [(c.id, c.ranks) for c in discarded] == [("b", {"semantic": 2, "pre_rerank": 2})]
+
+
 # ─── the agent hands back everything it sent ──────────────────────────────────
 
 ANSWER_JSON = '{"answer":"ok","used_sources_id":["b"],"follow_up_questions":[]}'
@@ -216,6 +232,31 @@ def test_the_answer_carries_every_chunk_sent_to_the_llm():
     assert [c.id for c in answer.retrieved] == ["a", "b"]
 
 
+def test_the_answer_carries_what_the_reranker_discarded():
+    base = FixedRetriever({"*": [match("a", semantic=1), match("b", semantic=2), match("c", bm25=1)]})
+    rag = RAG(
+        llm=StreamLLM(),
+        utility_llm=StreamLLM(),
+        retrievers=[RerankingRetriever(base, RankLLM(), top_k=2)],
+        system_prompt="sys",
+    )
+
+    async def drive():
+        answer = None
+        async for answer in rag.answer_stream(QueryWithContext(query="q", history=[])):
+            pass
+        return answer
+
+    answer = run(drive())
+
+    assert [c.id for c in answer.retrieved] == ["c", "a"]
+    assert [c.id for c in answer.discarded] == ["b"]
+
+
+def test_without_a_reranker_nothing_is_discarded():
+    assert last_answer(QueryWithContext(query="q", history=[])).discarded == []
+
+
 def test_chat_only_and_expanded_context_report_no_retrieval():
     """Expanded context sends whole documents the user picked; that is not a search result."""
     assert last_answer(QueryWithContext(query="q", history=[], chat_only=True)).retrieved == []
@@ -228,9 +269,12 @@ def test_chat_only_and_expanded_context_report_no_retrieval():
 class CitingAgent:
     """Stands in for CustomRAG: cites `b` of the three chunks it retrieved."""
 
-    def __init__(self, retrieved: list[ChunkMatch], cited: list[str]) -> None:
+    def __init__(
+        self, retrieved: list[ChunkMatch], cited: list[str], discarded: list[ChunkMatch] | None = None
+    ) -> None:
         self.retrieved = retrieved
         self.cited = cited
+        self.discarded = discarded or []
 
     async def answer_stream(self, query_with_context):
         yield AgentAnswer(
@@ -238,6 +282,7 @@ class CitingAgent:
             role=Roles.ASSISTANT,
             sources=[c for c in self.retrieved if c.id in self.cited],
             retrieved=self.retrieved,
+            discarded=self.discarded,
         )
 
 
@@ -303,6 +348,56 @@ def test_reloading_the_conversation_returns_the_same_split(tmp_path):
         reloaded = next(m for m in messages if m.id == final.id)
         assert [s.metadata["source_file"] for s in reloaded.sources] == ["b.pdf"]
         assert [s.metadata["_retrieval"]["chunk_id"] for s in reloaded.retrieved] == ["a", "b", "c"]
+
+
+def test_discarded_chunks_follow_the_sent_ones_and_are_never_sources(tmp_path):
+    ctrl = controller(tmp_path, CitingAgent(RETRIEVED, cited=["b"], discarded=[match("d", semantic=5, pre_rerank=2)]))
+
+    final = send(ctrl)
+
+    info = [s.metadata["_retrieval"] for s in final.retrieved]
+    assert [(i["chunk_id"], i["sent"], i["position"]) for i in info] == [
+        ("a", True, 1),
+        ("b", True, 2),
+        ("c", True, 3),
+        ("d", False, 4),
+    ]
+    assert [s.metadata["source_file"] for s in final.sources] == ["b.pdf"]
+
+
+def stream(ctrl: ConversationalToolkitController) -> list:
+    async def drive():
+        return [
+            m
+            async for m in ctrl.process_new_message_stream(MessageInput(content="q"), user_id="u")
+            if not isinstance(m, bytes)
+        ]
+
+    return run(drive())
+
+
+class TwoChunkAgent(CitingAgent):
+    async def answer_stream(self, query_with_context):
+        for text in ("o", "ok"):
+            yield AgentAnswer(
+                content=[MessageContent(type="text", text=text)],
+                role=Roles.ASSISTANT,
+                sources=[c for c in self.retrieved if c.id in self.cited],
+                retrieved=self.retrieved,
+                discarded=self.discarded,
+            )
+
+
+def test_the_first_streamed_chunk_already_lists_what_was_retrieved(tmp_path):
+    """The panel can show the documents while the answer is still being written."""
+    messages = stream(controller(tmp_path, TwoChunkAgent(RETRIEVED, cited=["b"], discarded=[match("d", semantic=5)])))
+    first, second, final = messages
+
+    info = [s.metadata["_retrieval"] for s in first.retrieved]
+    assert [(i["chunk_id"], i["sent"]) for i in info] == [("a", True), ("b", True), ("c", True), ("d", False)]
+    assert not any(i["cited"] for i in info)  # citations are only known once the answer is complete
+    assert second.retrieved == []  # sent once, not with every chunk
+    assert [s.metadata["_retrieval"]["cited"] for s in final.retrieved] == [False, True, False, False]
 
 
 def test_an_agent_without_retrieval_saves_its_sources_as_before(tmp_path):

@@ -83,19 +83,25 @@ class ReactionInput(BaseModel):
 RETRIEVAL_KEY = "_retrieval"
 
 
-def _sources_to_store(sources: Sequence[Chunk], retrieved: Sequence[ChunkRecord]) -> list[tuple[Chunk, dict]]:
+def _sources_to_store(
+    sources: Sequence[Chunk], retrieved: Sequence[ChunkRecord], discarded: Sequence[ChunkRecord] = ()
+) -> list[tuple[Chunk, dict]]:
     """Each chunk to save for an answer, with the metadata to save it under.
 
-    When a search ran, every chunk it sent to the LLM is saved once, and how it
-    was found goes under RETRIEVAL_KEY: its id and title (a stored source keeps
-    neither otherwise), its position in the LLM context, whether the answer
-    cited it, and its per-method ranks. Without a search (chat only, expanded
-    context, agents that do not search) the cited sources are saved unchanged.
+    When a search ran, every chunk it found is saved once, and how it was found
+    goes under RETRIEVAL_KEY: its id and title (a stored source keeps neither
+    otherwise), its position, whether it was sent to the LLM, whether the answer
+    cited it, and its per-method ranks. The chunks sent come first, in context
+    order; the ones a reranker discarded follow in ranked order. Without a
+    search (chat only, expanded context, agents that do not search) the cited
+    sources are saved unchanged.
     """
     if not retrieved:
         return [(source, source.metadata) for source in sources]
     cited = {getattr(source, "id", None) for source in sources}
-    unique = list({chunk.id: chunk for chunk in retrieved}.values())
+    sent = list({chunk.id: chunk for chunk in retrieved}.values())
+    sent_ids = {chunk.id for chunk in sent}
+    dropped = [chunk for chunk in {c.id: c for c in discarded}.values() if chunk.id not in sent_ids]
     return [
         (
             chunk,
@@ -105,12 +111,13 @@ def _sources_to_store(sources: Sequence[Chunk], retrieved: Sequence[ChunkRecord]
                     "chunk_id": chunk.id,
                     "title": chunk.title,
                     "position": position,
+                    "sent": position <= len(sent),
                     "cited": chunk.id in cited,
                     "ranks": dict(getattr(chunk, "ranks", {})),
                 },
             },
         )
-        for position, chunk in enumerate(unique, start=1)
+        for position, chunk in enumerate(sent + dropped, start=1)
     ]
 
 
@@ -118,8 +125,9 @@ def _split_stored_sources(stored: list[Source]) -> tuple[list[Source], list[Sour
     """Split a message's saved sources into the cited ones and everything retrieved.
 
     'sources' keeps its meaning and shape for every consumer: the cited chunks,
-    without the retrieval record. 'retrieved' is empty for answers saved without
-    a search or before provenance was recorded.
+    without the retrieval record. 'retrieved' holds every chunk the search found,
+    sent to the LLM or discarded by a reranker ('sent' tells them apart). It is
+    empty for answers saved without a search or before provenance was recorded.
     """
     ordered = sorted(stored, key=lambda s: s.metadata.get(RETRIEVAL_KEY, {}).get("position", 0))
     retrieved = [s for s in ordered if RETRIEVAL_KEY in s.metadata]
@@ -315,6 +323,7 @@ class ConversationalToolkitController:
             _aiter = stream.__aiter__()
             _pending = asyncio.create_task(_next_chunk(_aiter))
             last_chunk = None
+            retrieved_announced = False
             try:
                 while True:
                     done, _ = await asyncio.wait({_pending}, timeout=_KEEPALIVE)
@@ -326,6 +335,16 @@ class ConversationalToolkitController:
                         break
                     last_chunk = chunk
                     if chunk.content:
+                        # What the search found is known before the first token; send it
+                        # once, so the client can show it while the answer is written.
+                        # Nothing is cited yet: that is settled by the final message.
+                        provisional: list[Source] = []
+                        if not retrieved_announced and chunk.retrieved:
+                            retrieved_announced = True
+                            provisional = [
+                                Source(id=m[RETRIEVAL_KEY]["chunk_id"], message_id="", content=c.content, metadata=m)
+                                for c, m in _sources_to_store([], chunk.retrieved, chunk.discarded)
+                            ]
                         yield ClientMessage(
                             id="",
                             user_id="",
@@ -333,6 +352,7 @@ class ConversationalToolkitController:
                             content=last_chunk.content[0].text if last_chunk.content else "",
                             role=Roles.ASSISTANT,
                             sources=[],
+                            retrieved=provisional,
                             reaction=None,
                             follow_up_questions=chunk.follow_up_questions,
                             parent_id=input_message.id,
@@ -378,7 +398,7 @@ class ConversationalToolkitController:
                 await self.source_db.create_source(
                     Source(id=generate_uid(), message_id=final_message.id, content=chunk.content, metadata=metadata)
                 )
-                for chunk, metadata in _sources_to_store(last_chunk.sources, last_chunk.retrieved)
+                for chunk, metadata in _sources_to_store(last_chunk.sources, last_chunk.retrieved, last_chunk.discarded)
             ]
             sources, retrieved = _split_stored_sources(stored)
 

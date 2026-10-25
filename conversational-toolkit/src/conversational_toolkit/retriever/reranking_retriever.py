@@ -88,12 +88,23 @@ class RerankingRetriever(Retriever[ChunkMatch]):
     async def retrieve(self, query: str, filters: dict[str, Any] | None = None) -> list[ChunkMatch]:
         """Fetch candidates from the base retriever and rerank them with the LLM."""
         candidates: list[ChunkRecord] = await self.retriever.retrieve(query, filters=filters)  # type: ignore[assignment]
-        return await self._rerank(query, candidates)
+        kept, _ = await self._rerank(query, candidates)
+        return kept
 
     async def retrieve_multi(
         self, queries: list[str], rank_query: str, filters: dict[str, Any] | None = None
     ) -> list[ChunkMatch]:
+        """Like 'rank_pool', returning only the chunks that made the cut."""
+        kept, _ = await self.rank_pool(queries, rank_query, filters)
+        return kept
+
+    async def rank_pool(
+        self, queries: list[str], rank_query: str, filters: dict[str, Any] | None = None
+    ) -> tuple[list[ChunkMatch], list[ChunkMatch]]:
         """Retrieve for several query variants, fuse them, then rerank once.
+
+        Returns the top 'top_k' and, separately, the candidates that missed the
+        cut, in ranked order. Both carry their 'pre_rerank' position.
 
         Expanded queries and a HyDE document exist to widen recall, not to be
         ranked against: calling `retrieve` per variant would spend one LLM call
@@ -107,9 +118,9 @@ class RerankingRetriever(Retriever[ChunkMatch]):
         candidates = reciprocal_rank_fusion(list(per_query))[: self.retriever.top_k]
         return await self._rerank(rank_query, candidates)
 
-    async def _rerank(self, query: str, candidates: list[ChunkRecord]) -> list[ChunkMatch]:
+    async def _rerank(self, query: str, candidates: list[ChunkRecord]) -> tuple[list[ChunkMatch], list[ChunkMatch]]:
         if not candidates:
-            return []
+            return [], []
 
         if self.phase_callback:
             self.phase_callback("reranking")
@@ -127,7 +138,7 @@ class RerankingRetriever(Retriever[ChunkMatch]):
 
         n = len(ranked_indices)
         results: list[ChunkMatch] = []
-        for position, original_idx in enumerate(ranked_indices[: self.top_k]):
+        for position, original_idx in enumerate(ranked_indices):
             chunk = candidates[original_idx]
             score = (n - position) / n  # linear decay: 1.0 at rank 1, approaching 0 at rank n
             results.append(
@@ -142,7 +153,7 @@ class RerankingRetriever(Retriever[ChunkMatch]):
                     ranks={**getattr(chunk, "ranks", {}), "pre_rerank": original_idx + 1},
                 )
             )
-        return results
+        return results[: self.top_k], results[self.top_k :]
 
     async def _llm_rerank(self, query: str, candidates: list[ChunkRecord]) -> list[int]:
         """Ask the LLM to rank the candidates and return a list of original indices.
