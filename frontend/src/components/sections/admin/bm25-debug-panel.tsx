@@ -6,6 +6,8 @@ interface Hit {
     source_file: string;
     title: string;
     score: number;
+    /** The part of the score the extra terms added. */
+    expansion_score?: number;
     matched_terms: string[];
 }
 
@@ -13,6 +15,8 @@ interface Variant {
     query: string;
     terms: string[];
     expansion_terms: string[];
+    /** Extra terms not scored: too common to tell chunks apart, or too short. */
+    dropped_terms?: string[];
     language: string | null;
     hits: Hit[];
 }
@@ -33,6 +37,7 @@ const TermList: FunctionComponent<{ terms: string[]; className: string }> = ({ t
 
 const OWN_TERM = "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25";
 const EXPANSION_TERM = "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/25";
+const DROPPED_TERM = "bg-transparent text-muted-foreground border-border line-through";
 
 const VariantView: FunctionComponent<{ variant: Variant }> = ({ variant }) => (
     <div className="space-y-1.5 pl-3 border-l border-border">
@@ -48,6 +53,14 @@ const VariantView: FunctionComponent<{ variant: Variant }> = ({ variant }) => (
                 expansions <TermList terms={variant.expansion_terms} className={EXPANSION_TERM} />
             </div>
         )}
+        {(variant.dropped_terms?.length ?? 0) > 0 && (
+            <div
+                className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+                title="Not scored: in too many chunks to tell them apart while the question's own words found something, or shorter than 3 letters"
+            >
+                dropped <TermList terms={variant.dropped_terms!} className={DROPPED_TERM} />
+            </div>
+        )}
         {variant.hits.length === 0 ? (
             <p className="text-xs text-muted-foreground">No keyword hits.</p>
         ) : (
@@ -56,7 +69,14 @@ const VariantView: FunctionComponent<{ variant: Variant }> = ({ variant }) => (
                     {variant.hits.map((hit, i) => (
                         <tr key={hit.id} className="border-t border-border/60 align-top">
                             <td className="py-1 pr-2 font-mono text-muted-foreground tabular-nums">{i + 1}</td>
-                            <td className="py-1 pr-2 font-mono tabular-nums">{hit.score.toFixed(2)}</td>
+                            <td className="py-1 pr-2 font-mono tabular-nums whitespace-nowrap">
+                                {hit.score.toFixed(2)}
+                                {(hit.expansion_score ?? 0) > 0 && (
+                                    <span className="ml-1 text-violet-600 dark:text-violet-400" title="Added by the extra terms">
+                                        +{hit.expansion_score!.toFixed(2)}
+                                    </span>
+                                )}
+                            </td>
                             <td className="py-1 pr-2 break-all">{hit.source_file || hit.title || hit.id}</td>
                             <td className="py-1"><TermList terms={hit.matched_terms} className={OWN_TERM} /></td>
                         </tr>

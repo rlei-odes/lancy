@@ -191,3 +191,79 @@ def test_without_the_step_expanded_queries_still_reach_keyword_search():
     run(rag)
 
     assert not any(isinstance(q, (KeywordQuery, SemanticOnlyQuery)) for q in retriever.queries)
+
+
+# ─── taming the extra terms ───────────────────────────────────────────────────
+#
+# "What is MariaDB?" came back with seven database words as extra terms; each added
+# its own score, so chunks about databases in general piled up enough to outrank the
+# chunk naming MariaDB. "PPID" brought "process" and "id", in thousands of chunks of
+# a Linux book. The extra terms now add only their best single match, and common ones
+# are dropped when the question's own words find something.
+
+
+def numbered(prefix: str, text: str, n: int) -> list[ChunkRecord]:
+    return [record(f"{prefix}{i}", text) for i in range(n)]
+
+
+def debug_search(query, chunks) -> dict:
+    seen: list[dict] = []
+    retriever = BM25Retriever(Store(chunks), top_k=200)
+    retriever.search_listener = seen.append
+    asyncio.run(retriever.retrieve(query))
+    return seen[0]
+
+
+GENERAL = numbered("db", "Ein Datenbanksystem verwaltet die Datenbanken und jede Datenbank", 40)
+MARIA = record("maria", "MariaDB ist ein relationales Datenbanksystem")
+OTHER = numbered("x", "The server restarts every night after the backup job", 400)
+
+
+def test_related_extra_words_do_not_pile_up_over_the_typed_word():
+    expansions = ["Datenbank", "Datenbanken", "Datenbanksystem", "Datenbanksysteme"]
+    ranked = search(KeywordQuery("mariadb", expansions), MARIA, *GENERAL, *OTHER)
+
+    assert ranked[0] == "maria"
+
+
+def test_an_extra_word_and_its_inflection_count_once():
+    corpus = [record("db", "Die Datenbank"), MARIA, *OTHER]
+    search = debug_search(KeywordQuery("mariadb", ["Datenbank", "Datenbanken"]), corpus)
+    single = debug_search(KeywordQuery("mariadb", ["Datenbank"]), corpus)
+
+    by_id = {h["id"]: h["expansion_score"] for h in search["hits"]}
+    assert by_id["db"] == {h["id"]: h["expansion_score"] for h in single["hits"]}["db"]
+
+
+def test_a_common_extra_word_is_dropped_when_the_question_finds_something():
+    found = debug_search(KeywordQuery("mariadb", ["Datenbank"]), [MARIA, *GENERAL, *OTHER])
+
+    assert "datenbank" in found["dropped_terms"] and "datenbank" not in found["expansion_terms"]
+
+
+def test_a_common_extra_word_stays_when_it_is_the_only_way_in():
+    """An English question on a German corpus: the translation is the only keyword match."""
+    found = debug_search(KeywordQuery("databases", ["Datenbank"]), [*GENERAL, *OTHER])
+
+    assert "datenbank" in found["expansion_terms"] and found["hits"]
+
+
+def test_a_common_word_the_user_typed_always_counts():
+    found = debug_search(KeywordQuery("Datenbank", ["database"]), [*GENERAL, *OTHER])
+
+    assert "datenbank" in found["terms"] and len(found["hits"]) == len(GENERAL)
+
+
+def test_stemming_debris_is_never_an_extra_term():
+    found = debug_search(KeywordQuery("ppid", ["vs"]), [record("p", "ppid of a process"), *OTHER])
+
+    assert {"vs", "v"} <= set(found["dropped_terms"]) and found["expansion_terms"] == []
+
+
+def test_a_common_word_goes_with_all_its_forms():
+    """Judged per form, the rare stem "lif" of the common "life" slipped through."""
+    corpus = [record("lca", "The LCA of a pallet"), *numbered("l", "The life of a product", 40), *OTHER]
+    found = debug_search(KeywordQuery("lca", ["life"]), corpus)
+
+    assert found["expansion_terms"] == []
+    assert {"life", "lif"} <= set(found["dropped_terms"])

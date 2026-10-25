@@ -246,6 +246,12 @@ Show neighbours in the sources panel when the user expands a citation. The retri
 
 ---
 
+### Keyword Extraction — Score Multi-Word Expansions as Phrases
+
+Keyword search splits an extra term like "life cycle assessment" (for "LCA") or "parent process id" (for "PPID") into single words. Each is common, so the common-word filter drops them, although the phrase is specific. Scoring a multi-word expansion only where its words appear together in a chunk would keep it, and stop "process" alone from matching. Needs a phrase check on the candidate chunks; rank-bm25 has no positions.
+
+A cleaner model behind it: the extraction returns alternatives per question term (`{"ppid": ["parent process id"]}`), and each term scores `max(own, 0.5 × best alternative)`. Depends on the utility model producing that mapping reliably.
+
 ### Keyword Search — bge-m3 Sparse Weights Instead of BM25 Analysis
 
 bge-m3, the embedding model in use, can also produce multilingual sparse lexical weights. Using those instead of the hand-built BM25 analysis (stop words, stemming, LLM keyword extraction) would match across languages without an LLM call. Needs new index data, so a reindex. To evaluate against keyword extraction on the same questions.
