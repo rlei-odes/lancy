@@ -9,6 +9,7 @@ may use an English term, which the German stemmer reduces differently from the E
 
 import re
 import threading
+from collections.abc import Iterable
 from functools import lru_cache
 
 import snowballstemmer  # type: ignore[import-untyped]
@@ -104,3 +105,24 @@ def analyze_query(text: str) -> list[str]:
     for word in words:
         terms.extend(dict.fromkeys([word, *(_stem(lang, word) for lang in LANGUAGES)]))
     return terms
+
+
+def term_spans(text: str, query_terms: Iterable[str]) -> list[tuple[int, int]]:
+    """Character spans of the words in 'text' that keyword search matches against 'query_terms'.
+
+    A word matches when its index term — the word stemmed in the text's language, as
+    'analyze_document' produces it — is one of the search terms. Stop words never match.
+    """
+    terms = set(query_terms)
+    matches = list(_WORD.finditer(text))
+    words = [m.group().lower() for m in matches]
+    language = detect_language(words)
+    stop = STOP_WORDS[language] if language else frozenset()
+    return [
+        m.span() for m, w in zip(matches, words) if w not in stop and (_stem(language, w) if language else w) in terms
+    ]
+
+
+def matched_words(text: str, query_terms: Iterable[str]) -> list[str]:
+    """The distinct words of 'text', lowercased, that keyword search matches against 'query_terms'."""
+    return list(dict.fromkeys(text[s:e].lower() for s, e in term_spans(text, query_terms)))

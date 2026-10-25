@@ -5,13 +5,14 @@ Retrieval-Augmented Generation (RAG) agent.
 """
 
 import asyncio
-from typing import Any, AsyncGenerator, Callable
+from typing import Any, AsyncGenerator, Callable, Sequence
 
 from conversational_toolkit.agents.base import Agent, AgentAnswer, QueryWithContext, RetrievalStats
 from conversational_toolkit.llms.base import LLM, LLMMessage, Roles, MessageContent
-from conversational_toolkit.retriever.base import Retriever, SemanticOnlyQuery
+from conversational_toolkit.retriever.base import KeywordQuery, Retriever, SemanticOnlyQuery
 from conversational_toolkit.retriever.reranking_retriever import RerankingRetriever
 from conversational_toolkit.utils.retriever import (
+    keyword_extraction,
     make_query_standalone,
     query_expansion,
     reciprocal_rank_fusion,
@@ -35,6 +36,8 @@ class RAG(Agent):
         utility_llm: A (typically cheaper) LLM used for query rewriting and expansion. Kept separate so a fast model can handle preprocessing while a more capable model handles generation.
         retrievers: One or more retrievers queried in parallel. Their results are merged with Reciprocal Rank Fusion before being passed to the LLM.
         number_query_expansion: Number of additional search queries to generate from the original query. Set to 0 to disable expansion.
+        keyword_extraction: Ask the utility LLM for the question's key terms, synonyms and translations, and give them to keyword search at a lower weight. Keyword search then takes the question and these terms only; expanded queries go to semantic search.
+        corpus_languages: Returns the names of the corpus languages, most common first, read on every question. HyDE, query expansion and keyword extraction write in them. None or empty means unknown.
     """
 
     def __init__(
@@ -49,6 +52,8 @@ class RAG(Agent):
         chat_only_system_prompt: str = "",
         expand_context_system_prompt: str = "",
         vector_store: VectorStore | None = None,
+        keyword_extraction: bool = False,
+        corpus_languages: Callable[[], Sequence[str]] | None = None,
     ):
         super().__init__(system_prompt, llm, description)
         self.description = description
@@ -57,6 +62,8 @@ class RAG(Agent):
         self.retrievers = retrievers
         self.number_query_expansion = number_query_expansion
         self.enable_hyde = enable_hyde
+        self.keyword_extraction = keyword_extraction
+        self.corpus_languages = corpus_languages
         # Used only when QueryWithContext.chat_only=True. Empty falls back to the standard system_prompt.
         self.chat_only_system_prompt = chat_only_system_prompt
         # Used only when QueryWithContext.expand_context is set. Empty falls back to the standard system_prompt.
@@ -86,21 +93,32 @@ class RAG(Agent):
                 yield answer
             return
 
-        has_preprocessing = len(history) > 0 or self.number_query_expansion > 0 or self.enable_hyde
+        has_preprocessing = (
+            len(history) > 0 or self.number_query_expansion > 0 or self.enable_hyde or self.keyword_extraction
+        )
         if has_preprocessing and phase_callback:
             phase_callback("preprocessing")
 
         if len(history) > 0:
             query = await make_query_standalone(self.utility_llm, history, query)
 
-        queries = [query]
+        languages = list(self.corpus_languages()) if self.corpus_languages else []
+        search_query: str = query
+        if self.keyword_extraction:
+            search_query = KeywordQuery(query, await keyword_extraction(query, self.utility_llm, languages))
+
+        queries: list[str] = [search_query]
 
         if self.number_query_expansion > 0:
-            queries_expanded = await query_expansion(query, self.utility_llm, self.number_query_expansion)
-            queries += queries_expanded
+            queries_expanded = await query_expansion(
+                query, self.utility_llm, self.number_query_expansion, languages=languages
+            )
+            # With keyword extraction, keyword search takes the question and its weighted
+            # terms; an expanded query would add its own words at full weight.
+            queries += [SemanticOnlyQuery(q) for q in queries_expanded] if self.keyword_extraction else queries_expanded
 
         if self.enable_hyde:
-            hyde_expansion_message = await hyde_expansion(query, self.utility_llm)
+            hyde_expansion_message = await hyde_expansion(query, self.utility_llm, languages=languages)
             # A hypothetical answer widens semantic recall; as keywords it is noise.
             queries.append(SemanticOnlyQuery(hyde_expansion_message))
 
@@ -116,7 +134,7 @@ class RAG(Agent):
             # HyDE document. Ranking per variant would cost one call each and
             # never compare a chunk found by one variant against another's.
             if isinstance(retriever, RerankingRetriever):
-                kept, dropped = await retriever.rank_pool(queries, rank_query=query, filters=filters)
+                kept, dropped = await retriever.rank_pool(queries, rank_query=search_query, filters=filters)
                 return list(kept), list(dropped)
             results = await asyncio.gather(*[retriever.retrieve(q, filters=filters) for q in queries])
             return reciprocal_rank_fusion(list(results))[: retriever.top_k], []

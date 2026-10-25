@@ -62,6 +62,16 @@ These are set at KB creation and stored in `knowledge_bases.json`. Most can be e
 | `max_file_size_mb` | `20` | Files exceeding this are skipped with a warning. Raise for large PDFs; lower to prevent accidental ingestion of binaries. |
 | `pdf_ocr_enabled` | `true` | Enable OCR for scanned PDFs. Adds significant processing time per page. Disable for native-text PDFs to speed up ingestion. |
 
+### Languages
+
+Each document's language is detected during ingestion (`py3langid`, offline) and stored on its chunks as metadata `language`; documents under 60 characters of text stay unlabelled. The KB settings show the documents per language. HyDE, query expansion and keyword extraction write in the corpus languages: those with at least 10 % of the documents, main language first.
+
+| Setting | Default | Notes |
+|---|---|---|
+| `corpus_languages` | `[]` | ISO codes (`de, en`) that replace the detected list. Set it when detection misjudges the corpus or its language is outside the bundled model. Takes effect on the next question, no reindex. |
+
+A KB indexed before language detection shows no languages. Run **Incremental indexing**: it reads the stored chunks of those documents and detects their language without re-chunking or re-embedding.
+
 ### Image support
 
 | Setting | Default | Notes |

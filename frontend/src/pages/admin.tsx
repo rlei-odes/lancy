@@ -3,7 +3,7 @@
 import Head from "next/head";
 import { useRouter } from "next/router";
 import React, { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, BarChart2, Bug, Database, List, Palette, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { ArrowLeft, BarChart2, Bug, Database, List, Palette, ShieldCheck, SlidersHorizontal, TextSearch } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { useRole } from "@/hooks/useRole";
 import { cn } from "@/lib/lorem";
@@ -12,10 +12,11 @@ import { DatabaseStats } from "@/components/sections/admin/database-stats";
 import { BrandingSettings } from "@/components/sections/admin/branding-settings";
 import { IngestionLog } from "@/components/sections/admin/ingestion-log";
 import { LlmDebugPanel } from "@/components/sections/admin/llm-debug-panel";
+import { Bm25DebugPanel } from "@/components/sections/admin/bm25-debug-panel";
 import { AuthSettings } from "@/components/sections/admin/auth-settings";
 import { RagConfigPanel } from "@/components/sections/rag-config-panel";
 
-type Tab = "rag" | "usage" | "database" | "branding" | "ingest-log" | "llm-debug" | "auth";
+type Tab = "rag" | "usage" | "database" | "branding" | "ingest-log" | "llm-debug" | "bm25-debug" | "auth";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "rag",        label: "Knowledge & RAG",  icon: <SlidersHorizontal className="h-3.5 w-3.5" /> },
@@ -24,6 +25,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "branding",   label: "Branding",         icon: <Palette className="h-3.5 w-3.5" /> },
     { id: "ingest-log", label: "Ingestion Log",    icon: <List className="h-3.5 w-3.5" /> },
     { id: "llm-debug",  label: "LLM Debug",        icon: <Bug className="h-3.5 w-3.5" /> },
+    { id: "bm25-debug", label: "BM25 Debug",       icon: <TextSearch className="h-3.5 w-3.5" /> },
     { id: "auth",       label: "Auth / SSO",       icon: <ShieldCheck className="h-3.5 w-3.5" /> },
 ];
 
@@ -108,6 +110,7 @@ export default function AdminPage() {
                             {activeTab === "branding"   && <BrandingSettings />}
                             {activeTab === "ingest-log" && <IngestionLog />}
                             {activeTab === "llm-debug"  && <LlmDebugPanel />}
+                            {activeTab === "bm25-debug" && <Bm25DebugPanel />}
                             {activeTab === "auth"       && <AuthSettings onDirtyChange={setAuthDirty} />}
                         </div>
                     </div>

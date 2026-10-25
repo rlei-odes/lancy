@@ -24,6 +24,23 @@ class SemanticOnlyQuery(str):
     """
 
 
+class KeywordQuery(str):
+    """A query carrying extra search terms for keyword search: synonyms and translations of its key terms.
+
+    Keyword retrievers score the query's own words in full and the extra terms at a
+    lower weight, so a synonym cannot outrank the word the user typed. Other
+    retrievers see the plain query. A 'str' subclass for the same reason as
+    'SemanticOnlyQuery'.
+    """
+
+    expansions: tuple[str, ...]
+
+    def __new__(cls, text: str, expansions: list[str] | tuple[str, ...] = ()) -> "KeywordQuery":
+        query = super().__new__(cls, text)
+        query.expansions = tuple(expansions)
+        return query
+
+
 class Retriever(ABC, Generic[T_co]):
     """
     Abstract base class for document retrievers.

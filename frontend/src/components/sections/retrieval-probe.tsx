@@ -19,6 +19,7 @@ interface RetrieveResponse {
     top_k: number;
     total_returned: number;
     reranking_skipped: boolean;
+    query_terms?: string[];
 }
 
 async function fetchSessionConfig(): Promise<SessionConfig> {
@@ -206,6 +207,21 @@ export const RetrievalProbe: FunctionComponent = () => {
                         <div className="flex-1 h-px bg-border" />
                     </div>
 
+                    {/* Keyword terms */}
+                    {bm25Enabled && result.query_terms && result.query_terms.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 px-1" title={t("explorer.keywordTermsHint")}>
+                            <span className="text-xs text-muted-foreground">{t("explorer.keywordTerms")}</span>
+                            {result.query_terms.map((term) => (
+                                <span
+                                    key={term}
+                                    className="px-1.5 py-0.5 rounded text-[10px] font-mono border bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25"
+                                >
+                                    {term}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+
                     {/* Chunk cards */}
                     <div className="flex flex-col gap-2">
                         {result.chunks.map((chunk, i) => {
@@ -226,7 +242,7 @@ export const RetrievalProbe: FunctionComponent = () => {
                                         </div>
                                     )}
                                     <ChunkCard
-                                        chunk={chunk}
+                                        chunk={bm25Enabled ? chunk : { ...chunk, matched_terms: [] }}
                                         topK={topK}
                                         rerankingActive={rerankingEnabled && !result.reranking_skipped}
                                         rerankingSkipped={result.reranking_skipped}

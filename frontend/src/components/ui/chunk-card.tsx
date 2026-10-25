@@ -18,6 +18,7 @@ export interface ChunkData {
     metadata: Record<string, unknown>;
     final_rank: number;
     scores: ChunkScores;
+    matched_terms?: string[];  // lowercased words of the content keyword search matched
 }
 
 interface Props {
@@ -40,6 +41,18 @@ function ScoreBadge({ label, value, color }: { label: string; value: string; col
 
 function fmt(n: number, decimals = 3) {
     return n.toFixed(decimals);
+}
+
+/** The content with the words keyword search matched marked. Word edges as in the backend's \w+. */
+function highlight(content: string, words: string[] | undefined): React.ReactNode {
+    if (!words || words.length === 0) return content;
+    const escaped = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])(${escaped.join("|")})(?![\\p{L}\\p{N}_])`, "giu");
+    return content.split(pattern).map((part, i) =>
+        i % 2 === 1
+            ? <mark key={i} className="bg-amber-500/25 text-foreground rounded-xs px-0.5">{part}</mark>
+            : part
+    );
 }
 
 export const ChunkCard: FunctionComponent<Props> = ({
@@ -134,7 +147,7 @@ export const ChunkCard: FunctionComponent<Props> = ({
                             !expanded && "line-clamp-4"
                         )}
                     >
-                        {content}
+                        {highlight(content, chunk.matched_terms)}
                     </p>
                     <button
                         className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"

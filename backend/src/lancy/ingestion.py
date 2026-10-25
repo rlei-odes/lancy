@@ -32,6 +32,7 @@ from lancy.feature0_baseline_rag import (
 )
 from lancy.kb_router import KBInfo
 from lancy.kb_stats import write_kb_stats
+from lancy.language import detect_document
 from lancy.rag_router import RagConfig, ReindexResult
 
 log = logging.getLogger("uvicorn")
@@ -224,6 +225,19 @@ def _img_info(b64: str) -> tuple[str, int, int]:
     except Exception:
         w, h = 0, 0
     return digest, w, h
+
+
+async def _tag_language(text_chunks: list[Chunk]) -> None:
+    """Store the document's detected language on each of its chunks (metadata `language`).
+
+    A language the uploader set in the metadata is kept. A document too short to
+    tell stays unlabelled.
+    """
+    loop = asyncio.get_running_loop()
+    code = await loop.run_in_executor(None, detect_document, [c.content for c in text_chunks])
+    if code:
+        for chunk in text_chunks:
+            chunk.metadata.setdefault("language", code)
 
 
 async def _caption_image_chunks(
@@ -637,6 +651,7 @@ async def run_ingestion(
                 log.warning(f"No usable text chunks from '{file_path.name}' after quality filter")
                 continue
 
+            await _tag_language(text_chunks)
             _index_status["phase"] = "embedding"
 
             def _on_embed_progress(batch_idx: int, total_batches: int) -> None:
@@ -994,6 +1009,8 @@ async def ingest_uploaded_file(
                 "skipping captioning for this upload."
             )
 
+        if text_chunks:
+            await _tag_language(text_chunks)
         emb = _get_cached_embedding_model(kb)
         _index_status["phase"] = "embedding"
 

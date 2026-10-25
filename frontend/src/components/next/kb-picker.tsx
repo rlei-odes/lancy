@@ -2,6 +2,7 @@ import React, { FunctionComponent, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Database, Lock } from "lucide-react";
 import { cn } from "@/lib/lorem";
+import { corpusLanguageShares } from "@/lib/corpus-languages";
 import { useMessaging } from "@/hooks/useMessaging";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -12,6 +13,15 @@ interface Kb {
     embedding_model: string;
     files?: number;
     chunks?: number;
+    language_counts?: Record<string, number>;
+    corpus_languages?: string[];
+}
+
+/** "DE 81 % · EN 12 %": the languages HyDE, query expansion and keyword extraction write in. */
+function languageLabel(kb: Kb): string {
+    return corpusLanguageShares(kb.language_counts, kb.corpus_languages)
+        .map(({ code, share }) => (share == null ? code.toUpperCase() : `${code.toUpperCase()} ${Math.round(share * 100)} %`))
+        .join(" · ");
 }
 
 interface Pool {
@@ -100,6 +110,7 @@ export const KbPicker: FunctionComponent = () => {
                 <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">{t("next.kbLabel")}</DropdownMenuLabel>
                 {kbs.map((kb) => {
                     const pooled = pool.loaded.includes(kb.id);
+                    const languages = languageLabel(kb);
                     return (
                         <DropdownMenuItem key={kb.id} disabled={!pooled} onClick={() => choose(kb)} className="items-start gap-2 py-2">
                             <Check className={cn("mt-0.5 h-4 w-4 shrink-0", kb.id === selectedId ? "opacity-100" : "opacity-0")} />
@@ -110,6 +121,7 @@ export const KbPicker: FunctionComponent = () => {
                                         {t("next.documentsButton", { count: kb.files })} · {t("next.chunks", { count: kb.chunks })}
                                     </span>
                                 )}
+                                {languages && <span className="text-xs text-muted-foreground">{languages}</span>}
                             </span>
                             {!pooled && <span className="text-xs text-muted-foreground">{t("next.kbNotLoaded")}</span>}
                         </DropdownMenuItem>

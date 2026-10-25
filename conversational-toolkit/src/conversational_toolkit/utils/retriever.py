@@ -1,8 +1,10 @@
 import loguru
+import re
 from textwrap import dedent
 from typing import Sequence
 
 from conversational_toolkit.llms.base import LLM, LLMMessage, Roles, MessageContent
+from conversational_toolkit.retriever.text_analysis import detect_language, tokenize
 from conversational_toolkit.vectorstores.base import ChunkMatch, ChunkRecord
 
 
@@ -58,12 +60,30 @@ async def make_query_standalone(llm: LLM, history: list[LLMMessage], query: str)
     return reformulated_query
 
 
-async def query_expansion(query: str, llm: LLM, expansion_number: int = 2) -> list[str]:
+def language_rule(languages: Sequence[str]) -> str:
+    """The instruction that picks the language of generated search text.
+
+    'languages' are the corpus languages, most common first; empty means unknown.
+    Generated text is embedded and matched against the corpus, so it is written in
+    a language the corpus has: the query's own when the corpus has it, otherwise
+    the corpus's main one.
+    """
+    if not languages:
+        return "Write in the same language as the original query."
+    if len(languages) == 1:
+        return f"Write in {languages[0]}, the language of the documents searched."
+    return (
+        f"The documents searched are written in {', '.join(languages)}. Write in the language of the "
+        f"original query if it is one of these, otherwise in {languages[0]}."
+    )
+
+
+async def query_expansion(query: str, llm: LLM, expansion_number: int = 2, languages: Sequence[str] = ()) -> list[str]:
     # "Produce N queries total: some ... some ..." asked for one thing and
     # several in the same breath, and nothing told the model when to stop — at
     # N=1 that reliably sent it into a repetition loop. The count is stated once
-    # now, with an explicit stop. The language spread is gone too: it cost one of
-    # N slots on a translation of a question whose corpus is in one language.
+    # now, with an explicit stop. The language follows the corpus: a spread of
+    # languages costs one of N slots on a translation the corpus has no use for.
     template_query_expansion = """
         Generate alternative search queries for: {query}
 
@@ -71,7 +91,7 @@ async def query_expansion(query: str, llm: LLM, expansion_number: int = 2) -> li
         - Output exactly {expansion_number} line(s), one query per line.
         - No numbering, labels, quotes or explanation.
         - Each query must differ meaningfully from the others and from the original.
-        - Write in the same language as the original query.
+        - {language_rule}
         - Stop after {expansion_number} line(s).
     """
     conversation = [
@@ -88,7 +108,10 @@ async def query_expansion(query: str, llm: LLM, expansion_number: int = 2) -> li
             role=Roles.USER,
             content=[
                 MessageContent(
-                    type="text", text=template_query_expansion.format(query=query, expansion_number=expansion_number)
+                    type="text",
+                    text=template_query_expansion.format(
+                        query=query, expansion_number=expansion_number, language_rule=language_rule(languages)
+                    ),
                 )
             ],
         ),
@@ -120,18 +143,28 @@ async def query_expansion(query: str, llm: LLM, expansion_number: int = 2) -> li
     return generated_queries
 
 
-async def hyde_expansion(query: str, llm: LLM) -> str:
+async def hyde_expansion(query: str, llm: LLM, languages: Sequence[str] = ()) -> str:
     conversation = [
         LLMMessage(
             role=Roles.SYSTEM,
             content=[
                 MessageContent(
                     type="text",
-                    text="You are a helpful assistant. Provide a hypothetical example answer to the provided query. Respond in the same language as the query. Concise, only a few sentences, without any introduction or conclusion.",
+                    text=(
+                        "You are a helpful assistant. Provide a hypothetical example answer to the provided query. "
+                        f"{language_rule(languages)} Concise, only a few sentences, without any introduction or conclusion."
+                    ),
                 )
             ],
         ),
-        LLMMessage(role=Roles.USER, content=[MessageContent(type="text", text=query)]),
+        # A language rule in the system prompt alone loses to the language of the
+        # query: models answer in the language they are asked in. Repeated next to it.
+        LLMMessage(
+            role=Roles.USER,
+            content=[
+                MessageContent(type="text", text=f"{query}\n\n{language_rule(languages)}" if languages else query)
+            ],
+        ),
     ]
     hyde_expansion_message = (await llm.generate(conversation)).content[0].text or ""
 
@@ -139,6 +172,65 @@ async def hyde_expansion(query: str, llm: LLM) -> str:
     loguru.logger.debug(f"HyDE expansion: {hyde_expansion_message}")
 
     return hyde_expansion_message
+
+
+# Lines kept from the keyword extraction answer; a model that keeps going is cut here.
+MAX_KEYWORDS = 20
+
+_LIST_MARKER = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s*")
+
+
+async def keyword_extraction(query: str, llm: LLM, languages: Sequence[str] = ()) -> list[str]:
+    """Search terms for keyword search: the question's key terms, their synonyms and translations.
+
+    Keyword search matches the question's own words, so it misses a document that
+    says the same in other words or another language — "surrogate key" never
+    matches "Ersatzschlüssel". The terms returned here widen that; the caller
+    weighs them below the question's own words. Translations go into the corpus
+    languages other than the question's own; with none left there are none, and
+    the prompt does not mention translating — asked to translate into the
+    question's own language, a model picks languages of its own.
+    """
+    question_language = detect_language(tokenize(query))
+    targets = [lang for lang in languages if lang.lower() != question_language]
+    translations = (
+        f"- two or three translations of each key term into {', '.join(targets)}, and into no other language;\n"
+        if targets
+        else ""
+    )
+    prompt = (
+        f"List search terms for finding documents that answer: {query}\n\n"
+        "Include:\n"
+        "- the key terms of the question, without filler words;\n"
+        "- close synonyms of each key term, and its singular or plural form;\n"
+        f"{translations}\n"
+        "Rules:\n"
+        "- One term per line, each a single word or a short phrase.\n"
+        "- No numbering, labels, quotes or explanation.\n"
+        f"- At most {MAX_KEYWORDS} lines, then stop."
+    )
+    conversation = [
+        LLMMessage(
+            role=Roles.SYSTEM,
+            content=[
+                MessageContent(
+                    type="text",
+                    text="You turn a question into search terms. Output only the terms, one per line. Never repeat a term.",
+                )
+            ],
+        ),
+        LLMMessage(role=Roles.USER, content=[MessageContent(type="text", text=prompt)]),
+    ]
+    # A term runs a few tokens; the cap stops a repetition loop early, as in query_expansion.
+    raw = (await llm.generate(conversation, max_tokens=8 * MAX_KEYWORDS + 32)).content[0].text or ""
+    terms: dict[str, str] = {}
+    for line in raw.splitlines():
+        term = _LIST_MARKER.sub("", line).strip().strip("\"'`").strip()
+        if term and len(term) <= 80:
+            terms.setdefault(term.lower(), term)
+    keywords = list(terms.values())[:MAX_KEYWORDS]
+    loguru.logger.debug(f"Keywords for {query!r}: {keywords}")
+    return keywords
 
 
 def reciprocal_rank_fusion(search_results: Sequence[Sequence[ChunkRecord]], k: int = 60) -> list[ChunkRecord]:

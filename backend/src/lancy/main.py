@@ -77,6 +77,7 @@ from conversational_toolkit.llms.base import MessageContent
 from conversational_toolkit.retriever.bm25_retriever import BM25Retriever
 from conversational_toolkit.retriever.hybrid_retriever import HybridRetriever
 from conversational_toolkit.retriever.reranking_retriever import RerankingRetriever
+from conversational_toolkit.retriever.text_analysis import analyze_query, matched_words
 from conversational_toolkit.vectorstores.base import VectorStore
 
 from lancy.feature0_baseline_rag import (
@@ -108,6 +109,9 @@ from lancy.batch_router import create_batch_router
 from lancy.branding_router import create_branding_router
 from lancy.database import fail_interrupted_piles, interrupt_running_batch_jobs
 from lancy.kb_router import KBInfo, create_kb_router
+from lancy.kb_stats import backfill_languages
+from lancy import bm25_debug
+from lancy.language import corpus_languages, language_name
 from lancy.openai_compat_router import create_openai_compat_router
 from lancy.piles_router import create_piles_router, open_pile_store
 from lancy.rag_router import (
@@ -308,6 +312,7 @@ class CustomRAG(RAG):
 
     async def answer_stream(self, query_with_context):
         _query_status.update({"active": True, "phase": "retrieving"})
+        bm25_debug.begin(query_with_context.query)
 
         def update_phase(phase: str) -> None:
             _query_status["phase"] = phase
@@ -427,6 +432,16 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
         raise
 
 
+def _corpus_language_names(kb_id: str) -> list[str]:
+    """Names of the KB's corpus languages, main one first; read per question so a KB edit applies at once."""
+    registry = json.loads((_DB_DIR / "knowledge_bases.json").read_text())
+    entry = registry["bases"].get(kb_id)
+    if entry is None:  # a pile, which has no registry entry
+        return []
+    kb = KBInfo(**entry)
+    return [language_name(code) for code in corpus_languages(kb.language_counts, kb.corpus_languages)]
+
+
 def _rerank_prompt_budget(num_ctx: int) -> int:
     """Characters of candidate text the reranker may send: half the context, at a
     conservative 3 characters per token, so the prompt and the ranking still fit."""
@@ -446,7 +461,9 @@ def _assemble_components(
     # When reranking, fetch a larger candidate pool first
     retriever_k = cfg.reranking_candidate_pool if cfg.reranking_enabled else top_k
     semantic = _make_retriever(emb, vs, retriever_k, kb.nomic_prefix)
-    retrievers = [semantic, BM25Retriever(vs, top_k=retriever_k)] if cfg.bm25_enabled else [semantic]
+    bm25 = BM25Retriever(vs, top_k=retriever_k)
+    bm25.search_listener = bm25_debug.record
+    retrievers = [semantic, bm25] if cfg.bm25_enabled else [semantic]
     hybrid = HybridRetriever(retrievers=retrievers, top_k=retriever_k)
 
     _is_ollama_via_litellm = cfg.llm_backend == "litellm" and (cfg.llm_model or "").startswith("ollama/")
@@ -554,6 +571,8 @@ def _assemble_components(
             retrievers=all_retrievers,
             number_query_expansion=cfg.query_expansion,
             enable_hyde=cfg.hyde_enabled,
+            keyword_extraction=cfg.keyword_extraction,
+            corpus_languages=lambda: _corpus_language_names(kb.id),
             follow_up_count=cfg.follow_up_count,
             aux_vector_stores=aux_stores,
         )
@@ -667,6 +686,7 @@ def build_server():
                     "reranking_candidate_pool": cfg.reranking_candidate_pool,
                     "hyde_enabled": cfg.hyde_enabled,
                     "query_expansion": cfg.query_expansion,
+                    "keyword_extraction": cfg.keyword_extraction,
                     "llm_backend": cfg.llm_backend,
                     "llm_model": cfg.llm_model,
                     "llm_temperature": cfg.llm_temperature,
@@ -935,6 +955,12 @@ def build_server():
         # When all files are already indexed (incremental run, nothing new),
         # chunks_n == 0, which would overwrite the correct count with 0.
         if entry is not None:
+            # Documents indexed before languages were detected get theirs here, so an
+            # incremental reindex is all an existing KB needs.
+            try:
+                await backfill_languages(_DB_DIR, kb.id, entry.vs)
+            except Exception as exc:
+                log.warning(f"Language detection for existing documents of KB '{kb.name}' failed: {exc}")
             try:
                 total_count = await entry.vs.count()
                 total_files = len(await entry.vs.get_source_files())
@@ -1039,7 +1065,8 @@ def build_server():
                 log.warning(f"Probe reranking failed, returning pre-rerank order: {exc}")
                 reranking_skipped = True
 
-        # Build response
+        # Build response. The terms show why keyword search did or did not match.
+        query_terms = list(dict.fromkeys(analyze_query(req.query)))
         chunks: list[ChunkResult] = []
         for rank, cid in enumerate(ordered_ids, start=1):
             chunk = chunk_map.get(cid)
@@ -1051,6 +1078,7 @@ def build_server():
                     content=chunk.content,
                     metadata=chunk.metadata or {},
                     final_rank=rank,
+                    matched_terms=matched_words(chunk.content, query_terms),
                     scores=ChunkScores(
                         semantic_score=sem_map[cid][1] if cid in sem_map else None,
                         bm25_score=bm25_map[cid][1] if cid in bm25_map else None,
@@ -1065,6 +1093,7 @@ def build_server():
             top_k=top_k,
             total_returned=len(chunks),
             reranking_skipped=reranking_skipped,
+            query_terms=query_terms,
         )
 
     rag_router = create_rag_router(

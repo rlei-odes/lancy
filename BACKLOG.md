@@ -54,11 +54,6 @@ Discovered while deploying with pgvector + Qwen3-Embedding-8B via Ollama: got pa
 
 ---
 
-## Authentication & Access Control
-
-
----
-
 ## Ingestion
 
 ### Image Retrieval — Source Citations with Image Preview
@@ -188,10 +183,6 @@ The reindex itself reports plain success. The user has just re-indexed a KB and 
 
 **Fix:** surface the state instead. `ReindexResult` needs a field for "indexed, but not loaded into the pool", and the reindex toast should say so and point at the activate-with-reset action. Pairs with the `IndexStatus`-has-no-error-field gap noted in the v0.3.11 changelog entry.
 
-### Align Design of Left and Right Sidebar, Main Chat Page
-
-All three look nice now but they are not really aligned with each other. Not necessary, but is an inconsistency.
-
 ### Render Chunk Content in the Document Panel
 
 The document panel on `/next` shows chunk text as plain text, so markdown arrives raw: `##` headings, `- ` list markers, `<!-- image -->` comments, and tables as `|` rows. The classic sources sheet ran chunks through the markdown renderer, which at least drew tables.
@@ -235,10 +226,8 @@ The **Expand context** action (v0.3.8) currently only lets the user pick from do
 
 A search mode for questions where missing a document is worse than waiting. The default search returns the best few chunks; a relevant passage that ranks poorly is never seen, however clearly it answers the question. Example: "What is a surrogate key?" — the CASDEAI course defines it in a glossary table, in German, 80 % into an 8,000-character chunk. It never reached the answer.
 
-**How keyword terms come about today:** they don't, as a separate step. `BM25Retriever._tokenize` lowercases each query variant (the question, any expanded queries, the HyDE document) and splits it into words — every word, including "what", "is", "a", with no stop words, stemming or translation. "surrogate" finds "surrogate", never "Surrogatschlüssel" or "Ersatzschlüssel".
-
 **The mode:**
-1. **Term extraction.** An LLM step turns the question into the terms that must be looked for: the key concepts, their synonyms, and their translations into the corpus languages (see "Corpus Language Setting per KB").
+1. **Term extraction.** The terms that must be looked for: the question's analysed terms plus the synonyms and translations from keyword extraction (`utils/retriever.py: keyword_extraction`, into the KB's corpus languages).
 2. **Exhaustive match.** Every chunk containing one of the terms is a must-read — no top-k cut. The BM25 index already scores the whole corpus; this keeps everything with a non-zero score for a term instead of the top few.
 3. **Read in passes.** If the must-read chunks fit the context, answer from them directly. If not, read them in batches that fit and extract what each batch says about the question (map), then answer from those extracts (reduce), keeping chunk citations through both steps.
 4. **Report the reach.** Tell the user how many chunks matched, how many were read, and how many passes it took — the document panel can show every chunk that was read.
@@ -246,14 +235,6 @@ A search mode for questions where missing a document is worse than waiting. The 
 **Shares machinery with** "Expand Context — Multi-Pass for Documents Larger Than the Context": the batching, the map and reduce prompts, citation carry-over and progress reporting are the same problem.
 
 **Open questions:** a cap on matched chunks before asking the user to narrow the question; whether semantic search adds candidates beyond the keyword matches; how to show cost and progress for a run of many LLM calls.
-
----
-
-### Reranker — Show the Passage Around the Query Terms When Cut
-
-The reranker sends each candidate in full, table padding compacted. Only when the whole pool exceeds its prompt budget (half of `num_ctx`) is every candidate cut, to the same share from the start. A passage deep in a long chunk is then lost again.
-
-**Improvement:** when a candidate must be cut, send the window around the query terms' occurrences instead of the beginning — the chunk's title plus the best-matching span, falling back to the start when no term occurs. Mostly matters for small `num_ctx` settings and large candidate pools.
 
 ---
 
@@ -280,30 +261,9 @@ Show neighbours in the sources panel when the user expands a citation. The retri
 
 ---
 
-### Corpus Language Setting per KB
+### Keyword Search — bge-m3 Sparse Weights Instead of BM25 Analysis
 
-HyDE and query expansion both generate text that is embedded and matched against the corpus, so they work best in the corpus language. Neither knows what that is. The expansion prompt used to ask for a mix of languages and spent one of its slots translating an English question for an English corpus; it now follows the query's language, which is a guess, not knowledge.
-
-**Proposal:** a `corpus_language` field on the KB, set by the admin, threaded into the HyDE and query-expansion prompts. Default "same as the query" for mixed corpora.
-
-Corpora are often mixed — German course material with English terms, standards in several languages — so the field should hold a list of languages, not one. Keyword extraction (below) uses it to pick translation targets. A per-chunk language, detected at ingestion and stored in metadata, would be the precise version; BM25 already detects it in memory from stop words (`text_analysis.detect_language`).
-
-### Keyword Extraction for Search — Synonyms and Translations
-
-Keyword search matches the question's own words, after stop words are dropped and words stemmed (`retriever/text_analysis.py`). It cannot find a document that uses a different word or language: "surrogate key" never matches "Ersatzschlüssel" or "technischer Schlüssel".
-
-**Proposal:** a utility-LLM step before retrieval that turns the question into search terms:
-- the key terms of the question, without filler;
-- their close synonyms and singular/plural forms;
-- 2–3 translations into the KB's corpus languages (see above).
-
-The terms feed keyword search only — semantic search already works across languages. The question's own terms weigh more than expansions, so a synonym cannot outrank the word the user typed: either as separate BM25 queries fused with a lower weight, or as one query with weighted terms.
-
-**Cost:** one short utility-LLM call per question, like query expansion; it could replace query expansion for the keyword side.
-
-**Shares the term-extraction step with** "Max Search Reach — Every Keyword Hit Gets Read", which needs the same terms to decide what must be read.
-
-**Alternative to evaluate afterwards:** bge-m3, the embedding model in use, can also produce multilingual sparse lexical weights. Using those instead of hand-built BM25 analysis needs new index data, so a reindex.
+bge-m3, the embedding model in use, can also produce multilingual sparse lexical weights. Using those instead of the hand-built BM25 analysis (stop words, stemming, LLM keyword extraction) would match across languages without an LLM call. Needs new index data, so a reindex. To evaluate against keyword extraction on the same questions.
 
 ### RAG Settings: LLM Call Calculation
 
@@ -390,14 +350,6 @@ Both require backend config storage plumbing that is already in place (`branding
 ---
 
 ## Admin Tooling
-
-### BM25 Debug — Show the Search Terms
-
-Keyword search analyses every query variant into search terms: stop words dropped, words stemmed in all supported languages. The terms are only visible as a backend log line (`BM25 terms for '…': …`), so nobody can see from the UI why a keyword search did or did not match.
-
-**What's needed:**
-- **Retrieval Probe:** return the analysed terms with the probe result and show them above the chunks, with each chunk's matched terms highlighted. Cheapest and most useful.
-- **Admin debug tab**, like LLM Debug: the recent searches, each with its query variants, their terms, the language detected for the question, and the top keyword hits with their scores.
 
 ### User Feedback — Thumbs Up / Down
 

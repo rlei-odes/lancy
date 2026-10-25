@@ -51,6 +51,7 @@ class RagConfig(BaseModel):
     bm25_enabled: bool = True
     query_expansion: int = Field(0, ge=0, le=10)
     hyde_enabled: bool = False
+    keyword_extraction: bool = False  # utility-LLM synonyms + translations for keyword search
     reranking_enabled: bool = False
     reranking_candidate_pool: int = Field(15, ge=3, le=100)
 
@@ -150,6 +151,7 @@ class ChunkResult(BaseModel):
     metadata: dict[str, Any]
     final_rank: int
     scores: ChunkScores
+    matched_terms: list[str] = []  # words of the content keyword search matches, lowercased
 
 
 class RetrieveResponse(BaseModel):
@@ -157,6 +159,7 @@ class RetrieveResponse(BaseModel):
     top_k: int
     total_returned: int
     reranking_skipped: bool = False
+    query_terms: list[str] = []  # the query as keyword search analyses it: stop words dropped, stems added
 
 
 # ─── Chunk browser ───────────────────────────────────────────────────────────

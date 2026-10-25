@@ -5,6 +5,7 @@ import { RefreshCw, ChevronDown, ChevronRight, AlertCircle, CheckCircle2, Loader
 import { useTranslation } from "react-i18next";
 import { useRole } from "@/hooks/useRole";
 import { cn } from "@/lib/lorem";
+import { CORPUS_LANGUAGE_MIN_SHARE } from "@/lib/corpus-languages";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,7 @@ interface KBConfig {
     image_retrieval_enabled: boolean;
     image_captioning_enabled: boolean;
     chat_filters: ChatFiltersConfig;
+    corpus_languages: string[];
 }
 
 /** Session-level config: retrieval, LLM, prompt. No re-index needed. */
@@ -48,6 +50,7 @@ interface SessionConfig {
     bm25_enabled: boolean;
     query_expansion: number;
     hyde_enabled: boolean;
+    keyword_extraction: boolean;
     reranking_enabled: boolean;
     reranking_candidate_pool: number;
     llm_backend: "ollama" | "litellm" | "custom";
@@ -74,6 +77,7 @@ interface KBInfo extends KBConfig {
     chunks: number;
     files: number;
     last_indexed: string | null;
+    language_counts?: Record<string, number>;
 }
 
 interface KBRegistry {
@@ -83,7 +87,7 @@ interface KBRegistry {
 
 const RETRIEVAL_FIELD_KEYS = [
     "retriever_top_k", "rrf_k", "bm25_enabled", "query_expansion",
-    "hyde_enabled", "reranking_enabled", "reranking_candidate_pool", "image_retriever_top_k",
+    "hyde_enabled", "keyword_extraction", "reranking_enabled", "reranking_candidate_pool", "image_retriever_top_k",
 ] as const;
 
 type RetrievalFields = Pick<SessionConfig, typeof RETRIEVAL_FIELD_KEYS[number]>;
@@ -152,6 +156,7 @@ const DEFAULT_KB_CONFIG: KBConfig = {
     image_retrieval_enabled: false,
     image_captioning_enabled: false,
     chat_filters: { enabled: false, keys: [] },
+    corpus_languages: [],
 };
 
 const DEFAULT_SESSION: SessionConfig = {
@@ -160,6 +165,7 @@ const DEFAULT_SESSION: SessionConfig = {
     bm25_enabled: true,
     query_expansion: 0,
     hyde_enabled: false,
+    keyword_extraction: false,
     reranking_enabled: false,
     reranking_candidate_pool: 15,
     llm_backend: "ollama",
@@ -307,6 +313,48 @@ function findMatchingKbPreset(cfg: KBConfig, presets: KBPreset[]): string {
     )?.name ?? "";
 }
 
+// ─── Corpus languages ─────────────────────────────────────────────────────────
+
+const parseLanguageCodes = (text: string): string[] =>
+    [...new Set(text.toLowerCase().split(/[\s,;]+/).filter((c) => /^[a-z]{2,3}$/.test(c)))].slice(0, 10);
+
+const CorpusLanguagesInput: FunctionComponent<{
+    value: string[];
+    detected: Record<string, number>;
+    onChange: (codes: string[]) => void;
+}> = ({ value, detected, onChange }) => {
+    const { t } = useTranslation();
+    // A draft, committed on blur: parsing every keystroke would swallow the comma being typed.
+    const [draft, setDraft] = useState(value.join(", "));
+    useEffect(() => { setDraft(value.join(", ")); }, [value]);
+    const total = Object.values(detected).reduce((a, b) => a + b, 0);
+    const ranked = Object.entries(detected).sort((a, b) => b[1] - a[1]);
+    return (
+        <div className="space-y-1">
+            <input
+                className="w-full bg-transparent border border-border rounded px-2 py-1 text-xs focus:outline-hidden focus:ring-1 focus:ring-ring"
+                value={draft}
+                placeholder={t("rag.corpusLanguagesPlaceholder")}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={() => onChange(parseLanguageCodes(draft))}
+                maxLength={60}
+            />
+            <p className="text-[10px] text-muted-foreground">
+                {total === 0 ? t("rag.corpusLanguagesNone") : (
+                    <>
+                        {t("rag.corpusLanguagesDetected")}{" "}
+                        {ranked.map(([code, n], i) => (
+                            <span key={code} className={n / total >= CORPUS_LANGUAGE_MIN_SHARE ? "text-foreground" : "opacity-60"}>
+                                {i > 0 && " · "}{code} {n}
+                            </span>
+                        ))}
+                    </>
+                )}
+            </p>
+        </div>
+    );
+};
+
 // ─── KB form ──────────────────────────────────────────────────────────────────
 
 // Mirrors `_name_key` in kb_router.py. The backend rejects a collision with 409;
@@ -412,6 +460,7 @@ function kbInfoToConfig(kb: KBInfo): KBConfig {
         image_retrieval_enabled: kb.image_retrieval_enabled ?? false,
         image_captioning_enabled: kb.image_captioning_enabled ?? false,
         chat_filters: kb.chat_filters ?? { enabled: false, keys: [] },
+        corpus_languages: kb.corpus_languages ?? [],
     };
 }
 
@@ -1209,11 +1258,13 @@ export const RagConfigPanel: FunctionComponent<{ layout?: "sidebar" | "page" }> 
         session.bm25_enabled !== savedSession.current.bm25_enabled ||
         session.query_expansion !== savedSession.current.query_expansion ||
         session.hyde_enabled !== savedSession.current.hyde_enabled ||
+        session.keyword_extraction !== savedSession.current.keyword_extraction ||
         session.reranking_enabled !== savedSession.current.reranking_enabled ||
         session.reranking_candidate_pool !== savedSession.current.reranking_candidate_pool ||
         session.image_retriever_top_k !== savedSession.current.image_retriever_top_k ||
         kbConfig.image_retrieval_enabled !== savedKbConfig.current.image_retrieval_enabled ||
-        JSON.stringify(kbConfig.chat_filters) !== JSON.stringify(savedKbConfig.current.chat_filters);
+        JSON.stringify(kbConfig.chat_filters) !== JSON.stringify(savedKbConfig.current.chat_filters) ||
+        JSON.stringify(kbConfig.corpus_languages) !== JSON.stringify(savedKbConfig.current.corpus_languages);
 
     const embeddingDirty =
         kbConfig.embedding_backend !== savedKbConfig.current.embedding_backend ||
@@ -1839,6 +1890,16 @@ export const RagConfigPanel: FunctionComponent<{ layout?: "sidebar" | "page" }> 
                             </FieldRow>
                             <FieldRow label={t("rag.fieldHyde")} hint={t("rag.fieldHydeHint")}>
                                 <Toggle checked={session.hyde_enabled} onChange={(v) => updateSession("hyde_enabled", v)} />
+                            </FieldRow>
+                            <FieldRow label={t("rag.fieldKeywordExtraction")} hint={t("rag.fieldKeywordExtractionHint")}>
+                                <Toggle checked={session.keyword_extraction} onChange={(v) => updateSession("keyword_extraction", v)} />
+                            </FieldRow>
+                            <FieldRow label={t("rag.fieldCorpusLanguages")} hint={t("rag.fieldCorpusLanguagesHint")}>
+                                <CorpusLanguagesInput
+                                    value={kbConfig.corpus_languages}
+                                    detected={activeKb?.language_counts ?? {}}
+                                    onChange={(v) => updateKbConfig("corpus_languages", v)}
+                                />
                             </FieldRow>
                             <FieldRow label={t("rag.fieldReranking")} hint={t("rag.fieldRerankingHint")}>
                                 <Toggle checked={session.reranking_enabled} onChange={(v) => updateSession("reranking_enabled", v)} />

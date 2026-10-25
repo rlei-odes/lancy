@@ -24,7 +24,7 @@ import shutil
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Awaitable, Callable, Literal
+from typing import Annotated, Awaitable, Callable, Literal
 from urllib.parse import unquote
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile
@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 
 from lancy.feature0_baseline_rag import _CHUNKERS, _IMAGE_EXTENSIONS, safe_conn_str
 from lancy.kb_pool import EmbeddingConflict
+from lancy.kb_stats import read_language_distribution
 
 _SUPPORTED_UPLOAD_EXTS = set(_CHUNKERS) | _IMAGE_EXTENSIONS
 
@@ -77,6 +78,8 @@ class KBCreate(BaseModel):
     image_embedding_model: str = Field("Qwen/Qwen3-VL-Embedding-2B", max_length=200)
     image_captioning_enabled: bool = False
     chat_filters: ChatFiltersConfig = Field(default_factory=ChatFiltersConfig)
+    # Admin-set corpus languages (ISO 639-1 codes, main one first). Empty: use the detected ones.
+    corpus_languages: list[Annotated[str, Field(pattern=r"^[a-z]{2,3}$")]] = Field(default_factory=list, max_length=10)
 
 
 class KBInfo(KBCreate):
@@ -87,6 +90,8 @@ class KBInfo(KBCreate):
     chunks: int = 0
     files: int = 0
     last_indexed: str | None = None
+    # Documents per detected language, from ingestion (see lancy.language).
+    language_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class KBRegistry(BaseModel):
@@ -213,11 +218,15 @@ def create_kb_router(
     router.get_active_kb = get_active  # type: ignore[attr-defined]  # attached for main.py
 
     def update_stats(kb_id: str, chunks: int, files: int) -> None:
-        """Called by main.py after a reindex to persist chunk/file counts."""
+        """Called by main.py after a reindex to persist chunk/file counts and the languages detected."""
         reg = _load()
         if kb_id in reg.bases:
             reg.bases[kb_id].chunks = chunks
             reg.bases[kb_id].files = files
+            try:
+                reg.bases[kb_id].language_counts = read_language_distribution(db_dir, kb_id)
+            except Exception as exc:
+                log.warning(f"Could not read the language distribution of KB '{kb_id}': {exc}")
             reg.bases[kb_id].last_indexed = datetime.now(timezone.utc).isoformat()
             _save(reg)
 
@@ -260,6 +269,7 @@ def create_kb_router(
             chunks=existing.chunks,
             files=existing.files,
             last_indexed=existing.last_indexed,
+            language_counts=existing.language_counts,
             **_unmask(cfg, existing).model_dump(),
         )
         reg.bases[kb_id] = updated

@@ -8,25 +8,32 @@ Typical usage: initialise from a list of 'ChunkRecord' objects already stored in
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from rank_bm25 import BM25Okapi  # type: ignore[import-untyped]
 
-from conversational_toolkit.retriever.base import Retriever, SemanticOnlyQuery
-from conversational_toolkit.retriever.text_analysis import analyze_document, analyze_query
+from conversational_toolkit.retriever.base import KeywordQuery, Retriever, SemanticOnlyQuery
+from conversational_toolkit.retriever.text_analysis import analyze_document, analyze_query, detect_language, tokenize
 from conversational_toolkit.vectorstores.base import ChunkMatch, VectorStore
 
 logger = logging.getLogger(__name__)
+
+# Weight of a 'KeywordQuery''s extra terms against the query's own words.
+EXPANSION_WEIGHT = 0.5
+
+# Hits reported to the search listener per query.
+LISTENER_HITS = 10
 
 
 class BM25Retriever(Retriever[ChunkMatch]):
     """
     In-memory BM25 retriever over a fixed corpus of 'ChunkRecord' objects.
 
-    Uses 'rank_bm25.BM25Okapi' under the hood. Chunks and queries go through 'text_analysis': stop words dropped, words stemmed — chunks in their own language, queries in every supported language. A 'SemanticOnlyQuery' returns no results.
+    Uses 'rank_bm25.BM25Okapi' under the hood. Chunks and queries go through 'text_analysis': stop words dropped, words stemmed — chunks in their own language, queries in every supported language. A 'SemanticOnlyQuery' returns no results. A 'KeywordQuery''s extra terms add to the score at 'EXPANSION_WEIGHT'.
 
     Attributes:
         corpus: The indexed document chunks.
+        search_listener: Called after every search with its query, terms, detected language and top hits. For debugging tools; None means nobody listens.
     """
 
     def __init__(self, vector_store: VectorStore, top_k: int) -> None:
@@ -35,6 +42,7 @@ class BM25Retriever(Retriever[ChunkMatch]):
         self.corpus = []
         self.tokenized = []
         self._bm25 = None
+        self.search_listener: Callable[[dict[str, Any]], None] | None = None
 
     @staticmethod
     def _searchable_text(chunk: Any) -> str:
@@ -79,7 +87,19 @@ class BM25Retriever(Retriever[ChunkMatch]):
 
         query_terms = analyze_query(query)
         logger.info(f"BM25 terms for {query[:80]!r}: {' '.join(dict.fromkeys(query_terms))}")
-        scores: list[float] = self._bm25.get_scores(query_terms).tolist()
+        score_array = self._bm25.get_scores(query_terms)
+        expansion_terms: list[str] = []
+        if isinstance(query, KeywordQuery) and query.expansions:
+            # Each expansion is analysed on its own: they mix languages, and the
+            # stop words of one would be detected and dropped from the others.
+            own = set(query_terms)
+            expansion_terms = [
+                t for t in dict.fromkeys(t for e in query.expansions for t in analyze_query(e)) if t not in own
+            ]
+            logger.info(f"BM25 expansion terms for {query[:80]!r}: {' '.join(expansion_terms)}")
+            if expansion_terms:
+                score_array = score_array + EXPANSION_WEIGHT * self._bm25.get_scores(expansion_terms)
+        scores: list[float] = score_array.tolist()
         ranked_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
         if filters:
 
@@ -89,6 +109,8 @@ class BM25Retriever(Retriever[ChunkMatch]):
 
             ranked_indices = [i for i in ranked_indices if _matches(i)]
         top_indices = ranked_indices[: self.top_k]
+        if self.search_listener is not None:
+            self._notify(query, query_terms, expansion_terms, top_indices, scores)
         # A zero score means no query term occurs in the chunk: it only fills
         # top_k, so it is not reported as a keyword match.
         return [
@@ -104,6 +126,41 @@ class BM25Retriever(Retriever[ChunkMatch]):
             )
             for rank, i in enumerate(top_indices, start=1)
         ]
+
+    def _notify(
+        self,
+        query: str,
+        query_terms: list[str],
+        expansion_terms: list[str],
+        top_indices: list[int],
+        scores: list[float],
+    ) -> None:
+        assert self._bm25 is not None and self.search_listener is not None
+        all_terms = list(dict.fromkeys([*query_terms, *expansion_terms]))
+        hits = []
+        for i in top_indices[:LISTENER_HITS]:
+            if scores[i] <= 0:
+                break
+            doc_terms = self._bm25.doc_freqs[i]
+            chunk = self.corpus[i]
+            hits.append(
+                {
+                    "id": chunk.id,
+                    "source_file": (chunk.metadata or {}).get("source_file", ""),
+                    "title": chunk.title,
+                    "score": scores[i],
+                    "matched_terms": [t for t in all_terms if t in doc_terms],
+                }
+            )
+        self.search_listener(
+            {
+                "query": str(query),
+                "terms": list(dict.fromkeys(query_terms)),
+                "expansion_terms": expansion_terms,
+                "language": detect_language(tokenize(query)),
+                "hits": hits,
+            }
+        )
 
     def invalidate_cache(self) -> None:
         """

@@ -5,6 +5,31 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.5.1] — 2026-10-25 · rlei-odes
+
+### Added — Corpus languages per knowledge base
+
+- Ingestion detects each document's language and stores it on its chunks as metadata `language`. The knowledge base counts documents per language. Detection runs offline with `py3langid`, whose model ships in the package. Adds the `py3langid` dependency.
+- A language counts as a corpus language once it holds 10 % of the documents, so a few stray documents in another language are ignored. An admin can set the list per knowledge base in the RAG settings, which replaces the detected one.
+- HyDE and query expansion write in the question's language when the corpus has it, otherwise in the corpus's main language. Before, they always followed the question.
+- The knowledge base picker in the chat shows the corpus languages with their share of the documents.
+- Knowledge bases indexed before this release get their languages on the next incremental indexing run, from the stored chunks, without re-chunking.
+
+### Added — Keyword extraction
+
+- New retrieval setting: the utility LLM turns the question into search terms — key terms, synonyms, singular and plural forms, and translations into the other corpus languages. They feed keyword search only, at half the weight of the words the user typed, so "surrogate key" also finds "Ersatzschlüssel" without a synonym outranking the typed word. With it on, expanded queries go to semantic search only. One extra LLM call per question.
+
+### Added — Keyword search debugging
+
+- The Retrieval Probe lists the query's keyword search terms and highlights the words each chunk matched.
+- **Admin → BM25 Debug** records recent questions with each keyword search made for them: query variant, terms, extra terms, detected language and top hits with matched terms. Off by default, last 50 questions, in memory only.
+
+### Changed — Retrieval
+
+- When the candidate pool exceeds the reranker's budget, each candidate is cut to the passage holding the most query terms instead of its beginning.
+
+---
+
 ## [Lancy v0.5.0] — 2026-10-25 · rlei-odes
 
 ### Added — New chat interface

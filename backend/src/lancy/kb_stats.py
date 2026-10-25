@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
 from conversational_toolkit.chunking.base import Chunk
+from conversational_toolkit.vectorstores.base import VectorStore
+from lancy.language import detect_document
 
 log = logging.getLogger("uvicorn")
 
@@ -32,6 +35,9 @@ def _per_hash_entries(chunks: list[Chunk], now_iso: str) -> dict[str, dict]:
                 "source_file": c.metadata.get("source_file", "?"),
                 "chunk_count": 0,
                 "indexed_at": now_iso,
+                # None: too little text to tell. An entry written before languages were
+                # detected has no key at all, which is how backfill_languages finds it.
+                "language": c.metadata.get("language"),
             }
         per_hash[h]["chunk_count"] += 1
     return per_hash
@@ -52,6 +58,55 @@ def _cpd_distribution(chunks_per_document: dict) -> dict[str, int]:
         else:
             dist["100+"] += 1
     return dist
+
+
+def language_distribution(chunks_per_document: dict) -> dict[str, int]:
+    """Documents per detected language code. A document indexed in several versions counts once."""
+    by_file = {
+        entry["source_file"]: entry["language"] for entry in chunks_per_document.values() if entry.get("language")
+    }
+    counts: dict[str, int] = {}
+    for code in by_file.values():
+        counts[code] = counts.get(code, 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: item[1], reverse=True))
+
+
+def read_language_distribution(db_dir: Path, kb_id: str) -> dict[str, int]:
+    """The KB's documents per language from its stats file; empty when there is none yet."""
+    stats_path = db_dir / f"kb_stats_{kb_id}.json"
+    if not stats_path.exists():
+        return {}
+    return json.loads(stats_path.read_text()).get("language_distribution", {})
+
+
+async def backfill_languages(db_dir: Path, kb_id: str, vs: VectorStore) -> int:
+    """Detect the language of documents indexed before languages were, from their chunks in the store.
+
+    Returns how many documents were detected. Reads only the chunks of those
+    documents; a KB whose documents all carry a language costs one file read.
+    """
+    stats_path = db_dir / f"kb_stats_{kb_id}.json"
+    if not stats_path.exists():
+        return 0
+    stats = json.loads(stats_path.read_text())
+    cpd = stats.get("chunks_per_document", {})
+    missing = [h for h, entry in cpd.items() if "language" not in entry]
+    if not missing:
+        return 0
+
+    log.info(f"Detecting the language of {len(missing)} document(s) in KB '{kb_id}'")
+    chunks = await vs.get_chunks_by_filter(filters={"file_hash": missing})
+    texts: dict[str, list[str]] = {}
+    for chunk in chunks:
+        if chunk.mime_type.startswith("text"):
+            texts.setdefault(chunk.metadata.get("file_hash", ""), []).append(chunk.content)
+    loop = asyncio.get_running_loop()
+    for h in missing:
+        cpd[h]["language"] = await loop.run_in_executor(None, detect_document, texts.get(h, []))
+
+    stats["language_distribution"] = language_distribution(cpd)
+    stats_path.write_text(json.dumps(stats, indent=2))
+    return len(missing)
 
 
 def _approx_percentile(buckets: dict[str, int], total: int, pct: float) -> int:
@@ -151,6 +206,7 @@ def write_kb_stats(
         "chunk_size_distribution": combined_dist,
         "chunks_per_document": combined_cpd,
         "chunks_per_document_distribution": _cpd_distribution(combined_cpd),
+        "language_distribution": language_distribution(combined_cpd),
         "ingestion_history": combined_history,
     }
 

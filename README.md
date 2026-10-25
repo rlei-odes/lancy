@@ -18,7 +18,8 @@ retrieval settings, and generation stats — no black box. Investigate your docu
 |------|-------------|
 | **Multi-KB concurrent pool** | Multiple knowledge bases loaded simultaneously — different conversations can query different KBs at the same time, no restart required. All concurrently active KBs must share the same embedding backend and model; switching to a KB with a different embedding config requires a pool reset (`?reset=true`) |
 | **Hybrid retrieval** | BM25 + semantic search fused via Reciprocal Rank Fusion (RRF). Keyword search drops stop words and stems words for German, English, French and Italian, matching across languages within a chunk |
-| **Query techniques** | Query expansion, HyDE, LLM reranking — set by the admin per deployment. The reranker judges each candidate on its whole content |
+| **Query techniques** | Query expansion, HyDE, keyword extraction, LLM reranking — set by the admin per deployment. The reranker judges each candidate on its whole content, or the passage around the query terms when the pool exceeds its budget |
+| **Corpus languages** | Each document's language is detected at ingestion and counted per knowledge base. HyDE, query expansion and keyword extraction write in the corpus languages; an admin can set them per KB |
 | **Ingestion deduplication** | SHA-256 content hashing prevents duplicate chunks across runs and within a single batch — dedup happens before parsing, so no wasted embedding work |
 | **Image retrieval** | Dual-collection pipeline: images extracted from PDFs and standalone files are embedded separately (Qwen3-VL) and injected into LLM context alongside text chunks |
 | **Image captioning** | Optional KB-level feature: at ingest time the main LLM generates a text caption for each extracted image and stores it inline in the text chunk, making image content searchable via standard BM25/semantic/RRF retrieval without a separate VL model at query time |
@@ -61,12 +62,13 @@ The RRF `k` constant (default 60) controls how steeply rank position is penalise
 Three optional pre-retrieval techniques address different failure modes. All are configurable per session from the RAG Config panel — no restart required.
 
 - **Query expansion** — generates N reformulations of the original query using the LLM and runs each through retrieval independently. Results are merged before ranking. Improves recall when the user's phrasing does not match the document vocabulary (e.g. "energy use" vs. "power consumption").
+- **Keyword extraction** — the LLM turns the question into search terms: its key terms, their synonyms and inflections, and translations into the knowledge base's languages. They feed keyword search only, weighted below the words the user typed, so "surrogate key" also finds "Ersatzschlüssel". With it on, expanded queries go to semantic search only.
 - **HyDE (Hypothetical Document Embeddings)** — instead of embedding the question, the LLM generates a short hypothetical answer and that answer is embedded for semantic retrieval. Effective when questions and answers look very different semantically, which is common in technical or regulatory documents.
 - **LLM reranking** — after retrieval, a second LLM pass scores each candidate chunk for relevance and reorders the list. Operates on a configurable candidate pool (default 15); only `top_k` results are returned. A separate `utility_llm_model` can be set to use a faster, smaller model for reranking without affecting the main response model.
 
 ### Retrieval Probe
 
-The Retrieval Probe lets you test queries against the full retrieval pipeline without invoking the LLM for the final answer. Enter a question, choose which methods to run (BM25, semantic, hybrid), and get back a ranked list of chunks with scores broken out per method — BM25 score, cosine similarity, and fused RRF score shown individually for each result.
+The Retrieval Probe lets you test queries against the full retrieval pipeline without invoking the LLM for the final answer. Enter a question, choose which methods to run (BM25, semantic, hybrid), and get back a ranked list of chunks with scores broken out per method — BM25 score, cosine similarity, and fused RRF score shown individually for each result. The query's keyword search terms are listed above the results, and the words each chunk matched are highlighted.
 
 The result list visualises the `top_k` cut-off: chunks inside `top_k` render normally; chunks beyond it are dimmed and labelled, so you can see exactly what the RAG would discard. When reranking is enabled, the pool of reranker candidates is shown the same way. This makes the effect of tuning `top_k`, toggling BM25, or enabling reranking immediately legible without running a full chat query.
 

@@ -379,8 +379,9 @@ POST /kb
 | `image_indexing_enabled` | bool | `false` | Index images alongside text |
 | `image_retrieval_enabled` | bool | `false` | Include images in retrieval results |
 | `image_embedding_model` | string | `"Qwen/Qwen3-VL-Embedding-2B"` | VL model for image embeddings |
+| `corpus_languages` | string[] | `[]` | ISO 639-1 codes HyDE, query expansion and keyword extraction write in, main one first. Empty = the detected languages with at least 10 % of the documents |
 
-**Response:** `KBInfo` (the created KB with auto-generated `id` and `vs_path`)
+**Response:** `KBInfo` (the created KB with auto-generated `id` and `vs_path`; `language_counts` holds the documents per detected language once the KB is indexed)
 
 ---
 
@@ -392,7 +393,7 @@ PUT /kb/{kb_id}
 
 **Admin only.**
 
-Replaces the KB config fields. Stats (`chunks`, `files`, `last_indexed`) and `vs_path` are preserved.
+Replaces the KB config fields. Stats (`chunks`, `files`, `last_indexed`, `language_counts`) and `vs_path` are preserved.
 
 **Body:** `KBCreate` — same fields as Create.
 
@@ -707,6 +708,7 @@ Dry-run of the retrieval pipeline — returns ranked chunks with per-chunk score
       "content": "...",
       "metadata": {"source_file": "report.pdf", "page": 3},
       "final_rank": 1,
+      "matched_terms": ["surrogate", "keys"],
       "scores": {
         "semantic_score": 0.87,
         "bm25_score": 12.4,
@@ -717,11 +719,14 @@ Dry-run of the retrieval pipeline — returns ranked chunks with per-chunk score
   ],
   "top_k": 5,
   "total_returned": 5,
-  "reranking_skipped": false
+  "reranking_skipped": false,
+  "query_terms": ["surrogate", "surrog", "surrogat", "key"]
 }
 ```
 
 `pre_rerank_rank` is only populated when `reranking_enabled` is `true`.
+
+`query_terms` is the query as keyword search analyses it: stop words dropped, each word with its stems in every supported language. `matched_terms` lists the words of the chunk's content, lowercased, that keyword search matches against them.
 
 ---
 
@@ -1009,6 +1014,19 @@ Captures raw LLM prompts and responses to a log file for debugging. Off by defau
 | `POST /admin/llm-debug/disable` | Turn off debug logging |
 | `GET /admin/llm-debug/status` | Returns `{"enabled": bool}` |
 | `GET /admin/llm-debug/log[?lines=100]` | Returns the last N lines of the debug log |
+
+---
+
+### BM25 Debug Recording
+
+Keeps the last 50 questions in memory, each with the keyword searches made for it: query variant, analysed terms, extra terms from keyword extraction, detected language and top hits with matched terms. Off by default; in memory only, emptied when disabled or on restart.
+
+| Endpoint | Description |
+|---|---|
+| `POST /admin/bm25-debug/enable` | Start recording |
+| `POST /admin/bm25-debug/disable` | Stop recording and drop what was recorded |
+| `GET /admin/bm25-debug/status` | Returns `{"enabled": bool}` |
+| `GET /admin/bm25-debug/searches` | Returns `{"searches": [...]}`, newest first |
 
 ---
 

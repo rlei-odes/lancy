@@ -10,13 +10,15 @@ If the LLM call fails or returns unparseable JSON the retriever falls back to th
 
 import asyncio
 import re
+from collections import Counter
 from textwrap import dedent
 from typing import Any
 
 from loguru import logger
 
 from conversational_toolkit.llms.base import LLM, LLMMessage, MessageContent, Roles
-from conversational_toolkit.retriever.base import Retriever
+from conversational_toolkit.retriever.base import KeywordQuery, Retriever
+from conversational_toolkit.retriever.text_analysis import analyze_query, term_spans
 from conversational_toolkit.utils.retriever import reciprocal_rank_fusion
 from conversational_toolkit.utils.text import compact_markdown_tables
 from conversational_toolkit.vectorstores.base import ChunkMatch, ChunkRecord
@@ -67,16 +69,52 @@ def _extract_ranking(text: str) -> list[int]:
     return ranking
 
 
+def _passage(text: str, query_terms: list[str], width: int) -> str:
+    """At most 'width' characters of 'text': the window holding the most query terms.
+
+    Ranked by distinct terms first, then by occurrences, so a span naming every
+    term of the question beats one repeating a single term. The window opens a
+    little before its first hit for context. Without any hit, the start of the text.
+    """
+    if len(text) <= width:
+        return text
+    spans = term_spans(text, query_terms)
+    if not spans:
+        return text[:width]
+    words = [text[s:e].lower() for s, e in spans]
+    lead = width // 8
+    best, best_score = 0, (0, 0)
+    seen: Counter[str] = Counter()
+    end = 0
+    for first, (start, _) in enumerate(spans):
+        # Sliding window over the hits: [start, start + width - lead) holds spans[first:end].
+        end = max(end, first)  # a word longer than the window leaves it empty
+        while end < len(spans) and spans[end][1] <= start + width - lead:
+            seen[words[end]] += 1
+            end += 1
+        if end == first:
+            continue
+        score = (len(seen), end - first)
+        if score > best_score:
+            best, best_score = first, score
+        seen[words[first]] -= 1
+        if not seen[words[first]]:
+            del seen[words[first]]
+    begin = min(max(0, spans[best][0] - lead), len(text) - width)
+    window = text[begin : begin + width]
+    return ("… " if begin > 0 else "") + window + (" …" if begin + width < len(text) else "")
+
+
 class RerankingRetriever(Retriever[ChunkMatch]):
     """
     Two-stage retriever that uses an LLM to rerank a candidate pool.
 
-    The base retriever should be configured with a 'top_k' equal to the desired candidate pool size (typically 3-4x the final 'top_k'). The LLM receives the query and each candidate's whole content, table padding compacted, and returns a ranked list of indices as JSON. The score assigned to each result is a linear decay from 1.0 (rank 1) to 0.0 (last rank).
+    The base retriever should be configured with a 'top_k' equal to the desired candidate pool size (typically 3-4x the final 'top_k'). The LLM receives the query and each candidate's whole content, table padding compacted — or, when the pool exceeds the budget, the passage around the query terms — and returns a ranked list of indices as JSON. The score assigned to each result is a linear decay from 1.0 (rank 1) to 0.0 (last rank).
 
     Attributes:
         retriever: The base retriever that supplies the candidate pool.
         llm: The language model used for reranking. A fast, cheap model is recommended since the reranking prompt is simple.
-        max_prompt_chars: Budget for the candidates' text in the ranking prompt. Only when the pool exceeds it is each candidate cut, all to the same share. None means no limit.
+        max_prompt_chars: Budget for the candidates' text in the ranking prompt. Only when the pool exceeds it is each candidate cut, all to the same share, to the passage holding the most query terms. None means no limit.
     """
 
     def __init__(self, retriever: Retriever[Any], llm: LLM, top_k: int, max_prompt_chars: int | None = None) -> None:
@@ -165,11 +203,14 @@ class RerankingRetriever(Retriever[ChunkMatch]):
         """
         # Whole candidates: a passage deep in a long chunk is still a reason to rank it.
         # The budget only bites when the pool as a whole is too large, and then cuts
-        # every candidate to the same share rather than starving the later ones.
+        # every candidate to the same share rather than starving the later ones —
+        # each to the passage around the query terms, which is what the ranking judges.
         texts = [compact_markdown_tables(chunk.content) for chunk in candidates]
         if self.max_prompt_chars is not None and sum(len(t) for t in texts) > self.max_prompt_chars:
             share = self.max_prompt_chars // len(texts)
-            texts = [t[:share] for t in texts]
+            expansions = query.expansions if isinstance(query, KeywordQuery) else ()
+            query_terms = [t for q in (query, *expansions) for t in analyze_query(q)]
+            texts = [_passage(t, query_terms, share) for t in texts]
         numbered = "\n\n".join(
             f"[{i}] {chunk.title or '(no title)'}\n{text}" for i, (chunk, text) in enumerate(zip(candidates, texts))
         )

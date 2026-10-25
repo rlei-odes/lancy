@@ -459,4 +459,32 @@ def create_admin_router(
             log.warning(f"LLM debug log read failed: {exc}")
             return {"lines": [], "total_lines": 0}
 
+    # ── BM25 debug recording ─────────────────────────────────────────────────
+
+    @router.get("/bm25-debug/status")
+    async def get_bm25_debug_status() -> dict:
+        from lancy import bm25_debug
+
+        return {"enabled": bm25_debug.is_enabled()}
+
+    @router.post("/bm25-debug/enable")
+    async def enable_bm25_debug() -> dict:
+        from lancy import bm25_debug
+
+        bm25_debug.set_enabled(True)
+        return {"enabled": True}
+
+    @router.post("/bm25-debug/disable")
+    async def disable_bm25_debug() -> dict:
+        from lancy import bm25_debug
+
+        bm25_debug.set_enabled(False)
+        return {"enabled": False}
+
+    @router.get("/bm25-debug/searches")
+    async def get_bm25_debug_searches() -> dict:
+        from lancy import bm25_debug
+
+        return {"searches": bm25_debug.searches()}
+
     return router

@@ -335,12 +335,19 @@ is bound to the loop that created it and cannot be shared across loops).
 ```
 Query
   ↓
+[Optional] Keyword Extraction
+  → LLM lists the question's key terms, synonyms, inflections and translations
+    into the corpus languages
+  → the question becomes a KeywordQuery carrying them; BM25 scores them at half
+    weight, other retrievers see the plain question
+  → expanded queries (below) then go to semantic search only
+
 [Optional] Query Expansion
-  → LLM generates N rephrased variants
+  → LLM generates N rephrased variants, in a corpus language
   → each variant retrieves independently
 
 [Optional] HyDE
-  → LLM generates a hypothetical answer document
+  → LLM generates a hypothetical answer document, in a corpus language
   → used for semantic search only (a SemanticOnlyQuery); BM25 skips it
 
 [Parallel, per variant]
@@ -354,12 +361,19 @@ Query
 [Optional] LLM Reranking
   → the fused pool (candidate pool size) is ranked in one LLM call against the user's question
   → each candidate is sent whole, table padding compacted, within a budget of half num_ctx
+  → over budget, each is cut to the same share: the window holding the most query terms
   → top-K kept; the rest returned as discarded
 
 → Top-K chunks passed to generator, table padding compacted
 ```
 
 **Keyword analysis.** `retriever/text_analysis.py` handles German, English, French and Italian. A chunk is stemmed in its own language, detected from the stop words it contains. A query word is expanded to its stem in every supported language plus the word itself, so an English term still matches inside a German chunk; stop words are dropped in the query's language only. The analysed terms are logged per query (`BM25 terms for …`). The BM25 index is built in memory when a KB loads, so analysis changes need no reindex.
+
+**Keyword extraction.** Keyword search matches the question's own words, so it misses a document that uses a synonym or another language ("surrogate key" vs. "Ersatzschlüssel"). With `keyword_extraction` on, one utility-LLM call (`utils/retriever.py: keyword_extraction`) turns the question into search terms. They feed keyword search only — semantic search already works across languages — and score at `EXPANSION_WEIGHT` (0.5) on top of the question's own terms, so a synonym does not outrank the word the user typed. Expanded queries would add their words at full weight, so with extraction on they become `SemanticOnlyQuery`s. Translations go into the corpus languages other than the question's own, detected from its stop words; a model asked to translate into the language it is reading picks languages of its own.
+
+**Corpus languages.** HyDE, query expansion and keyword extraction generate text that is matched against the corpus, so they write in its languages. `lancy/language.py` detects each document's language at ingestion with `py3langid` (bundled model, no download), stores it on the document's chunks as metadata `language` and per document in `kb_stats_<kb>.json`; `KBInfo.language_counts` holds documents per language. A language counts once it holds 10 % of the documents, main language first; an admin-set `KBInfo.corpus_languages` replaces the detected list. The agent reads the list per question, so a KB edit applies without a rebuild. Generated text is written in the question's language when the corpus has it, otherwise in the main corpus language; with no languages known, in the question's language. Documents indexed before detection existed get their language from their stored chunks on the next incremental reindex (`kb_stats.backfill_languages`), without re-chunking.
+
+**Debugging keyword search.** The Retrieval Probe returns the query's analysed terms and, per chunk, the content words that matched them, highlighted in the UI. `BM25Retriever.search_listener` reports every search — query, terms, extra terms, detected language, top hits with matched terms — to `lancy/bm25_debug.py`, which keeps the last 50 questions in memory for **Admin → BM25 Debug** while recording is on. Recording is off by default and on restart, and never written to disk: entries hold users' questions.
 
 **Provenance.** Every chunk records how it was found in `ChunkMatch.ranks`: its best rank in semantic and keyword search, and its position before reranking (`pre_rerank`). Fusion keeps the best rank per method. The answer carries every chunk sent to the LLM (`AgentAnswer.retrieved`) and the reranker's discards (`AgentAnswer.discarded`). The controller saves each of them once as a source of the message, with the record under `metadata._retrieval`: chunk id, title, position, `sent`, `cited`, ranks. The API's `sources` stays the cited chunks only; `retrieved` lists all of them, sent first in context order, then the discards. The first streamed chunk of an answer already carries `retrieved`, uncited, so the client can show the documents while the answer is written.
 
@@ -478,7 +492,7 @@ The settings panel, shown full width as **Admin → Knowledge & RAG** (`layout="
 - Knowledge base selector and management — compatible KBs selectable normally; incompatible KBs greyed out (user) or red+⚠ (admin, triggers pool reset); controls lock with a spinner while a KB is loading
 - LLM model and temperature
 - Embedding backend and model
-- Retrieval: k, BM25 on/off, HyDE on/off, Query Expansion on/off, Reranking on/off
+- Retrieval: k, BM25 on/off, HyDE on/off, Query Expansion on/off, Keyword Extraction on/off, Reranking on/off, corpus languages of the KB
 - Presets
 - Re-index / cancel indexing controls with live progress
 
