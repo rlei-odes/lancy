@@ -24,6 +24,20 @@ interface IndexStatus {
     captioning_enabled: boolean;
     outcome?: string; // "" | "ok" | "cancelled" | "failed"
     error?: string; // exception class name when outcome === "failed"
+    file_started_at?: string;
+    last_file?: { name: string; outcome: string; chunks: number; error: string } | null;
+    skipped_unchanged?: number;
+    skipped_failed?: number;
+}
+
+/** "4:07" — how long the current file has been running. */
+function elapsed(sinceIso: string | undefined, now: number): string {
+    if (!sinceIso) return "";
+    const seconds = Math.max(0, Math.floor((now - new Date(sinceIso).getTime()) / 1000));
+    const m = Math.floor(seconds / 60);
+    const h = Math.floor(m / 60);
+    const ss = String(seconds % 60).padStart(2, "0");
+    return h > 0 ? `${h}:${String(m % 60).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
 }
 
 export const IndexingStatus: FunctionComponent = () => {
@@ -37,6 +51,14 @@ export const IndexingStatus: FunctionComponent = () => {
     const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const prevFinishedAt = useRef<string>("");
     const isFirstPoll = useRef(true);
+    const [now, setNow] = useState(() => Date.now());
+
+    // A second hand for the elapsed time: polls come every 5 s, a stuck file shows as a clock that keeps going.
+    useEffect(() => {
+        if (!status?.indexing) return;
+        const tick = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(tick);
+    }, [status?.indexing]);
 
     const handleStop = async () => {
         await fetch(`${API_BASE}/api/v1/rag/reindex-cancel`, { method: "POST", credentials: "include" });
@@ -85,26 +107,44 @@ export const IndexingStatus: FunctionComponent = () => {
         };
     }, []);
 
+    const outcomeText = (f: NonNullable<IndexStatus["last_file"]>) => {
+        switch (f.outcome) {
+            case "ok": return t("rag.indexingOutcomeOk", { count: f.chunks });
+            case "no_chunks": return t("rag.indexingOutcomeNoChunks");
+            case "timeout": return t("rag.indexingOutcomeTimeout");
+            case "crashed": return t("rag.indexingOutcomeCrashed");
+            default: return t("rag.indexingOutcomeError", { error: f.error });
+        }
+    };
+
     // Show progress banner while indexing
     if (status?.indexing) {
+        const isChecking = status.phase === "checking";
         const isEmbedding = status.phase === "embedding";
         const isCaptioning = status.phase === "captioning";
-        // Primary progress: file_index/total_files — monotonically increasing for folder scans.
-        // Single-file uploads (total_files === 1) sit at 100% since file_index is already 1.
-        const pct = status.total_files > 0
+        const multiFile = status.total_files > 1;
+        // Several files: the bar shows the run. One file (an API upload): the bar shows the
+        // file's current phase, and pulses while chunking, which reports no progress of its own.
+        const pct = multiFile
             ? Math.round((status.file_index / status.total_files) * 100)
-            : 0;
-        // Show "File i/N · " prefix only when processing multiple files.
-        const filePrefix = status.total_files > 1
-            ? `${status.file_index}/${status.total_files} · `
-            : "";
+            : isEmbedding && status.embed_total_batches > 0
+                ? Math.round((status.embed_batch / status.embed_total_batches) * 100)
+                : isCaptioning && status.caption_total > 0
+                    ? Math.round((status.caption_index / status.caption_total) * 100)
+                    : 100;
+        const indeterminate = isChecking || (!multiFile && !isEmbedding && !isCaptioning);
+        const filePrefix = multiFile ? `${status.file_index}/${status.total_files} · ` : "";
         const phaseLabel = cancelling
             ? t("rag.indexingCancelling")
-            : isCaptioning
-                ? filePrefix + t("rag.indexingPhaseCaptioning")
-                : isEmbedding
-                    ? filePrefix + t("rag.indexingPhaseEmbedding")
-                    : filePrefix + t("rag.indexingPhaseLoading");
+            : isChecking
+                ? t("rag.indexingPhaseChecking")
+                : isCaptioning
+                    ? filePrefix + t("rag.indexingPhaseCaptioning")
+                    : isEmbedding
+                        ? filePrefix + t("rag.indexingPhaseEmbedding")
+                        : filePrefix + t("rag.indexingPhaseLoading");
+        const skipped = (status.skipped_unchanged ?? 0) + (status.skipped_failed ?? 0);
+        const last = status.last_file;
 
         return (
             <>
@@ -126,15 +166,16 @@ export const IndexingStatus: FunctionComponent = () => {
                     {!cancelling && status.kb_name && (
                         <div className="truncate opacity-60 font-normal">{status.kb_name}</div>
                     )}
-                    {!isEmbedding && !isCaptioning && status.current_file && (
-                        <div className="truncate opacity-70" title={status.current_file}>
-                            {status.current_file}
+                    {!isChecking && status.current_file && (
+                        <div className="flex items-center gap-2 opacity-80" title={status.current_file}>
+                            <span className="flex-1 truncate">{status.current_file}</span>
+                            <span className="shrink-0 font-mono tabular-nums opacity-70">{elapsed(status.file_started_at, now)}</span>
                         </div>
                     )}
                     <div className="flex items-center gap-2">
                         <div className="flex-1 h-1 bg-blue-900 rounded-full overflow-hidden">
                             <div
-                                className="h-full bg-blue-400 rounded-full transition-all duration-500"
+                                className={`h-full bg-blue-400 rounded-full transition-all duration-500 ${indeterminate ? "animate-pulse" : ""}`}
                                 style={{ width: `${pct}%` }}
                             />
                         </div>
@@ -150,6 +191,19 @@ export const IndexingStatus: FunctionComponent = () => {
                             )}
                         </span>
                     </div>
+                    {skipped > 0 && (
+                        <div className="truncate opacity-60">
+                            {t("rag.indexingSkipped", { unchanged: status.skipped_unchanged ?? 0, failed: status.skipped_failed ?? 0 })}
+                        </div>
+                    )}
+                    {last && last.name !== status.current_file && (
+                        <div
+                            className={`truncate ${last.outcome === "ok" ? "opacity-60" : "text-amber-300"}`}
+                            title={last.error || undefined}
+                        >
+                            {t("rag.indexingPrevious", { name: last.name })} — {outcomeText(last)}
+                        </div>
+                    )}
                 </div>
                 {confirmStop && isAdmin && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">

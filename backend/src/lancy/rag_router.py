@@ -111,15 +111,28 @@ class ReindexResult(BaseModel):
     reset: bool
 
 
+class LastFile(BaseModel):
+    name: str
+    outcome: str  # "ok" | "no_chunks" | "error" | "timeout" | "crashed"
+    chunks: int = 0
+    error: str = ""
+
+
 class IndexStatus(BaseModel):
     indexing: bool = False
-    phase: str = "loading"  # "loading" | "embedding"
+    phase: str = "loading"  # "checking" | "chunking" | "captioning" | "embedding"
     current_file: str = ""
     file_index: int = 0
     total_files: int = 0
+    file_started_at: str = ""  # ISO timestamp the current file started
     chunks_so_far: int = 0
     embed_batch: int = 0
     embed_total_batches: int = 0
+    caption_index: int = 0
+    caption_total: int = 0
+    last_file: LastFile | None = None  # outcome of the file before the current one
+    skipped_unchanged: int = 0  # already in the store
+    skipped_failed: int = 0  # failed on an earlier run; a full re-index retries them
     kb_name: str = ""  # name of the KB being indexed
     finished_at: str = ""  # ISO timestamp set when indexing completes
     last_result: ReindexResult | None = None  # result of the last completed reindex

@@ -24,9 +24,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - The Retrieval Probe lists the query's keyword search terms and highlights the words each chunk matched.
 - **Admin → BM25 Debug** records recent questions with each keyword search made for them: query variant, terms, extra terms, detected language and top hits with matched terms. Off by default, last 50 questions, in memory only.
 
-### Added — Admin
+### Added — Ingestion progress
 
-- The admin page shows the ingestion progress banner on every tab: phase, file, batch, a stop button and the result when done.
+- The admin page shows the ingestion progress banner on every tab.
+- The banner shows the current file in every phase with its elapsed time, how the previous file ended (chunks, no text, error, timeout), and for a folder scan how many files were unchanged or failed before. The hash check at the start of a folder scan has its own phase, "Checking files for changes", instead of "Chunking files". A single upload shows the progress of its own phases. Image captioning progress, which always showed "…", is reported.
+
+### Changed — Ingestion
+
+- A file that cannot be indexed — chunker error, no text, timeout, or a crashed chunking worker — is remembered by its hash and skipped by incremental runs; a full re-index tries it again. Before, every incremental run chunked such files again: on one KB, 24 files and several minutes of OCR per run for nothing.
+- The chunker's error reaches the log and the ingestion log (`Chunking failed for '…': …`) instead of a bare "No chunks produced". A damaged upload is now reported as failed, not as an empty success.
+- Chunking may take `max(900 s, 120 s per MB)` per file, up from `max(600 s, 60 s per MB)`.
 
 ### Changed — Retrieval
 

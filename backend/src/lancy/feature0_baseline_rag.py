@@ -796,6 +796,7 @@ def load_chunks(
     include_files: list[Path] | None = None,  # if set, skip data_dirs discovery
     file_hashes: dict[Path, str] | None = None,  # precomputed hashes for stamping chunks
     write_images: bool = False,  # extract images from PDFs and load standalone image files
+    raise_errors: bool = False,  # re-raise a file's chunker error instead of skipping the file
 ) -> list[Chunk]:
     """Load documents and split them into chunks.
 
@@ -892,6 +893,10 @@ def load_chunks(
             if on_progress:
                 on_progress(file_path.name, file_idx + 1, len(supported_files), len(all_chunks))
         except Exception as exc:
+            if raise_errors:
+                # Raised across a process boundary: a plain RuntimeError pickles where
+                # a library's own exception type may not.
+                raise RuntimeError(f"{type(exc).__name__}: {exc}") from None
             logger.opt(exception=True).warning(f"Skipping {file_path.name}: {type(exc).__name__}: {exc}")
 
     logger.info(f"Done, {len(all_chunks)} chunks total")

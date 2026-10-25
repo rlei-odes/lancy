@@ -747,9 +747,15 @@ Returns the current indexing state.
   "current_file": "report.pdf",
   "file_index": 3,
   "total_files": 10,
+  "file_started_at": "2025-04-20T10:00:41+00:00",
   "chunks_so_far": 120,
   "embed_batch": 2,
   "embed_total_batches": 5,
+  "caption_index": 0,
+  "caption_total": 0,
+  "last_file": {"name": "Backup.docx", "outcome": "error", "chunks": 0, "error": "FileConversionException: …"},
+  "skipped_unchanged": 542,
+  "skipped_failed": 0,
   "kb_name": "Standard",
   "finished_at": "2025-04-20T10:01:23+00:00",
   "last_result": {
@@ -762,6 +768,8 @@ Returns the current indexing state.
   }
 }
 ```
+
+`phase` is `checking` while a folder scan hashes its files, then per file `chunking`, `captioning`, `embedding`. `last_file.outcome` is `ok`, `no_chunks`, `error`, `timeout` or `crashed`. `skipped_failed` counts files that failed on an earlier run and were skipped; a full re-index (`reset: true`) retries them.
 
 ### Chunk Browser
 

@@ -110,8 +110,10 @@ Files with unsupported extensions are logged as warnings and skipped. Warnings a
 
 The simplest approach when documents are on the same machine as the backend or accessible to it (local disk, NFS mount, etc.). Set `data_dirs` to one or more absolute paths, then trigger indexing from the UI:
 
-- **Incremental indexing** — processes only new or changed files. Files already present in the vector store are skipped (deduplication via SHA-256 hash). Use this for routine updates.
-- **Re-index** — clears the entire vector store first, then re-embeds everything from scratch. Use this after changing the embedding model, or to recover from a corrupted store.
+- **Incremental indexing** — processes only new or changed files. Files already present in the vector store are skipped (deduplication via SHA-256 hash), and so are files that failed on an earlier run (see below). Use this for routine updates.
+- **Re-index** — clears the entire vector store first, then re-embeds everything from scratch, and tries every failed file again. Use this after changing the embedding model, or to recover from a corrupted store.
+
+**Failed files.** A file that cannot be indexed — the chunker raised an error (a corrupt `.docx`, say), it yielded no text, chunking timed out, or it crashed the chunking worker — stores nothing in the vector store, so the store alone cannot tell it from a new file. Lancy keeps these files by hash in `db/kb_failed_<kb-id>.json`, with the reason and the error, and incremental runs skip them. A changed file has a new hash and is tried again. Chunking a file may take `max(900 s, 120 s per MB)`; image-heavy and scanned PDFs under OCR are the slow ones.
 
 You can also trigger these actions via the API:
 
@@ -166,16 +168,20 @@ Key fields in the response:
 | Field | Meaning |
 |---|---|
 | `indexing` | `true` while a job is running |
-| `phase` | Current step: `loading` → `chunking` → `embedding` → `captioning` |
+| `phase` | Current step: `checking` (folder scan: hashing files to find new ones) → per file `chunking` → `captioning` → `embedding` |
 | `current_file` | Filename being processed right now |
+| `file_started_at` | When the current file started; the UI shows the elapsed time |
 | `file_index` / `total_files` | Progress through the file list |
+| `last_file` | How the previous file ended: `outcome` (`ok`, `no_chunks`, `error`, `timeout`, `crashed`), `chunks`, `error` |
+| `skipped_unchanged` / `skipped_failed` | Folder scan: files already in the store / failed on an earlier run |
 | `chunks_so_far` | Cumulative chunks produced in this run |
 | `embed_batch` / `embed_total_batches` | Embedding progress within the current file |
+| `caption_index` / `caption_total` | Image captioning progress within the current file |
 | `last_result.files_skipped_store` | Files skipped because they were already in the vector store (dedup) |
 | `last_result.files_skipped_batch` | Files skipped because duplicate content was detected within this run |
 | `queued` | Files in the upload queue waiting to start |
 
-The UI's ingestion panel reads this endpoint live and displays the same information.
+The progress banner — in the legacy chat sidebar and on every tab of the admin page — reads this endpoint live and displays the same information.
 
 To cancel a running job:
 
@@ -206,6 +212,8 @@ curl http://localhost:8080/api/admin/ingest-events
 | Symptom | Likely cause |
 |---|---|
 | File skipped with no error | Exceeds `max_file_size_mb`, or unsupported format |
+| `Skipping '…' — failed before` | The file failed on an earlier run; the reason is in `db/kb_failed_<kb-id>.json` and the ingestion log. Fix the file (a new hash retries it) or run a full re-index |
+| `Chunking failed for '…': …` | The chunker's own error, e.g. `Could not find main document part` for a damaged `.docx` |
 | Embedding OOM during ingestion | Reduce `embedding_batch_size` (e.g. to 10–20) |
 | OCR very slow | Expected for scanned PDFs — set `pdf_ocr_enabled=false` if pages have native text |
 | Re-index doesn't pick up changed files | File content unchanged (same hash) — modify the file or use `reset=true` |

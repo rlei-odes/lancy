@@ -3,6 +3,7 @@ import base64
 import concurrent.futures
 import hashlib
 import io
+import json
 import logging
 import multiprocessing
 import os
@@ -110,6 +111,7 @@ def _chunking_pool_fn(
         pdf_ocr_enabled=pdf_ocr_enabled,
         max_chunk_tokens=max_chunk_tokens,
         write_images=write_images,
+        raise_errors=True,
     )
 
 
@@ -225,6 +227,44 @@ def _img_info(b64: str) -> tuple[str, int, int]:
     except Exception:
         w, h = 0, 0
     return digest, w, h
+
+
+def _chunk_timeout(size_mb: float) -> int:
+    """Seconds a file may take to chunk. docling with OCR on a large scanned or
+    image-heavy PDF runs for many minutes; size is the only cheap proxy for that."""
+    return max(900, int(size_mb * 120))
+
+
+def _failed_path(db_dir: Path, kb_id: str) -> Path:
+    return db_dir / f"kb_failed_{kb_id}.json"
+
+
+def load_failed_files(db_dir: Path, kb_id: str) -> dict[str, dict]:
+    """Files of the KB that could not be indexed, by file hash: {source_file, reason, error, at}.
+
+    A file that yields no chunks stores nothing, so the store cannot tell it from a
+    new file; without this list every incremental run would chunk it again.
+    """
+    path = _failed_path(db_dir, kb_id)
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text())
+
+
+def _remember_failed(db_dir: Path, kb_id: str, h: str, name: str, reason: str, error: str = "") -> None:
+    failed = load_failed_files(db_dir, kb_id)
+    failed[h] = {
+        "source_file": name,
+        "reason": reason,
+        "error": error,
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    _failed_path(db_dir, kb_id).write_text(json.dumps(failed, indent=2))
+
+
+def _file_done(name: str, outcome: str, chunks: int = 0, error: str = "") -> None:
+    """Record a file's outcome for the progress banner, which shows how the previous file went."""
+    _index_status["last_file"] = {"name": name, "outcome": outcome, "chunks": chunks, "error": error}
 
 
 async def _tag_language(text_chunks: list[Chunk]) -> None:
@@ -384,7 +424,7 @@ async def run_ingestion(
     _index_status.update(
         {
             "indexing": True,
-            "phase": "chunking",
+            "phase": "checking",
             "current_file": "",
             "file_index": 0,
             "total_files": 0,
@@ -397,6 +437,10 @@ async def run_ingestion(
             "kb_name": kb.name,
             "finished_at": "",
             "last_result": None,
+            "file_started_at": "",
+            "last_file": None,
+            "skipped_unchanged": 0,
+            "skipped_failed": 0,
             "outcome": "",
             "error": "",
         }
@@ -446,6 +490,11 @@ async def run_ingestion(
             # inside _sync_build_vs_for_file below. Dispose now or its pool leaks.
             await _dispose_vs(vs_for_query)
 
+        # A full re-index retries every file, so it forgets which ones failed.
+        if reset:
+            _failed_path(db_dir, kb.id).unlink(missing_ok=True)
+        failed_before = load_failed_files(db_dir, kb.id)
+
         # Pre-pass: collect candidates, hash them, apply dedup filters.
         # File hashing reads entire file bytes — blocking I/O, run in executor.
         def _prepass() -> tuple[list[Path], dict[Path, str], int, int, list[Path], list[Path]]:
@@ -464,10 +513,15 @@ async def run_ingestion(
             seen_hashes: set[str] = set()
             n_skipped_store = 0
             n_skipped_batch = 0
+            n_skipped_failed = 0
 
             for f in candidates:
                 h = hashes[f]
-                if h in existing_hashes:
+                if h in failed_before:
+                    reason = failed_before[h]["reason"]
+                    log.info(f"Skipping {f.name!r} — failed before ({reason}); a full re-index retries it")
+                    n_skipped_failed += 1
+                elif h in existing_hashes:
                     log.info(f"Skipping {f.name!r} — already in store (hash={h[:8]}…)")
                     n_skipped_store += 1
                     skipped_store.append(f)
@@ -482,8 +536,10 @@ async def run_ingestion(
             log.info(
                 f"Pre-pass complete: {len(filtered)} to index, "
                 f"{n_skipped_store} already in store, "
-                f"{n_skipped_batch} duplicate in batch"
+                f"{n_skipped_batch} duplicate in batch, "
+                f"{n_skipped_failed} failed before"
             )
+            _index_status.update({"skipped_unchanged": n_skipped_store, "skipped_failed": n_skipped_failed})
             return filtered, hashes, n_skipped_store, n_skipped_batch, skipped_store, skipped_batch
 
         (
@@ -564,6 +620,7 @@ async def run_ingestion(
                     "file_index": i + 1,
                     "embed_batch": 0,
                     "embed_total_batches": 0,
+                    "file_started_at": datetime.now(timezone.utc).isoformat(),
                 }
             )
 
@@ -580,13 +637,15 @@ async def run_ingestion(
                 getattr(kb, "max_chunk_tokens", 0),
                 kb.image_indexing_enabled or kb.image_captioning_enabled,
             )
-            chunk_timeout = max(600, int(size_mb * 60))
+            chunk_timeout = _chunk_timeout(size_mb)
             file_start = datetime.now(timezone.utc)
             try:
                 chunks = await loop.run_in_executor(None, lambda: future.result(timeout=chunk_timeout))
             except concurrent.futures.TimeoutError:
                 log.error(f"Chunking timed out after {chunk_timeout}s for '{file_path.name}' — skipping")
                 _reset_chunking_pool()
+                _remember_failed(db_dir, kb.id, h, file_path.name, "timeout", f"timed out after {chunk_timeout}s")
+                _file_done(file_path.name, "timeout")
                 if db_engine is not None:
                     _ms = int((datetime.now(timezone.utc) - file_start).total_seconds() * 1000)
                     await _write_ingest_event(
@@ -603,6 +662,8 @@ async def run_ingestion(
             except concurrent.futures.BrokenExecutor:
                 log.error(f"Chunking subprocess crashed for '{file_path.name}' — skipping")
                 _reset_chunking_pool()
+                _remember_failed(db_dir, kb.id, h, file_path.name, "crashed")
+                _file_done(file_path.name, "crashed")
                 if db_engine is not None:
                     _ms = int((datetime.now(timezone.utc) - file_start).total_seconds() * 1000)
                     await _write_ingest_event(
@@ -616,11 +677,31 @@ async def run_ingestion(
                         error="Chunking subprocess crashed",
                     )
                 continue
+            except RuntimeError as exc:
+                # The chunker's own error, re-raised by the worker: a corrupt or unreadable file.
+                log.error(f"Chunking failed for '{file_path.name}': {exc}")
+                _remember_failed(db_dir, kb.id, h, file_path.name, "error", str(exc))
+                _file_done(file_path.name, "error", error=str(exc))
+                if db_engine is not None:
+                    _ms = int((datetime.now(timezone.utc) - file_start).total_seconds() * 1000)
+                    await _write_ingest_event(
+                        db_engine,
+                        kb.id,
+                        file_path.name,
+                        file_path.name,
+                        "error",
+                        file_size_mb=size_mb,
+                        duration_ms=_ms,
+                        error=str(exc)[:500],
+                    )
+                continue
 
             _clear_cuda_cache()
 
             if not chunks:
                 log.warning(f"No chunks produced from '{file_path.name}'")
+                _remember_failed(db_dir, kb.id, h, file_path.name, "no_chunks")
+                _file_done(file_path.name, "no_chunks")
                 if db_engine is not None:
                     _ms = int((datetime.now(timezone.utc) - file_start).total_seconds() * 1000)
                     await _write_ingest_event(
@@ -649,6 +730,8 @@ async def run_ingestion(
 
             if not text_chunks:
                 log.warning(f"No usable text chunks from '{file_path.name}' after quality filter")
+                _remember_failed(db_dir, kb.id, h, file_path.name, "no_chunks", "no usable text after quality filter")
+                _file_done(file_path.name, "no_chunks")
                 continue
 
             await _tag_language(text_chunks)
@@ -734,6 +817,7 @@ async def run_ingestion(
             chunks_so_far += len(text_chunks)
             _index_status["chunks_so_far"] = chunks_so_far
             all_text_chunks.extend(text_chunks)
+            _file_done(file_path.name, "ok", chunks=len(text_chunks))
 
             if db_engine is not None:
                 _ms = int((datetime.now(timezone.utc) - file_start).total_seconds() * 1000)
@@ -877,6 +961,7 @@ async def ingest_uploaded_file(
             "current_file": source_name,
             "file_index": 1,
             "total_files": 1,
+            "file_started_at": _ingest_start.isoformat(),
             "chunks_so_far": 0,
             "embed_batch": 0,
             "embed_total_batches": 0,
@@ -884,6 +969,9 @@ async def ingest_uploaded_file(
             "kb_name": kb.name,
             "finished_at": "",
             "last_result": None,
+            # last_file stays: in a series of API uploads it is the previous upload's outcome.
+            "skipped_unchanged": 0,
+            "skipped_failed": 0,
             "outcome": "",
             "error": "",
         }
@@ -917,9 +1005,7 @@ async def ingest_uploaded_file(
             getattr(kb, "max_chunk_tokens", 0),
             kb.image_indexing_enabled or kb.image_captioning_enabled,
         )
-        # Scale timeout with file size: large documents need proportionally more time.
-        # Floor of 600s; ~60s per MB above that (19 MB → ~1140s, 50 MB → 3000s).
-        chunk_timeout = max(600, int(size_mb * 60))
+        chunk_timeout = _chunk_timeout(size_mb)
         try:
             chunks = await loop.run_in_executor(None, lambda: future.result(timeout=chunk_timeout))
         except concurrent.futures.TimeoutError:
@@ -966,6 +1052,7 @@ async def ingest_uploaded_file(
 
         if not chunks:
             log.warning(f"No chunks produced from uploaded file '{file_path.name}'")
+            _file_done(source_name, "no_chunks")
             if db_engine is not None:
                 _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
                 await _write_ingest_event(
@@ -1136,6 +1223,7 @@ async def ingest_uploaded_file(
         _index_status["last_result"] = result.model_dump()
         _index_status["finished_at"] = datetime.now(timezone.utc).isoformat()
         _index_status["outcome"] = "ok"
+        _file_done(source_name, "ok", chunks=len(chunks))
         log.info(f"Upload ingest complete: {len(chunks)} chunks from '{file_path.name}' (document_id='{document_id}')")
         if db_engine is not None:
             _ms = int((datetime.now(timezone.utc) - _ingest_start).total_seconds() * 1000)
@@ -1152,6 +1240,7 @@ async def ingest_uploaded_file(
             _event_written = True
     except Exception as exc:
         log.error(f"Upload ingestion failed for '{file_path.name}': {exc!r}")
+        _file_done(source_name, "error", error=str(exc))
         _index_status["outcome"] = "failed"
         _index_status["error"] = type(exc).__name__
         _index_status["finished_at"] = datetime.now(timezone.utc).isoformat()

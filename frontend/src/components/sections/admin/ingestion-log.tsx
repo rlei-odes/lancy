@@ -1,7 +1,7 @@
 import React, { FunctionComponent, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 
-const STATUSES = ["success", "crashed", "timeout", "no_chunks"];
+const STATUSES = ["success", "error", "crashed", "timeout", "no_chunks"];
 const PAGE_SIZE = 25;
 
 interface KBMeta {
@@ -32,6 +32,7 @@ interface IngestEventPage {
 function StatusBadge({ status }: { status: string }) {
     const cls: Record<string, string> = {
         success:   "bg-green-500/15 text-green-600 dark:text-green-400",
+        error:     "bg-red-500/15 text-red-600 dark:text-red-400",
         crashed:   "bg-red-500/15 text-red-600 dark:text-red-400",
         timeout:   "bg-amber-500/15 text-amber-600 dark:text-amber-400",
         no_chunks: "bg-muted text-muted-foreground",

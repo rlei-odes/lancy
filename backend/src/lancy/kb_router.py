@@ -285,6 +285,9 @@ def create_kb_router(
         if len(reg.bases) <= 1:
             raise HTTPException(400, "Cannot delete the last Knowledge Base")
         kb = reg.bases.pop(kb_id)
+        # A KB created later under the same name gets this id again; it must not
+        # inherit the files this one could not index.
+        (db_dir / f"kb_failed_{kb_id}.json").unlink(missing_ok=True)
         if reg.active == kb_id:
             reg.active = next(iter(reg.bases))
             await activate_callback(reg.bases[reg.active])
