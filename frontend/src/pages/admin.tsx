@@ -15,6 +15,7 @@ import { LlmDebugPanel } from "@/components/sections/admin/llm-debug-panel";
 import { Bm25DebugPanel } from "@/components/sections/admin/bm25-debug-panel";
 import { AuthSettings } from "@/components/sections/admin/auth-settings";
 import { RagConfigPanel } from "@/components/sections/rag-config-panel";
+import { IndexingStatus } from "@/components/sections/sidebar/indexing-status";
 
 type Tab = "rag" | "usage" | "database" | "branding" | "ingest-log" | "llm-debug" | "bm25-debug" | "auth";
 
@@ -94,6 +95,11 @@ export default function AdminPage() {
                                 {tab.label}
                             </button>
                         ))}
+                    </div>
+
+                    {/* Ingestion progress, on every tab: indexing is started here and runs in the background */}
+                    <div className="w-full max-w-7xl mx-auto px-3 pt-3 empty:hidden">
+                        <IndexingStatus />
                     </div>
 
                     {/* Content */}

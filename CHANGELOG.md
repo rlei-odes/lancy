@@ -24,6 +24,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - The Retrieval Probe lists the query's keyword search terms and highlights the words each chunk matched.
 - **Admin → BM25 Debug** records recent questions with each keyword search made for them: query variant, terms, extra terms, detected language and top hits with matched terms. Off by default, last 50 questions, in memory only.
 
+### Added — Admin
+
+- The admin page shows the ingestion progress banner on every tab: phase, file, batch, a stop button and the result when done.
+
 ### Changed — Retrieval
 
 - When the candidate pool exceeds the reranker's budget, each candidate is cut to the passage holding the most query terms instead of its beginning.
