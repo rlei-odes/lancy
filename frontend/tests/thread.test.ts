@@ -13,7 +13,7 @@
 import { describe, expect, it } from "vitest";
 
 import { Message } from "@/services/message";
-import { getBrothers, getLastChild, getMessageThread } from "@/lib/thread";
+import { getBrothers, getLastChild, getMessageThread, withStreamedMessage } from "@/lib/thread";
 
 function msg(id: string, parent_id: string | undefined, ts: number): Message {
     return {
@@ -97,5 +97,35 @@ describe("getLastChild", () => {
     it("returns null for an unknown id", () => {
         expect(getLastChild([...TREE], "does-not-exist")).toBeNull();
         expect(getLastChild([...TREE], undefined)).toBeNull();
+    });
+});
+
+// The question is shown before the server saves it, under a local id; the streamed
+// answer names the server's id as its parent. The next send walks the thread up from
+// the answer, so with the local id left in place the question vanished from the chat.
+describe("withStreamedMessage", () => {
+    const loading = msg("loading", undefined, 30);
+
+    it("gives the shown question the server's id the answer names as its parent", () => {
+        const shown = [msg("q1", undefined, 10), msg("a1", "q1", 20), msg("2", "a1", 25), loading];
+        const answer = msg("a2", "q2", 40);
+
+        const thread = withStreamedMessage(shown, answer, "2");
+
+        expect(thread.map((m) => m.id)).toEqual(["q1", "a1", "q2", "a2"]);
+        expect(getMessageThread(thread, "a2").map((m) => m.id)).toEqual(["q1", "a1", "q2", "a2"]);
+    });
+
+    it("keeps the first question of a new conversation on the next send", () => {
+        const shown = [msg("0", undefined, 10), loading];
+        const thread = withStreamedMessage(shown, msg("a1", "q1", 20), "0");
+
+        expect(getMessageThread(thread, "a1").map((m) => m.id)).toEqual(["q1", "a1"]);
+    });
+
+    it("changes nothing on a redo, which sends no new question", () => {
+        const shown = [msg("q1", undefined, 10), loading];
+
+        expect(withStreamedMessage(shown, msg("a1b", "q1", 20)).map((m) => m.id)).toEqual(["q1", "a1b"]);
     });
 });

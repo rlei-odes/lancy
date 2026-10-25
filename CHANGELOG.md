@@ -36,6 +36,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - The chunker's error reaches the log and the ingestion log (`Chunking failed for '…': …`) instead of a bare "No chunks produced". A damaged upload is now reported as failed, not as an empty success.
 - Chunking may take `max(900 s, 120 s per MB)` per file, up from `max(600 s, 60 s per MB)`.
 
+### Added — Chat
+
+- The documents panel steps through a conversation's answers with ‹ › arrows, skipping answers that used no documents. The chat scrolls to the answer stepped to and tints it briefly.
+
+### Fixed — Chat
+
+- A question disappeared from the chat once the next one was sent, until the conversation was reopened. It was shown under a local id, and the thread is rebuilt from the server ids the answers point to.
+
 ### Changed — Advanced Features
 
 - The RAG settings panel is gone from the Advanced Features page. Its tabs share a knowledge base selector instead, which also selects the KB for the chat session.

@@ -512,6 +512,8 @@ export const app = {
         citedCount_one: "{{count, number}} zitiert",
         citedCount_other: "{{count, number}} zitiert",
         citationsPending: "Zitate folgen, sobald die Antwort fertig ist.",
+        previousAnswer: "Vorherige Antwort mit Dokumenten",
+        nextAnswer: "Nächste Antwort mit Dokumenten",
         answerLabel: "Antwort {{index}}",
         filterAll: "Alle · {{count}}",
         filterCited: "Zitiert · {{count}}",

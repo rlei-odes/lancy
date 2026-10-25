@@ -228,6 +228,20 @@
     animation: blinker 1.5s linear infinite;
 }
 
+/* Marks the answer the documents panel just stepped to, then fades. */
+@utility answer-flash {
+    animation: answer-flash 1.6s ease-out forwards;
+}
+
+@keyframes answer-flash {
+    0%, 30% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+    }
+}
+
 @keyframes blinker {
     20% {
         opacity: 1;

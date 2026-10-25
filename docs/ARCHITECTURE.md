@@ -478,7 +478,7 @@ Set `BACKEND_URL` in `frontend/.env` to point at the backend host when running o
 The chat at `/` and `/c/{id}`:
 - **Sidebar** (`chat-sidebar.tsx`) — new chat, search, conversations grouped by period with knowledge base and date; the user menu holds Settings, Reference, Advanced Features, Admin, the classic view, and version and uptime.
 - **Thread and composer** (`chat-message.tsx`, `composer.tsx`) — answers with citations that open their document in the panel; the composer has the knowledge base picker (`kb-picker.tsx`) and a `+` menu for the metadata filter and chat-only.
-- **Document panel** (`document-panel.tsx`) — per answer, every retrieved document grouped from the message's `retrieved` list (`lib/retrieved.ts`): cited and sent passages, the search method that found them, reranker discards. Ticking documents arms expand-context for the next question, with a token budget check (`use-context-budget.ts`).
+- **Document panel** (`document-panel.tsx`) — per answer, every retrieved document grouped from the message's `retrieved` list (`lib/retrieved.ts`): cited and sent passages, the search method that found them, reranker discards. Arrows in its header step through the answers that used documents; the chat scrolls to the answer stepped to and tints it briefly. Ticking documents arms expand-context for the next question, with a token budget check (`use-context-budget.ts`).
 
 The KB picker only selects a knowledge base for the session; it never writes settings.
 

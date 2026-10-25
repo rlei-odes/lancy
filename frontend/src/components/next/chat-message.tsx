@@ -1,4 +1,4 @@
-import React, { FunctionComponent, useEffect, useState } from "react";
+import React, { FunctionComponent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Copy, Check, FileText, Pencil, RefreshCcw, ThumbsDown, ThumbsUp } from "lucide-react";
 import { cn } from "@/lib/lorem";
@@ -156,7 +156,14 @@ const AssistantMessage: FunctionComponent<{ message: Message; isLast: boolean; k
     const { t } = useTranslation("app");
     const { agentAvatarUrl, agentName } = useBranding();
     const { sendMessage, sending, cursor } = useMessaging();
-    const { open, messageId, showDocuments } = useDocumentPanel();
+    const { open, messageId, showDocuments, flash } = useDocumentPanel();
+    const rootRef = useRef<HTMLDivElement>(null);
+    const flashed = flash?.id === message.id ? flash.key : null;
+
+    // Stepped to from the documents panel: bring this answer into view.
+    useEffect(() => {
+        if (flashed !== null) rootRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }, [flashed]);
     const [followUps, setFollowUps] = useState(message.follow_up_questions);
     const [syncedFollowUps, setSyncedFollowUps] = useState(message.follow_up_questions);
 
@@ -175,7 +182,9 @@ const AssistantMessage: FunctionComponent<{ message: Message; isLast: boolean; k
     const panelShowsThis = open && (messageId === message.id || (messageId === null && isLast));
 
     return (
-        <div className="group flex gap-3.5">
+        <div ref={rootRef} className="group relative flex gap-3.5 scroll-my-6">
+            {/* A new key remounts the tint, so stepping back to the same answer shows it again. */}
+            {flashed !== null && <span key={flashed} aria-hidden className="pointer-events-none absolute -inset-2 rounded-xl bg-primary/10 answer-flash" />}
             <Avatar className="h-7 w-7 rounded-lg border border-border bg-white p-0.5 dark:bg-white">
                 <AvatarImage src={agentAvatarUrl} alt={agentName} className="object-contain" />
             </Avatar>

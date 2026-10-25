@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { conversationService as mockConversationService } from "@/services/mock-conversation";
 import { Conversation, conversationService as realConversationService, MessageFilter } from "@/services/conversation";
 import { useRouter } from "next/router";
-import { getLastChild, getMessageThread } from "@/lib/thread";
+import { getLastChild, getMessageThread, withStreamedMessage } from "@/lib/thread";
 
 const shouldUseMock = Boolean(process.env.USE_MOCK_SERVICES);
 
@@ -270,7 +270,9 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
                     // forward until the final message brings the saved, cited version.
                     const previous = prev[prev.length - 1];
                     const keep = !streamedMessage.retrieved?.length && previous?.retrieved?.length;
-                    return [...prev.slice(0, -1), keep ? { ...streamedMessage, retrieved: previous.retrieved } : streamedMessage];
+                    const message = keep ? { ...streamedMessage, retrieved: previous.retrieved } : streamedMessage;
+                    // A redo sends no new question, so there is no local id to replace.
+                    return withStreamedMessage(prev, message, type === MessageTypes.REDO ? undefined : userMessage.id);
                 });
 
                 if (cursor !== streamedMessage.id) {

@@ -13,6 +13,10 @@ interface DocumentPanelState {
     clearSelection: () => void;
     /** Show an answer's documents, optionally with one of them expanded. */
     showDocuments: (messageId: string, file?: string) => void;
+    /** Step the panel to another answer and point it out in the chat. */
+    stepTo: (messageId: string) => void;
+    /** The answer to point out; `key` restarts the hint when the same answer is stepped to again. */
+    flash: { id: string; key: number } | null;
 }
 
 const DocumentPanelContext = createContext<DocumentPanelState | null>(null);
@@ -29,6 +33,7 @@ export const DocumentPanelProvider: React.FC<{ children: React.ReactNode }> = ({
     const [messageId, setMessageId] = useState<string | null>(null);
     const [expandedFile, setExpandedFile] = useState<string | null>(null);
     const [selected, setSelected] = useState<string[]>([]);
+    const [flash, setFlash] = useState<{ id: string; key: number } | null>(null);
     const [wasSending, setWasSending] = useState(sending);
     const [shownConversation, setShownConversation] = useState(activeConversationId);
     const empty = thread.length === 0;
@@ -75,6 +80,11 @@ export const DocumentPanelProvider: React.FC<{ children: React.ReactNode }> = ({
                 toggleSelected: (file) => setSelected((s) => (s.includes(file) ? s.filter((f) => f !== file) : [...s, file])),
                 clearSelection: () => setSelected([]),
                 showDocuments,
+                stepTo: (id) => {
+                    showDocuments(id);
+                    setFlash((f) => ({ id, key: (f?.key ?? 0) + 1 }));
+                },
+                flash,
             }}
         >
             {children}

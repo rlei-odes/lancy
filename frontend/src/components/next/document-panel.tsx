@@ -1,7 +1,7 @@
 import React, { FunctionComponent, useEffect, useMemo, useRef, useState } from "react";
 import { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import { Check, ChevronRight, ExternalLink } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/lorem";
 import { ERROR_ID, LOADING_ID, useMessaging } from "@/hooks/useMessaging";
 import { documentsForAnswer, RetrievedChunk, RetrievedDocument } from "@/lib/retrieved";
@@ -232,7 +232,7 @@ const Legend: FunctionComponent<{ withDiscarded: boolean }> = ({ withDiscarded }
 export const DocumentPanel: FunctionComponent = () => {
     const { t } = useTranslation("app");
     const { thread, sending: waiting } = useMessaging();
-    const { messageId, selected } = useDocumentPanel();
+    const { messageId, selected, stepTo } = useDocumentPanel();
     const [citedOnly, setCitedOnly] = useState(false);
 
     const answers = useMemo(
@@ -249,6 +249,14 @@ export const DocumentPanel: FunctionComponent = () => {
         () => (shown ? documentsForAnswer(shown) : { documents: [], discarded: [], chunkCount: 0, recorded: true }),
         [shown],
     );
+    // The answers the arrows step through: those a search ran for. A chat-only answer has no documents.
+    const withDocuments = useMemo(
+        () => answers.filter((m) => { const d = documentsForAnswer(m); return d.documents.length + d.discarded.length > 0; }),
+        [answers],
+    );
+    const stepIndex = shown ? withDocuments.indexOf(shown) : -1;
+    const previous = stepIndex > 0 ? withDocuments[stepIndex - 1] : stepIndex === -1 && shown === live ? withDocuments[withDocuments.length - 1] : undefined;
+    const next = stepIndex >= 0 && stepIndex < withDocuments.length - 1 ? withDocuments[stepIndex + 1] : undefined;
     const citedDocs = documents.filter((d) => d.citedCount > 0);
     const visible = citedOnly ? citedDocs : documents;
     const hasAny = documents.length + discarded.length > 0;
@@ -260,6 +268,26 @@ export const DocumentPanel: FunctionComponent = () => {
         <aside aria-label={t("next.documents")} className="flex h-full w-[512px] shrink-0 flex-col border-l border-border bg-muted/50">
             <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
                 <h2 className="text-base font-semibold">{t("next.documents")}</h2>
+                {withDocuments.length > 1 && (
+                    <div className="flex shrink-0 items-center">
+                        {[
+                            { target: previous, label: t("next.previousAnswer"), Icon: ChevronLeft },
+                            { target: next, label: t("next.nextAnswer"), Icon: ChevronRight },
+                        ].map(({ target, label, Icon }) => (
+                            <button
+                                key={label}
+                                type="button"
+                                disabled={!target || waiting}
+                                onClick={() => target && stepTo(target.id)}
+                                aria-label={label}
+                                title={label}
+                                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                            >
+                                <Icon className="h-4 w-4" />
+                            </button>
+                        ))}
+                    </div>
+                )}
                 {shown && documents.length > 0 && (
                     <span className="truncate text-[13px] text-muted-foreground">
                         {[
