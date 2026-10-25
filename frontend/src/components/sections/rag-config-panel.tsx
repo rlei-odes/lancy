@@ -1671,7 +1671,7 @@ export const RagConfigPanel: FunctionComponent<{ layout?: "sidebar" | "page" }> 
                             </FieldRow>
                             {session.llm_backend !== "ollama" && (
                                 <FieldRow label={t("rag.fieldMaxTokens")} hint={t("rag.fieldMaxTokensHint")}>
-                                    <NumberInput value={session.llm_max_tokens} min={128} max={8192} step={128} onChange={(v) => updateSession("llm_max_tokens", v)} />
+                                    <NumberInput value={session.llm_max_tokens} min={128} max={16384} step={128} onChange={(v) => updateSession("llm_max_tokens", v)} />
                                 </FieldRow>
                             )}
                             <FieldRow label={t("rag.fieldUtilityModel")} hint={t("rag.fieldUtilityModelHint")}>

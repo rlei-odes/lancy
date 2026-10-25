@@ -177,26 +177,23 @@ const SelectionBar: FunctionComponent = () => {
     const { t } = useTranslation("app");
     const { selected, clearSelection } = useDocumentPanel();
     const { setExpandContextFiles, setChatOnly } = useMessaging();
-    const { tokens, budget, over } = useContextBudget(selected);
+    const { tokens, budget, passes } = useContextBudget(selected);
 
     return (
         <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-card px-4 py-3">
             <div className="flex items-baseline justify-between gap-2 text-[13px] text-muted-foreground">
                 <span>{t("next.selected", { count: selected.length })}</span>
                 {tokens !== null && budget !== null && (
-                    <span className={cn("font-mono text-[11px]", over && "text-destructive")}>
-                        {t("next.budget", { tokens, budget })}
-                    </span>
+                    <span className="font-mono text-[11px]">{t("next.budget", { tokens, budget })}</span>
                 )}
             </div>
-            {over && <div className="text-xs text-destructive">{t("next.overBudget")}</div>}
+            {passes !== null && passes > 1 && <div className="text-xs text-muted-foreground">{t("next.multiPassHint", { count: passes })}</div>}
             <div className="flex justify-end gap-2">
                 <button type="button" onClick={clearSelection} className="h-9 rounded-lg px-3 text-[13px] hover:bg-muted">
                     {t("next.clearSelection")}
                 </button>
                 <button
                     type="button"
-                    disabled={over}
                     onClick={() => {
                         // Chat-only skips every document, which would silently ignore this selection.
                         setChatOnly(false);

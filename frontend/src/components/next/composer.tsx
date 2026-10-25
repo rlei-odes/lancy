@@ -5,6 +5,7 @@ import { cn } from "@/lib/lorem";
 import { useMessaging } from "@/hooks/useMessaging";
 import { MessageTypes } from "@/services/message";
 import { Disclaimer } from "@/components/ui/disclaimer";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FilterPopover, useActiveKbFilters } from "@/components/sections/chat-action-bar";
 import { KbPicker } from "@/components/next/kb-picker";
@@ -12,12 +13,11 @@ import { useContextBudget } from "@/components/next/use-context-budget";
 
 const MAX_TEXTAREA_PX = 208;
 
-const OptionChip: FunctionComponent<{ icon: React.ReactNode; label: React.ReactNode; title?: string; onRemove?: () => void; tone?: "default" | "danger" }> = ({
+const OptionChip: FunctionComponent<{ icon: React.ReactNode; label: React.ReactNode; title?: string; onRemove?: () => void }> = ({
     icon,
     label,
     title,
     onRemove,
-    tone = "default",
 }) => {
     const { t } = useTranslation("app");
     return (
@@ -26,7 +26,7 @@ const OptionChip: FunctionComponent<{ icon: React.ReactNode; label: React.ReactN
             className={cn(
                 "inline-flex max-w-full items-center gap-1.5 rounded-full py-0.5 pl-2.5 text-xs",
                 onRemove ? "pr-1" : "pr-2.5",
-                tone === "danger" ? "bg-destructive/15 text-destructive" : "bg-primary/10 text-primary",
+                "bg-primary/10 text-primary",
             )}
         >
             {icon}
@@ -42,16 +42,46 @@ const OptionChip: FunctionComponent<{ icon: React.ReactNode; label: React.ReactN
 
 const ExpandChip: FunctionComponent<{ files: string[]; onRemove: () => void }> = ({ files, onRemove }) => {
     const { t } = useTranslation("app");
-    const { tokens, budget, over } = useContextBudget(files);
+    const { tokens, budget, passes } = useContextBudget(files);
     const budgetText = tokens !== null && budget !== null ? ` · ${t("next.budget", { tokens, budget })}` : "";
+    const passText = passes !== null && passes > 1 ? ` · ${t("next.passes", { count: passes })}` : "";
     return (
         <OptionChip
             icon={<BookOpen className="h-3.5 w-3.5 shrink-0" />}
-            label={t("next.expandArmed", { count: files.length }) + budgetText}
-            title={over ? t("next.overBudget") : files.join("\n")}
-            tone={over ? "danger" : "default"}
+            label={t("next.expandArmed", { count: files.length }) + budgetText + passText}
+            title={files.join("\n")}
             onRemove={onRemove}
         />
+    );
+};
+
+/** Asks before an answer reads documents in several passes: each is an LLM call. */
+const MultiPassDialog: FunctionComponent<{
+    open: boolean;
+    tokens: number | null;
+    budget: number | null;
+    passes: number;
+    onCancel: () => void;
+    onConfirm: () => void;
+}> = ({ open, tokens, budget, passes, onCancel, onConfirm }) => {
+    const { t } = useTranslation("app");
+    return (
+        <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>{t("next.multiPassTitle", { count: passes })}</DialogTitle>
+                    <DialogDescription>{t("next.multiPassBody", { tokens: tokens ?? 0, budget: budget ?? 0, count: passes })}</DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                    <button type="button" className="rounded-lg px-3 py-2 text-sm hover:bg-muted" onClick={onCancel}>
+                        {t("cancel")}
+                    </button>
+                    <button type="button" className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90" onClick={onConfirm}>
+                        {t("next.multiPassConfirm", { count: passes })}
+                    </button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 };
 
@@ -108,13 +138,20 @@ export const Composer: FunctionComponent = () => {
     }, [filterOpen]);
 
     const expandArmed = expandContextFiles.length > 0;
+    const { tokens, budget, passes } = useContextBudget(expandContextFiles);
+    const [confirming, setConfirming] = useState(false);
     const canFilter = !activeConversationId && !!kb?.chat_filters.enabled && kb.chat_filters.keys.length > 0 && !expandArmed;
     const disabled = !draft.trim() || sending || kbIncompatible;
 
-    const send = () => {
-        if (disabled) return;
+    const submit = () => {
         sendMessage(draft, MessageTypes.NEXT, cursor);
         setDraft("");
+    };
+
+    const send = () => {
+        if (disabled) return;
+        if (expandArmed && passes !== null && passes > 1) setConfirming(true);
+        else submit();
     };
 
     const hasChips = frozenChatFilters.length > 0 || chatFilters.length > 0 || chatOnly || expandArmed;
@@ -244,6 +281,17 @@ export const Composer: FunctionComponent = () => {
                     </div>
                 </div>
                 <Disclaimer />
+                <MultiPassDialog
+                    open={confirming}
+                    tokens={tokens}
+                    budget={budget}
+                    passes={passes ?? 1}
+                    onCancel={() => setConfirming(false)}
+                    onConfirm={() => {
+                        setConfirming(false);
+                        submit();
+                    }}
+                />
             </div>
         </div>
     );

@@ -22,6 +22,7 @@ from typing import Annotated, Any, Callable, Literal
 _SERVER_STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 from conversational_toolkit.llms.base import LLMMessage, MessageContent, Roles
+from conversational_toolkit.agents.rag import split_into_passes
 from conversational_toolkit.utils.text import compact_markdown_tables
 
 from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, Request
@@ -252,6 +253,20 @@ class DocumentStat(BaseModel):
 
 class DocumentStatsResponse(BaseModel):
     stats: list[DocumentStat]
+    # LLM calls reading all the documents takes in expand-context mode: 1 when they fit
+    # one call, else the map passes (merge and final answer come on top).
+    passes: int = 1
+
+
+# Share of num_ctx the documents may fill in expand-context mode; the rest is prompt and answer.
+EXPAND_CONTEXT_BUDGET_FRACTION = 0.6
+# Characters per token for the estimate, conservative for German-heavy text.
+EXPAND_CONTEXT_CHARS_PER_TOKEN = 3.5
+
+
+def expand_context_budget_chars(num_ctx: int) -> int:
+    """Characters of document text one expand-context call reads. The frontend's estimate uses the same figures."""
+    return int(num_ctx * EXPAND_CONTEXT_BUDGET_FRACTION * EXPAND_CONTEXT_CHARS_PER_TOKEN)
 
 
 # ─── Batch document analysis ──────────────────────────────────────────────────
@@ -604,18 +619,27 @@ def create_rag_router(
     async def _collect_document_stats(vs: Any, req: DocumentStatsRequest) -> DocumentStatsResponse:
         chunks = await vs.get_chunks_by_filter(filters={req.id_field: req.source_files})
         by_file: dict[str, tuple[int, int]] = {}
+        lengths_by_file: dict[str, list[int]] = {}
         for c in chunks:
             sf = c.metadata.get(req.id_field, "")
             cur = by_file.get(sf, (0, 0))
             # Counted as the LLM receives it: table padding is compacted before sending.
-            by_file[sf] = (cur[0] + 1, cur[1] + len(compact_markdown_tables(c.content or "")))
+            length = len(compact_markdown_tables(c.content or ""))
+            by_file[sf] = (cur[0] + 1, cur[1] + length)
+            if "text" in (c.mime_type or ""):
+                lengths_by_file.setdefault(sf, []).append(length)
+        # Split the way the agent splits: documents in the order given, chunks in store order.
+        budget = expand_context_budget_chars(_load_config().num_ctx)
+        lengths = [min(n, budget) for sf in req.source_files for n in lengths_by_file.get(sf, [])]
+        passes = len(split_into_passes(lengths, budget)) if sum(lengths) > budget else 1
         return DocumentStatsResponse(
+            passes=passes,
             stats=[
                 DocumentStat(
                     source_file=sf, chunk_count=by_file.get(sf, (0, 0))[0], char_count=by_file.get(sf, (0, 0))[1]
                 )
                 for sf in req.source_files
-            ]
+            ],
         )
 
     @router.post("/document-stats", response_model=DocumentStatsResponse)

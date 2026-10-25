@@ -207,21 +207,6 @@ The **Expand context** action (v0.3.8) currently only lets the user pick from do
 
 ---
 
-### Expand Context — Multi-Pass for Documents Larger Than the Context
-
-"Ask using only these" (and the classic **Expand context** action) sends every chunk of the picked documents in one LLM call. Long documents exceed the budget on their own: a single standards document estimated at ~300,000 tokens against a 66,000-token budget (60 % of `num_ctx`). The UI blocks the request, so the user cannot ask about the one document they care about.
-
-**What's needed:** a multi-pass mode for selections over budget. Split the documents' chunks into batches that fit, ask the question against each batch (map), then answer from the per-batch results (reduce). Each pass should keep its chunk citations so the final answer can still cite passages.
-
-**Open questions:**
-- Map output: extracted relevant passages, or partial answers? Passages keep citations exact; partial answers are shorter to reduce.
-- Cost and time: a 300k-token document is five or more LLM calls before the final one. The UI should state the number of passes before the user confirms, and show progress while they run.
-- Whether to filter first: rank the selected documents' chunks against the question and send only the best ones that fit, as a cheaper single-pass alternative.
-
-**Reuse:** `RAG._answer_stream_expand_context` already fetches all chunks of the picked files; the token estimate lives in `useContextBudget` (`frontend/src/components/next/use-context-budget.ts`).
-
----
-
 ### Max Search Reach — Every Keyword Hit Gets Read
 
 A search mode for questions where missing a document is worse than waiting. The default search returns the best few chunks; a relevant passage that ranks poorly is never seen, however clearly it answers the question. Example: "What is a surrogate key?" — the CASDEAI course defines it in a glossary table, in German, 80 % into an 8,000-character chunk. It never reached the answer.
@@ -232,7 +217,7 @@ A search mode for questions where missing a document is worse than waiting. The 
 3. **Read in passes.** If the must-read chunks fit the context, answer from them directly. If not, read them in batches that fit and extract what each batch says about the question (map), then answer from those extracts (reduce), keeping chunk citations through both steps.
 4. **Report the reach.** Tell the user how many chunks matched, how many were read, and how many passes it took — the document panel can show every chunk that was read.
 
-**Shares machinery with** "Expand Context — Multi-Pass for Documents Larger Than the Context": the batching, the map and reduce prompts, citation carry-over and progress reporting are the same problem.
+**Shares machinery with** multi-pass expand context (`RAG._answer_stream_multi_pass`): the batching, the map/merge/reduce prompts, citation carry-over and progress reporting exist there and can be reused.
 
 **Open questions:** a cap on matched chunks before asking the user to narrow the question; whether semantic search adds candidates beyond the keyword matches; how to show cost and progress for a run of many LLM calls.
 

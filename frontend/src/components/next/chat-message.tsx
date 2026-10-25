@@ -20,19 +20,21 @@ const QUERY_PHASES = {
     retrieving: "rag.queryPhaseRetrieving",
     reranking: "rag.queryPhaseReranking",
     generating: "rag.queryPhaseGenerating",
+    reading: "rag.queryPhaseReading",
+    merging: "rag.queryPhaseMerging",
 } as const;
 
 /** What the backend is doing while the answer has not started streaming. */
 const QueryPhase: FunctionComponent = () => {
     const { t } = useTranslation("app");
-    const [phase, setPhase] = useState<string>("idle");
-    const phaseKey = QUERY_PHASES[phase as keyof typeof QUERY_PHASES];
+    const [status, setStatus] = useState<{ phase: string; pass: number; passes: number }>({ phase: "idle", pass: 0, passes: 0 });
+    const phaseKey = QUERY_PHASES[status.phase as keyof typeof QUERY_PHASES];
 
     useEffect(() => {
         const interval = setInterval(() => {
             fetch("/api/v1/rag/query-status")
                 .then((r) => r.json())
-                .then((data) => setPhase(data.phase ?? "idle"))
+                .then((data) => setStatus({ phase: data.phase ?? "idle", pass: data.pass ?? 0, passes: data.passes ?? 0 }))
                 .catch(() => {});
         }, 500);
         return () => clearInterval(interval);
@@ -40,7 +42,7 @@ const QueryPhase: FunctionComponent = () => {
 
     return (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            {phaseKey && <span>{t(phaseKey)}</span>}
+            {phaseKey && <span>{t(phaseKey, { pass: status.pass, passes: status.passes })}</span>}
             <span className="blink h-3 w-3 rounded-full bg-foreground" />
         </div>
     );

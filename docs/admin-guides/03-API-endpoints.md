@@ -863,7 +863,7 @@ GET /rag/analyze-prompt-template
 
 Returns `{"template": "..."}` — the raw system prompt template (`batch_analyze.custom.md` if present, else `batch_analyze.default.md`) with its `{user_prompt}` and `{schema}` placeholders unsubstituted. The Batch Analysis UI tab renders it with both filled in so the user sees the complete prompt before running, without the frontend keeping its own copy that could drift from the file actually used. `404` if no template file is found.
 
-**Preflight support:** `POST /rag/document-stats` takes an optional `id_field` (`source_file` by default, or `document_id`) alongside its `source_files` list, so a batch keyed by upload-time ids can be size-checked the same way. Identifiers with no matching chunks come back as `chunk_count: 0`, which is how the UI distinguishes "missing from the KB" from "too large for the context budget" before spending any LLM call. Capped at 100 identifiers per request. Like `analyze-document`, it takes an optional `kb_id` (404 if not loaded) or `pile_id`.
+**Preflight support:** `POST /rag/document-stats` takes an optional `id_field` (`source_file` by default, or `document_id`) alongside its `source_files` list, so a batch keyed by upload-time ids can be size-checked the same way. Identifiers with no matching chunks come back as `chunk_count: 0`, which is how the UI distinguishes "missing from the KB" from "too large for the context budget" before spending any LLM call. Capped at 100 identifiers per request. Like `analyze-document`, it takes an optional `kb_id` (404 if not loaded) or `pile_id`. The response's `passes` is how many LLM calls reading all the identifiers takes in expand-context mode: 1 when they fit one call, else the number of parts they are read in (merging and the final answer come on top).
 
 ---
 
@@ -1144,7 +1144,7 @@ OpenAI clients keep working unchanged. With the OpenAI SDK they are sent through
 | Field | Type | Effect |
 |-------|------|--------|
 | `filters` | `{key: value}` | Restricts retrieval to chunks whose metadata matches. Scalars match by equality, lists match as IN, multiple keys are ANDed. Max 20 keys; values must be scalars or flat lists. |
-| `expand_context` | `[source_file, …]` | Skips retrieval entirely and answers from **every** chunk of the named documents. Max 50 entries. |
+| `expand_context` | `[source_file, …]` | Skips retrieval entirely and answers from **every** chunk of the named documents. Max 50 entries. Documents over the context budget are read in several passes; `/rag/query-status` reports `phase: "reading"` with `pass`/`passes`, then `"merging"`. |
 
 The two are mutually exclusive — `expand_context` bypasses retrieval, so a filter
 could never apply. Sending both returns `400` rather than silently ignoring the

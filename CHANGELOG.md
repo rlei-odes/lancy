@@ -38,11 +38,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added — Chat
 
+- Documents longer than the model's context can be read in full: "Ask using only these" no longer blocks them. They are read in passes — consecutive parts that each fit — with a partial answer per part, citing its passages, and the partial answers are combined into the answer. The chip and the selection bar show the number of passes, sending asks for confirmation, and the answer placeholder shows "Reading part 4 of 13". A 118k-token document took 4 passes and about 100 s with every citation pointing at a real passage. The map, merge and reduce prompts are files in `prompts/`.
+
 - The documents panel steps through a conversation's answers with ‹ › arrows, skipping answers that used no documents. The chat scrolls to the answer stepped to and tints it briefly.
 
 ### Fixed — Chat
 
 - A question disappeared from the chat once the next one was sent, until the conversation was reopened. It was shown under a local id, and the thread is rebuilt from the server ids the answers point to.
+
+### Changed — Settings
+
+- **Max output tokens** goes up to 16,384 (was 8,192). It caps only what the model sends back; how much a call may read is `num_ctx`.
 
 ### Changed — Advanced Features
 

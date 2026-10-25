@@ -25,6 +25,7 @@ class FakeChunk:
         self.content = content
         self.title = source_file
         self.metadata = {"source_file": source_file}
+        self.mime_type = "text/markdown"
 
 
 class FakeStore:

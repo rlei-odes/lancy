@@ -123,6 +123,7 @@ from lancy.rag_router import (
     RetrieveRequest,
     RetrieveResponse,
     create_rag_router,
+    expand_context_budget_chars,
 )
 from lancy.utils.json import parse_llm_json_stream
 
@@ -189,6 +190,15 @@ def _load_chat_only_prompt() -> str:
     return ""
 
 
+def _load_prompt(name: str) -> str:
+    """A prompt from prompts/: `<name>.custom.md` over `<name>.default.md`. Missing or empty fails loudly."""
+    for variant in (f"{name}.custom.md", f"{name}.default.md"):
+        p = _PROMPTS_DIR / variant
+        if p.exists() and (content := p.read_text().strip()):
+            return content
+    raise FileNotFoundError(f"Prompt '{name}' not found in {_PROMPTS_DIR}")
+
+
 def _load_expand_context_prompt() -> str:
     """Load the expand-context system prompt (used when a message has expand_context set).
     Custom overrides default; both live in prompts/. Empty means fall back to the standard system prompt."""
@@ -238,7 +248,7 @@ _UUID_RE = re.compile(
 )
 
 # Global query status (polled by frontend via GET /api/v1/rag/query-status)
-_query_status: dict = {"active": False, "phase": "idle"}
+_query_status: dict = {"active": False, "phase": "idle", "pass": 0, "passes": 0}
 
 
 def _classify_stream_error(exc: BaseException, vector_store: Any, llm_model: str) -> str:
@@ -312,11 +322,16 @@ class CustomRAG(RAG):
         self.aux_vector_stores = aux_vector_stores or []
 
     async def answer_stream(self, query_with_context):
-        _query_status.update({"active": True, "phase": "retrieving"})
+        _query_status.update({"active": True, "phase": "retrieving", "pass": 0, "passes": 0})
         bm25_debug.begin(query_with_context.query)
 
         def update_phase(phase: str) -> None:
             _query_status["phase"] = phase
+
+        def update_progress(number: int, total: int) -> None:
+            _query_status.update({"pass": number, "passes": total})
+
+        self.progress_callback = update_progress
 
         try:
             first = True
@@ -568,6 +583,10 @@ def _assemble_components(
             system_prompt=base_prompt,
             chat_only_system_prompt=_load_chat_only_prompt(),
             expand_context_system_prompt=_load_expand_context_prompt(),
+            expand_context_budget_chars=expand_context_budget_chars(cfg.num_ctx),
+            expand_context_map_prompt=_load_prompt("expand_context_map"),
+            expand_context_merge_prompt=_load_prompt("expand_context_merge"),
+            expand_context_reduce_prompt=_load_prompt("expand_context_reduce"),
             vector_store=vs,
             retrievers=all_retrievers,
             number_query_expansion=cfg.query_expansion,

@@ -5,13 +5,14 @@ export interface ContextBudget {
     /** Estimated tokens the files add to the context; null until their sizes are known. */
     tokens: number | null;
     budget: number | null;
-    over: boolean;
+    /** LLM calls that read the files, as the backend will split them; null until known. */
+    passes: number | null;
 }
 
-/** Estimates whether reading these files in full fits the model's context, as the expand-context popover does. */
+/** Estimates the tokens reading these files in full adds, and how many passes the backend will read them in. */
 export function useContextBudget(files: string[]): ContextBudget {
     const [numCtx, setNumCtx] = useState<number | null>(null);
-    const [chars, setChars] = useState<{ key: string; total: number } | null>(null);
+    const [chars, setChars] = useState<{ key: string; total: number; passes: number } | null>(null);
     const key = files.join("\n");
 
     useEffect(() => {
@@ -28,11 +29,12 @@ export function useContextBudget(files: string[]): ContextBudget {
             method: "POST",
             credentials: "include",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ source_files: key.split("\n") }),
+            // The session's KB: the backend's default is the pool's active one, which may hold other documents.
+            body: JSON.stringify({ source_files: key.split("\n"), kb_id: sessionStorage.getItem("lancy_selected_kb_id") ?? undefined }),
         })
             .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-            .then((data: { stats: { char_count: number }[] }) => {
-                if (!cancelled) setChars({ key, total: data.stats.reduce((n, s) => n + s.char_count, 0) });
+            .then((data: { stats: { char_count: number }[]; passes?: number }) => {
+                if (!cancelled) setChars({ key, total: data.stats.reduce((n, s) => n + s.char_count, 0), passes: data.passes ?? 1 });
             })
             .catch((e) => console.warn("[context-budget] document stats unavailable:", e));
         return () => {
@@ -42,5 +44,6 @@ export function useContextBudget(files: string[]): ContextBudget {
 
     const tokens = key && chars?.key === key ? Math.ceil(chars.total / CHARS_PER_TOKEN) : null;
     const budget = numCtx ? Math.floor(numCtx * BUDGET_FRACTION) : null;
-    return { tokens, budget, over: tokens !== null && budget !== null && tokens > budget };
+    const passes = key && chars?.key === key ? chars.passes : null;
+    return { tokens, budget, passes };
 }
