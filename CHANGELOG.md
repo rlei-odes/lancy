@@ -37,6 +37,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed — Retrieval
 
+- Keyword search finds the plural of an English term inside German, French or Italian text: those chunks also index each word's English stem, so "keys" in a German glossary matches "key". A question word now scores once, by its best-matching form.
+- Keyword search penalises long chunks less. Its length normalisation is a new setting, **Length normalisation (b)**, default 0.6 instead of the standard 0.75, so one mention in an 8,000-character chunk is no longer outranked by any short chunk.
 - When the candidate pool exceeds the reranker's budget, each candidate is cut to the passage holding the most query terms instead of its beginning.
 
 ---

@@ -49,6 +49,7 @@ class RagConfig(BaseModel):
     retriever_top_k: int = Field(5, ge=1, le=50)
     rrf_k: int = Field(60, ge=1, le=200)
     bm25_enabled: bool = True
+    bm25_b: float = Field(0.6, ge=0.0, le=1.0)  # BM25 length normalisation: lower = long chunks penalised less
     query_expansion: int = Field(0, ge=0, le=10)
     hyde_enabled: bool = False
     keyword_extraction: bool = False  # utility-LLM synonyms + translations for keyword search

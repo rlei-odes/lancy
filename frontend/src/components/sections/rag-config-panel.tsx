@@ -48,6 +48,7 @@ interface SessionConfig {
     retriever_top_k: number;
     rrf_k: number;
     bm25_enabled: boolean;
+    bm25_b: number;
     query_expansion: number;
     hyde_enabled: boolean;
     keyword_extraction: boolean;
@@ -86,7 +87,7 @@ interface KBRegistry {
 }
 
 const RETRIEVAL_FIELD_KEYS = [
-    "retriever_top_k", "rrf_k", "bm25_enabled", "query_expansion",
+    "retriever_top_k", "rrf_k", "bm25_enabled", "bm25_b", "query_expansion",
     "hyde_enabled", "keyword_extraction", "reranking_enabled", "reranking_candidate_pool", "image_retriever_top_k",
 ] as const;
 
@@ -163,6 +164,7 @@ const DEFAULT_SESSION: SessionConfig = {
     retriever_top_k: 5,
     rrf_k: 60,
     bm25_enabled: true,
+    bm25_b: 0.6,
     query_expansion: 0,
     hyde_enabled: false,
     keyword_extraction: false,
@@ -1255,6 +1257,7 @@ export const RagConfigPanel: FunctionComponent<{ layout?: "sidebar" | "page" }> 
     const retrievalDirty =
         session.retriever_top_k !== savedSession.current.retriever_top_k ||
         session.rrf_k !== savedSession.current.rrf_k ||
+        session.bm25_b !== savedSession.current.bm25_b ||
         session.bm25_enabled !== savedSession.current.bm25_enabled ||
         session.query_expansion !== savedSession.current.query_expansion ||
         session.hyde_enabled !== savedSession.current.hyde_enabled ||
@@ -1882,6 +1885,11 @@ export const RagConfigPanel: FunctionComponent<{ layout?: "sidebar" | "page" }> 
                             <FieldRow label={t("rag.fieldBm25")} hint={t("rag.fieldBm25Hint")}>
                                 <Toggle checked={session.bm25_enabled} onChange={(v) => updateSession("bm25_enabled", v)} />
                             </FieldRow>
+                            {session.bm25_enabled && (
+                                <FieldRow label={t("rag.fieldBm25B")} hint={t("rag.fieldBm25BHint")}>
+                                    <NumberInput value={session.bm25_b} min={0} max={1} step={0.05} onChange={(v) => updateSession("bm25_b", v)} />
+                                </FieldRow>
+                            )}
                             <FieldRow label={t("rag.fieldRrfK")} hint={t("rag.fieldRrfKHint")}>
                                 <NumberInput value={session.rrf_k} min={1} max={200} step={1} onChange={(v) => updateSession("rrf_k", v)} />
                             </FieldRow>

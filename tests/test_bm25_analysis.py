@@ -26,7 +26,13 @@ from conversational_toolkit.agents.rag import RAG
 from conversational_toolkit.llms.base import LLMMessage, MessageContent, Roles
 from conversational_toolkit.retriever.base import SemanticOnlyQuery
 from conversational_toolkit.retriever.bm25_retriever import BM25Retriever
-from conversational_toolkit.retriever.text_analysis import analyze_document, analyze_query
+from conversational_toolkit.retriever.text_analysis import (
+    analyze_document,
+    analyze_query,
+    index_document,
+    matched_words,
+    query_words,
+)
 from conversational_toolkit.vectorstores.base import ChunkRecord
 
 # ─── analysis ─────────────────────────────────────────────────────────────────
@@ -152,3 +158,57 @@ def test_the_hyde_text_is_marked_semantic_only():
     hyde = [q for q in retriever.queries if q == "a hypothetical answer"]
     assert hyde and all(isinstance(q, SemanticOnlyQuery) for q in hyde)
     assert not isinstance(next(q for q in retriever.queries if q == "the question"), SemanticOnlyQuery)
+
+
+# ─── English terms inside other-language chunks ───────────────────────────────
+#
+# The German stemmer leaves "keys" as "keys"; the question's "key" stems to "key" in
+# every language. A German chunk also indexes each word's English stem, so the plural
+# of an English loanword is found. The extra stems do not count as chunk length, and a
+# question word scores once however many of its forms a chunk carries.
+
+
+def test_an_english_plural_inside_a_german_chunk_matches():
+    glossary = record("glossary", "Die Trennung von Business Keys und technischen Schlüsseln im Data Vault")
+
+    assert search("key", glossary) == ["glossary"]
+
+
+def test_the_probe_highlights_the_english_plural_in_a_german_chunk():
+    text = "Die Trennung von Business Keys und technischen Schlüsseln"
+
+    assert "keys" in matched_words(text, analyze_query("key"))
+
+
+def test_english_stems_do_not_make_a_chunk_longer():
+    terms, length = index_document("Die Trennung von Business Keys und technischen Schlüsseln")
+
+    assert "key" in terms and "keys" in terms
+    assert length == len(analyze_document("Die Trennung von Business Keys und technischen Schlüsseln"))
+
+
+def test_a_question_word_scores_once_by_its_best_form():
+    """A chunk carrying both 'keys' and 'key' must not score the word twice."""
+    retriever = BM25Retriever(Store([record("de", "Die Business Keys der Tabelle"), *FILLER]), top_k=10)
+    asyncio.run(retriever.retrieve("key"))  # builds the index
+
+    forms = query_words("keys")[0]
+    one_word = retriever._score([forms])
+    per_form = [retriever._bm25.get_scores([t]) for t in forms]
+
+    assert one_word[0] == max(s[0] for s in per_form)
+
+
+# ─── length normalisation ─────────────────────────────────────────────────────
+
+
+def test_without_length_normalisation_one_mention_in_a_long_chunk_competes():
+    """b = 0 ignores length; b = 1 scales a term fully by it. The setting sits between."""
+    long_score = {}
+    for b in (0.0, 0.6, 1.0):
+        retriever = BM25Retriever(
+            Store([record("long", "Weitere Begriffe folgen hier. " * 60 + "surrogate key"), *FILLER]), top_k=10, b=b
+        )
+        long_score[b] = asyncio.run(retriever.retrieve("surrogate key"))[0].score
+
+    assert long_score[0.0] > long_score[0.6] > long_score[1.0]

@@ -461,7 +461,7 @@ def _assemble_components(
     # When reranking, fetch a larger candidate pool first
     retriever_k = cfg.reranking_candidate_pool if cfg.reranking_enabled else top_k
     semantic = _make_retriever(emb, vs, retriever_k, kb.nomic_prefix)
-    bm25 = BM25Retriever(vs, top_k=retriever_k)
+    bm25 = BM25Retriever(vs, top_k=retriever_k, b=cfg.bm25_b)
     bm25.search_listener = bm25_debug.record
     retrievers = [semantic, bm25] if cfg.bm25_enabled else [semantic]
     hybrid = HybridRetriever(retrievers=retrievers, top_k=retriever_k)
@@ -682,6 +682,7 @@ def build_server():
                     "retriever_top_k": cfg.retriever_top_k,
                     "rrf_k": cfg.rrf_k,
                     "bm25_enabled": cfg.bm25_enabled,
+                    "bm25_b": cfg.bm25_b,
                     "reranking_enabled": cfg.reranking_enabled,
                     "reranking_candidate_pool": cfg.reranking_candidate_pool,
                     "hyde_enabled": cfg.hyde_enabled,
@@ -1011,8 +1012,9 @@ def build_server():
         # BM25 retrieval — lazy-init and cache per-KB retriever
         bm25_results: list = []
         if req.bm25_enabled:
-            if active_entry.probe_bm25 is None:
-                active_entry.probe_bm25 = BM25Retriever(vs, top_k=fetch_k)
+            # `b` is fixed when the index is built, so a changed setting needs a new index.
+            if active_entry.probe_bm25 is None or active_entry.probe_bm25.b != cfg.bm25_b:
+                active_entry.probe_bm25 = BM25Retriever(vs, top_k=fetch_k, b=cfg.bm25_b)
             else:
                 active_entry.probe_bm25.top_k = fetch_k
             bm25_results = await active_entry.probe_bm25.retrieve(req.query)

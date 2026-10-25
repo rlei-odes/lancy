@@ -376,6 +376,8 @@ export const app = {
         fieldTopKHint: "Numero di chunk restituiti per query",
         fieldBm25: "BM25 (lessicale)",
         fieldBm25Hint: "La ricerca per parole chiave integra la ricerca vettoriale semantica via RRF",
+        fieldBm25B: "Normalizzazione della lunghezza (b)",
+        fieldBm25BHint: "Quanto BM25 penalizza una corrispondenza in un chunk lungo · 0 = lunghezza ignorata, 1 = pesata del tutto sulla lunghezza · usuale 0.75, predefinito 0.6 perché una menzione in un chunk lungo conti ancora",
         fieldRrfK: "RRF k",
         fieldRrfKHint: "Costante di smorzamento per Reciprocal Rank Fusion (default: 60)",
         fieldQueryExp: "Query Expansion",

@@ -10,10 +10,11 @@ import asyncio
 import logging
 from typing import Any, Callable
 
+import numpy as np
 from rank_bm25 import BM25Okapi  # type: ignore[import-untyped]
 
 from conversational_toolkit.retriever.base import KeywordQuery, Retriever, SemanticOnlyQuery
-from conversational_toolkit.retriever.text_analysis import analyze_document, analyze_query, detect_language, tokenize
+from conversational_toolkit.retriever.text_analysis import detect_language, index_document, query_words, tokenize
 from conversational_toolkit.vectorstores.base import ChunkMatch, VectorStore
 
 logger = logging.getLogger(__name__)
@@ -21,21 +22,28 @@ logger = logging.getLogger(__name__)
 # Weight of a 'KeywordQuery''s extra terms against the query's own words.
 EXPANSION_WEIGHT = 0.5
 
+# BM25 length normalisation: 0 ignores chunk length, 1 scales a term's weight fully by it.
+# Below the usual 0.75, because chunks here range from a slide's few lines to 8,000
+# characters of a glossary, and one mention in a long chunk still answers the question.
+DEFAULT_B = 0.6
+
 
 class BM25Retriever(Retriever[ChunkMatch]):
     """
     In-memory BM25 retriever over a fixed corpus of 'ChunkRecord' objects.
 
-    Uses 'rank_bm25.BM25Okapi' under the hood. Chunks and queries go through 'text_analysis': stop words dropped, words stemmed — chunks in their own language, queries in every supported language. A 'SemanticOnlyQuery' returns no results. A 'KeywordQuery''s extra terms add to the score at 'EXPANSION_WEIGHT'.
+    Uses 'rank_bm25.BM25Okapi' under the hood. Chunks and queries go through 'text_analysis': stop words dropped, words stemmed — chunks in their own language (plus English stems in other-language chunks), queries in every supported language. Each query word scores once, by its best-matching form, so a word with many distinct stems weighs no more than one with a single stem. A 'SemanticOnlyQuery' returns no results. A 'KeywordQuery''s extra terms add to the score at 'EXPANSION_WEIGHT'.
 
     Attributes:
         corpus: The indexed document chunks.
+        b: BM25 length normalisation, see 'DEFAULT_B'. Fixed when the index is built.
         search_listener: Called after every search with its query, terms, detected language and every hit it returns. For debugging tools; None means nobody listens.
     """
 
-    def __init__(self, vector_store: VectorStore, top_k: int) -> None:
+    def __init__(self, vector_store: VectorStore, top_k: int, b: float = DEFAULT_B) -> None:
         super().__init__(top_k)
         self.vs = vector_store
+        self.b = b
         self.corpus = []
         self.tokenized = []
         self._bm25 = None
@@ -78,24 +86,32 @@ class BM25Retriever(Retriever[ChunkMatch]):
 
             # Analysing and indexing the corpus is CPU-bound — run in a thread to keep the event loop free.
             def _build() -> BM25Okapi:
-                return BM25Okapi([analyze_document(self._searchable_text(chunk)) for chunk in corpus])
+                indexed = [index_document(self._searchable_text(chunk)) for chunk in corpus]
+                bm25 = BM25Okapi([terms for terms, _ in indexed], b=self.b)
+                # rank-bm25 takes a chunk's length from its term list, which here includes
+                # the English stems of other-language chunks. Normalise by the word count.
+                bm25.doc_len = [length for _, length in indexed]
+                bm25.avgdl = max(sum(bm25.doc_len) / len(bm25.doc_len), 1.0)
+                return bm25
 
             self._bm25 = await loop.run_in_executor(None, _build)
 
-        query_terms = analyze_query(query)
+        words = query_words(query)
+        query_terms = [t for forms in words for t in forms]
         logger.info(f"BM25 terms for {query[:80]!r}: {' '.join(dict.fromkeys(query_terms))}")
-        score_array = self._bm25.get_scores(query_terms)
+        score_array = self._score(words)
         expansion_terms: list[str] = []
         if isinstance(query, KeywordQuery) and query.expansions:
             # Each expansion is analysed on its own: they mix languages, and the
             # stop words of one would be detected and dropped from the others.
+            # A word the question already has is not an expansion.
             own = set(query_terms)
-            expansion_terms = [
-                t for t in dict.fromkeys(t for e in query.expansions for t in analyze_query(e)) if t not in own
-            ]
+            extra = [forms for e in query.expansions for forms in query_words(e) if own.isdisjoint(forms)]
+            extra = list({tuple(forms): forms for forms in extra}.values())
+            expansion_terms = list(dict.fromkeys(t for forms in extra for t in forms))
             logger.info(f"BM25 expansion terms for {query[:80]!r}: {' '.join(expansion_terms)}")
-            if expansion_terms:
-                score_array = score_array + EXPANSION_WEIGHT * self._bm25.get_scores(expansion_terms)
+            if extra:
+                score_array = score_array + EXPANSION_WEIGHT * self._score(extra)
         scores: list[float] = score_array.tolist()
         ranked_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
         if filters:
@@ -123,6 +139,15 @@ class BM25Retriever(Retriever[ChunkMatch]):
             )
             for rank, i in enumerate(top_indices, start=1)
         ]
+
+    def _score(self, words: list[list[str]]) -> np.ndarray:
+        """BM25 scores of the corpus: each word adds the score of its best-matching form."""
+        assert self._bm25 is not None
+        by_term = {t: self._bm25.get_scores([t]) for t in dict.fromkeys(t for forms in words for t in forms)}
+        total = np.zeros(len(self.corpus))
+        for forms in words:
+            total += np.max([by_term[t] for t in forms], axis=0)
+        return total
 
     def _notify(
         self,

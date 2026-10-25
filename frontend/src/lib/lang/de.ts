@@ -376,6 +376,8 @@ export const app = {
         fieldTopKHint: "Anzahl zurückgegebener Chunks pro Anfrage",
         fieldBm25: "BM25 (lexikalisch)",
         fieldBm25Hint: "Schlüsselwortsuche ergänzt semantische Vektorsuche via RRF",
+        fieldBm25B: "Längennormalisierung (b)",
+        fieldBm25BHint: "Wie stark BM25 einen Treffer in einem langen Chunk abwertet · 0 = Länge ignoriert, 1 = voll nach Länge skaliert · üblich 0.75, Standard 0.6, damit eine Erwähnung in einem langen Chunk noch zählt",
         fieldRrfK: "RRF k",
         fieldRrfKHint: "Dämpfungskonstante für Reciprocal Rank Fusion (Standard: 60)",
         fieldQueryExp: "Query Expansion",

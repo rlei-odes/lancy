@@ -5,6 +5,11 @@ Chunks and questions go through matching analysis, so "keys" matches "key" and "
 A chunk is stemmed in its own language, detected from the stop words it contains. A question word is expanded
 to its stem in every supported language plus the word itself, because the corpus mixes languages: a German chunk
 may use an English term, which the German stemmer reduces differently from the English one.
+
+The expansion alone does not cover an inflected English term inside other-language text: the German stemmer
+leaves "keys" as "keys", while the question's "key" stems to "key" in every language. So a chunk that is not
+English also indexes each word's English stem — English is the language of loanwords in these corpora. The
+extra terms are not counted in the chunk's length, which BM25 normalises by.
 """
 
 import re
@@ -90,37 +95,64 @@ def analyze_document(text: str) -> list[str]:
     return [_stem(language, w) for w in words if w not in stop]
 
 
-def analyze_query(text: str) -> list[str]:
-    """Search terms for a question: its language's stop words dropped, each word expanded to its stems.
+def index_document(text: str) -> tuple[list[str], int]:
+    """Index terms for a chunk, and its length for BM25.
 
-    Each remaining word contributes itself and its stem in every supported language, so it matches a
-    chunk stemmed in any of them. A question made only of stop words keeps its words.
+    The terms are 'analyze_document''s, plus each word's English stem where the chunk is
+    in another language and the stem differs. The length counts the words, not the extra
+    stems, so indexing them does not make a chunk look longer than it is.
+    """
+    words = tokenize(text)
+    language = detect_language(words)
+    if language is None:
+        return words, len(words)
+    stop = STOP_WORDS[language]
+    content = [w for w in words if w not in stop]
+    terms = [_stem(language, w) for w in content]
+    if language != "english":
+        extra = [e for w, t in zip(content, terms) if (e := _stem("english", w)) != t]
+        return terms + extra, len(terms)
+    return terms, len(terms)
+
+
+def query_words(text: str) -> list[list[str]]:
+    """Search terms for a question, grouped by word: each word with its stems in every supported language.
+
+    The question's stop words are dropped, in its own language only. A question made only of
+    stop words keeps its words. Keyword search scores a word once, by its best-matching form.
     """
     words = tokenize(text)
     language = detect_language(words)
     if language is not None:
         content = [w for w in words if w not in STOP_WORDS[language]]
         words = content or words
-    terms: list[str] = []
-    for word in words:
-        terms.extend(dict.fromkeys([word, *(_stem(lang, word) for lang in LANGUAGES)]))
-    return terms
+    return [list(dict.fromkeys([word, *(_stem(lang, word) for lang in LANGUAGES)])) for word in words]
+
+
+def analyze_query(text: str) -> list[str]:
+    """Search terms for a question, as one list: every word's forms from 'query_words'."""
+    return [term for forms in query_words(text) for term in forms]
 
 
 def term_spans(text: str, query_terms: Iterable[str]) -> list[tuple[int, int]]:
     """Character spans of the words in 'text' that keyword search matches against 'query_terms'.
 
-    A word matches when its index term — the word stemmed in the text's language, as
-    'analyze_document' produces it — is one of the search terms. Stop words never match.
+    A word matches when one of its index terms, as 'index_document' produces them — the
+    word stemmed in the text's language, or its English stem in other-language text — is
+    one of the search terms. Stop words never match.
     """
     terms = set(query_terms)
     matches = list(_WORD.finditer(text))
     words = [m.group().lower() for m in matches]
     language = detect_language(words)
     stop = STOP_WORDS[language] if language else frozenset()
-    return [
-        m.span() for m, w in zip(matches, words) if w not in stop and (_stem(language, w) if language else w) in terms
-    ]
+
+    def _matches(w: str) -> bool:
+        if language is None:
+            return w in terms
+        return _stem(language, w) in terms or (language != "english" and _stem("english", w) in terms)
+
+    return [m.span() for m, w in zip(matches, words) if w not in stop and _matches(w)]
 
 
 def matched_words(text: str, query_terms: Iterable[str]) -> list[str]:

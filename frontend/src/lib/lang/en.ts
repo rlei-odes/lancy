@@ -381,6 +381,8 @@ export const app = {
         fieldTopKHint: "Number of chunks returned per query",
         fieldBm25: "BM25 (lexical)",
         fieldBm25Hint: "Keyword search complements semantic vector search via RRF",
+        fieldBm25B: "Length normalisation (b)",
+        fieldBm25BHint: "How much BM25 discounts a match in a long chunk · 0 = length ignored, 1 = fully scaled by length · standard 0.75, default 0.6 so one mention in a long chunk still counts",
         fieldRrfK: "RRF k",
         fieldRrfKHint: "Damping constant for Reciprocal Rank Fusion (default: 60)",
         fieldQueryExp: "Query Expansion",
