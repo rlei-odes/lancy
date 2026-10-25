@@ -17,6 +17,7 @@ from conversational_toolkit.utils.retriever import (
     reciprocal_rank_fusion,
     hyde_expansion,
 )
+from conversational_toolkit.utils.text import compact_markdown_tables
 from conversational_toolkit.vectorstores.base import ChunkRecord, VectorStore
 
 import logging
@@ -158,7 +159,7 @@ class RAG(Agent):
                 context_message.content.append(
                     MessageContent(
                         type="text",
-                        text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}">{source.content}</source>',
+                        text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}">{compact_markdown_tables(source.content)}</source>',
                     )
                 )
             elif "image" in source.mime_type:
@@ -256,7 +257,7 @@ class RAG(Agent):
                 context_message.content.append(
                     MessageContent(
                         type="text",
-                        text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}">{source.content}</source>',
+                        text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}">{compact_markdown_tables(source.content)}</source>',
                     )
                 )
             elif "image" in source.mime_type:

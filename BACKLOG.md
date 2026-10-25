@@ -165,6 +165,13 @@ Three separate defects show up in that one chunk, all in docling's table seriali
 - Can the section heading be recovered from the first cell of a full-width row and promoted to a real markdown heading, fixing the title attribution?
 - Is the cell truncation a page-boundary artefact we can detect and report during ingestion, instead of losing content silently?
 
+**4. Table padding fills chunks.** docling pads cells with spaces and draws separator rows as wide as the columns. A glossary table chunk from the CASDEAI course was 66 % padding — 8,010 characters, 2,744 of text — and in `wb_local` 24 % of all chunks exceed 2,000 characters. Since `compact_markdown_tables` the reranker, the answer LLM, batch analysis and the context budget all see compacted text. Still padded:
+- **The embedding.** Padding tokens dilute the chunk's vector; that glossary chunk scored 0.41 against a question it answers, below noise matches at 0.44.
+- **Chunk splitting.** `_split_chunk_by_tokens` estimates tokens from characters, so padding uses up `max_chunk_tokens`: a table chunk at the cap holds a third of the text it could.
+- **Stored content and the document panel**, which shows the padding.
+
+**Fix:** compact tables during ingestion, before splitting. Needs a reindex, and changes chunk boundaries for every table-heavy document — measure it as the practice note below describes before adopting it.
+
 **Practice note:** docling moves fast and its table handling is actively changing — the 2.112 → 2.132 bump altered chunking for 20 of 20 sampled documents. Take its releases in small steps rather than letting twenty minor versions accumulate, and measure each one against a fixed sample of documents before adopting it: chunk the sample before and after, and compare per-file chunk counts, character totals and per-chunk content hashes. Equal counts are not enough — boundaries move while the count stays the same. A throwaway script for exactly this is in the history at `12d3f30`.
 
 ---
@@ -221,6 +228,32 @@ The **Expand context** action (v0.3.8) currently only lets the user pick from do
 - Whether to filter first: rank the selected documents' chunks against the question and send only the best ones that fit, as a cheaper single-pass alternative.
 
 **Reuse:** `RAG._answer_stream_expand_context` already fetches all chunks of the picked files; the token estimate lives in `useContextBudget` (`frontend/src/components/next/use-context-budget.ts`).
+
+---
+
+### Max Search Reach — Every Keyword Hit Gets Read
+
+A search mode for questions where missing a document is worse than waiting. The default search returns the best few chunks; a relevant passage that ranks poorly is never seen, however clearly it answers the question. Example: "What is a surrogate key?" — the CASDEAI course defines it in a glossary table, in German, 80 % into an 8,000-character chunk. It never reached the answer.
+
+**How keyword terms come about today:** they don't, as a separate step. `BM25Retriever._tokenize` lowercases each query variant (the question, any expanded queries, the HyDE document) and splits it into words — every word, including "what", "is", "a", with no stop words, stemming or translation. "surrogate" finds "surrogate", never "Surrogatschlüssel" or "Ersatzschlüssel".
+
+**The mode:**
+1. **Term extraction.** An LLM step turns the question into the terms that must be looked for: the key concepts, their synonyms, and their translations into the corpus languages (see "Corpus Language Setting per KB").
+2. **Exhaustive match.** Every chunk containing one of the terms is a must-read — no top-k cut. The BM25 index already scores the whole corpus; this keeps everything with a non-zero score for a term instead of the top few.
+3. **Read in passes.** If the must-read chunks fit the context, answer from them directly. If not, read them in batches that fit and extract what each batch says about the question (map), then answer from those extracts (reduce), keeping chunk citations through both steps.
+4. **Report the reach.** Tell the user how many chunks matched, how many were read, and how many passes it took — the document panel can show every chunk that was read.
+
+**Shares machinery with** "Expand Context — Multi-Pass for Documents Larger Than the Context": the batching, the map and reduce prompts, citation carry-over and progress reporting are the same problem.
+
+**Open questions:** a cap on matched chunks before asking the user to narrow the question; whether semantic search adds candidates beyond the keyword matches; how to show cost and progress for a run of many LLM calls.
+
+---
+
+### Reranker — Show the Passage Around the Query Terms When Cut
+
+The reranker sends each candidate in full, table padding compacted. Only when the whole pool exceeds its prompt budget (half of `num_ctx`) is every candidate cut, to the same share from the start. A passage deep in a long chunk is then lost again.
+
+**Improvement:** when a candidate must be cut, send the window around the query terms' occurrences instead of the beginning — the chunk's title plus the best-matching span, falling back to the start when no term occurs. Mostly matters for small `num_ctx` settings and large candidate pools.
 
 ---
 

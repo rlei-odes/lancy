@@ -18,6 +18,7 @@ from loguru import logger
 from conversational_toolkit.llms.base import LLM, LLMMessage, MessageContent, Roles
 from conversational_toolkit.retriever.base import Retriever
 from conversational_toolkit.utils.retriever import reciprocal_rank_fusion
+from conversational_toolkit.utils.text import compact_markdown_tables
 from conversational_toolkit.vectorstores.base import ChunkMatch, ChunkRecord
 
 
@@ -70,17 +71,19 @@ class RerankingRetriever(Retriever[ChunkMatch]):
     """
     Two-stage retriever that uses an LLM to rerank a candidate pool.
 
-    The base retriever should be configured with a 'top_k' equal to the desired candidate pool size (typically 3-4x the final 'top_k'). The LLM receives the query and truncated chunk contents and returns a ranked list of indices as JSON. The score assigned to each result is a linear decay from 1.0 (rank 1) to 0.0 (last rank).
+    The base retriever should be configured with a 'top_k' equal to the desired candidate pool size (typically 3-4x the final 'top_k'). The LLM receives the query and each candidate's whole content, table padding compacted, and returns a ranked list of indices as JSON. The score assigned to each result is a linear decay from 1.0 (rank 1) to 0.0 (last rank).
 
     Attributes:
         retriever: The base retriever that supplies the candidate pool.
         llm: The language model used for reranking. A fast, cheap model is recommended since the reranking prompt is simple.
+        max_prompt_chars: Budget for the candidates' text in the ranking prompt. Only when the pool exceeds it is each candidate cut, all to the same share. None means no limit.
     """
 
-    def __init__(self, retriever: Retriever[Any], llm: LLM, top_k: int) -> None:
+    def __init__(self, retriever: Retriever[Any], llm: LLM, top_k: int, max_prompt_chars: int | None = None) -> None:
         super().__init__(top_k)
         self.retriever = retriever
         self.llm = llm
+        self.max_prompt_chars = max_prompt_chars
         self.phase_callback: Any = None
         self.last_rerank_stats: dict | None = None
         self._last_rerank_fallback: bool = False
@@ -160,8 +163,15 @@ class RerankingRetriever(Retriever[ChunkMatch]):
 
         Returns the original order as a fallback if the LLM call fails or produces invalid JSON.
         """
+        # Whole candidates: a passage deep in a long chunk is still a reason to rank it.
+        # The budget only bites when the pool as a whole is too large, and then cuts
+        # every candidate to the same share rather than starving the later ones.
+        texts = [compact_markdown_tables(chunk.content) for chunk in candidates]
+        if self.max_prompt_chars is not None and sum(len(t) for t in texts) > self.max_prompt_chars:
+            share = self.max_prompt_chars // len(texts)
+            texts = [t[:share] for t in texts]
         numbered = "\n\n".join(
-            f"[{i}] {chunk.title or '(no title)'}\n{chunk.content[:400]}" for i, chunk in enumerate(candidates)
+            f"[{i}] {chunk.title or '(no title)'}\n{text}" for i, (chunk, text) in enumerate(zip(candidates, texts))
         )
         prompt = dedent(f"""
             Query: {query}

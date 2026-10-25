@@ -22,6 +22,7 @@ from typing import Annotated, Any, Callable, Literal
 _SERVER_STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 from conversational_toolkit.llms.base import LLMMessage, MessageContent, Roles
+from conversational_toolkit.utils.text import compact_markdown_tables
 
 from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
@@ -609,7 +610,8 @@ def create_rag_router(
         for c in chunks:
             sf = c.metadata.get(req.id_field, "")
             cur = by_file.get(sf, (0, 0))
-            by_file[sf] = (cur[0] + 1, cur[1] + len(c.content or ""))
+            # Counted as the LLM receives it: table padding is compacted before sending.
+            by_file[sf] = (cur[0] + 1, cur[1] + len(compact_markdown_tables(c.content or "")))
         return DocumentStatsResponse(
             stats=[
                 DocumentStat(
@@ -722,7 +724,8 @@ def create_rag_router(
             log.warning(f"analyze-document chunk fetch failed ({filter_field}={filter_value!r}): {exc}")
             raise HTTPException(status_code=500, detail=f"Chunk fetch failed: {exc}")
 
-        char_count = sum(len(c.content or "") for c in chunks)
+        # Measured and sent as the model reads it: table padding compacted.
+        char_count = sum(len(compact_markdown_tables(c.content or "")) for c in chunks)
         if not chunks:
             return AnalyzeDocumentResponse(
                 document_id=req.document_id,
@@ -759,7 +762,7 @@ def create_rag_router(
         for c in chunks:
             if "text" not in (c.mime_type or ""):
                 continue  # skip image chunks — this endpoint is for text analysis
-            parts.append(f'<chunk id="{c.id}">{c.content}</chunk>')
+            parts.append(f'<chunk id="{c.id}">{compact_markdown_tables(c.content)}</chunk>')
         parts.append("</document>")
         user_content = "\n".join(parts)
 
