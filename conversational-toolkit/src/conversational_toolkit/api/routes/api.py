@@ -25,17 +25,27 @@ def create_api_router(
     def _get_extra_meta() -> dict:
         return conversation_metadata_provider() if conversation_metadata_provider else {}
 
+    async def _owned_conversation(conversation_id: str, user_id: str) -> Conversation:
+        """The conversation, if it belongs to the caller.
+
+        Every route under a conversation id goes through here: the id alone is no
+        permission. Another user's conversation answers 404 like a missing one, so
+        the response does not reveal which ids exist.
+        """
+        try:
+            conversation = await controller.conversation_db.get_conversation_by_id(conversation_id)
+        except ValueError:
+            conversation = None
+        if conversation is None or conversation.user_id != user_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+        return conversation
+
     @api_router.post("/messages")
     async def post_user_message(
         user_input: MessageInput, user_id: str = Depends(auth_provider.get_current_user_id)
     ) -> ClientMessage:
-        conversation_id = user_input.conversation_id
-        if conversation_id:
-            conversation = await controller.conversation_db.get_conversation_by_id(conversation_id)
-            if conversation.user_id != user_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="User doesn't have access to this conversation"
-                )
+        if user_input.conversation_id:
+            await _owned_conversation(user_input.conversation_id, user_id)
         return await controller.process_new_message(
             user_id=user_id, user_input=user_input, extra_meta=_get_extra_meta()
         )
@@ -44,13 +54,8 @@ def create_api_router(
     async def post_user_message_stream(
         user_input: MessageInput, user_id: str = Depends(auth_provider.get_current_user_id)
     ) -> StreamingResponse:
-        conversation_id = user_input.conversation_id
-        if conversation_id:
-            conversation = await controller.conversation_db.get_conversation_by_id(conversation_id)
-            if conversation.user_id != user_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="User doesn't have access to this conversation"
-                )
+        if user_input.conversation_id:
+            await _owned_conversation(user_input.conversation_id, user_id)
         return StreamingResponse(
             controller.process_new_message_stream(user_id=user_id, user_input=user_input, extra_meta=_get_extra_meta()),  # type: ignore
             media_type="json/event-stream",
@@ -66,6 +71,7 @@ def create_api_router(
     async def get_conversation(
         conversation_id: str, user_id: str = Depends(auth_provider.get_current_user_id)
     ) -> ClientConversation:
+        await _owned_conversation(conversation_id, user_id)
         return await controller.get_conversation_by_id(conversation_id)
 
     @api_router.put("/conversations/{conversation_id}")
@@ -74,6 +80,7 @@ def create_api_router(
         conversation_updates: ConversationInput,
         user_id: str = Depends(auth_provider.get_current_user_id),
     ) -> Conversation:
+        await _owned_conversation(conversation_id, user_id)
         return await controller.update_conversation(conversation_id, conversation_updates)
 
     @api_router.delete("/conversations")
@@ -91,20 +98,31 @@ def create_api_router(
     async def delete_conversation(
         conversation_id: str, user_id: str = Depends(auth_provider.get_current_user_id)
     ) -> bool:
+        await _owned_conversation(conversation_id, user_id)
         return await controller.delete_conversation(conversation_id)
 
     @api_router.get("/conversations/{conversation_id}/messages")
     async def get_messages(
         conversation_id: str, user_id: str = Depends(auth_provider.get_current_user_id)
     ) -> list[ClientMessage]:
+        await _owned_conversation(conversation_id, user_id)
         return await controller.get_messages_by_conversation_id(conversation_id)
 
     @api_router.post("/conversations/{conversation_id}/messages/{message_id}/reactions")
     async def post_reaction(
         reaction_input: ReactionInput,
+        conversation_id: str,
         message_id: str,
         user_id: str = Depends(auth_provider.get_current_user_id),
     ) -> Reaction:
+        await _owned_conversation(conversation_id, user_id)
+        # The message must be in that conversation, or any message id could be reacted to.
+        try:
+            message = await controller.message_db.get_message_by_id(message_id)
+        except ValueError:
+            message = None
+        if message is None or message.conversation_id != conversation_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
         return await controller.add_reaction(reaction_input=reaction_input, message_id=message_id, user_id=user_id)
 
     return api_router

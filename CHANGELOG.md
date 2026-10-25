@@ -42,6 +42,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - The documents panel steps through a conversation's answers with ‹ › arrows, skipping answers that used no documents. The chat scrolls to the answer stepped to and tints it briefly.
 
+### Fixed — Security
+
+- Conversations were readable and changeable by anyone who knew their id: reading, renaming and deleting a conversation, listing its messages and sources, and reacting to its answers never checked that the conversation belonged to the caller. Each of these routes now does, and answers another user's conversation with 404, the same as a missing one, so ids cannot be probed. A reaction must also name a message of that conversation.
+
 ### Fixed — Chat
 
 - A question disappeared from the chat once the next one was sent, until the conversation was reopened. It was shown under a local id, and the thread is rebuilt from the server ids the answers point to.
