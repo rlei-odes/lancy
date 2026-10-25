@@ -19,7 +19,7 @@ interface ChatFiltersConfig {
     keys: ChatFilterKey[];
 }
 
-interface ActiveKbFilters {
+export interface ActiveKbFilters {
     id: string;
     chat_filters: ChatFiltersConfig;
 }
@@ -27,10 +27,13 @@ interface ActiveKbFilters {
 // ─── KB config loader ─────────────────────────────────────────────────────────
 
 /**
- * Reads the active KB and its admin-configured `chat_filters` block.
- * Refetches whenever the KB switches (via the `lancy-kb-changed` window event).
+ * Reads the KB this session uses and its admin-configured `chat_filters` block.
+ * That is the session's selection, not the registry's global active KB: new
+ * conversations are sent with the selected kb_id, so the filter fields must
+ * come from the same KB. Refetches whenever the KB switches (via the
+ * `lancy-kb-changed` window event).
  */
-function useActiveKbFilters(): ActiveKbFilters | null {
+export function useActiveKbFilters(): ActiveKbFilters | null {
     const [state, setState] = useState<ActiveKbFilters | null>(null);
     useEffect(() => {
         let cancelled = false;
@@ -39,7 +42,8 @@ function useActiveKbFilters(): ActiveKbFilters | null {
                 .then((r) => (r.ok ? r.json() : null))
                 .then((reg) => {
                     if (cancelled || !reg?.bases || !reg?.active) return;
-                    const kb = reg.bases[reg.active];
+                    const selectedId = sessionStorage.getItem("lancy_selected_kb_id");
+                    const kb = (selectedId && reg.bases[selectedId]) || reg.bases[reg.active];
                     if (!kb) return;
                     setState({
                         id: kb.id,
@@ -151,7 +155,7 @@ interface FacetState {
     error?: string;
 }
 
-const FilterPopover: FunctionComponent<FilterPopoverProps> = ({ kb, initial, onApply, onCancel }) => {
+export const FilterPopover: FunctionComponent<FilterPopoverProps> = ({ kb, initial, onApply, onCancel }) => {
     const { t } = useTranslation("app");
     const [selection, setSelection] = useState<Record<string, string>>(initial);
     const [facets, setFacets] = useState<Record<string, FacetState>>({});
@@ -313,8 +317,8 @@ const ChatOnlyAction: FunctionComponent<ChatOnlyActionProps> = ({ on, onToggle }
 
 // ─── Expand-context action ────────────────────────────────────────────────────
 
-const CHARS_PER_TOKEN = 3.5;        // conservative for German-heavy text
-const BUDGET_FRACTION = 0.6;         // 60% of num_ctx — leaves room for prompt/output
+export const CHARS_PER_TOKEN = 3.5;        // conservative for German-heavy text
+export const BUDGET_FRACTION = 0.6;         // 60% of num_ctx — leaves room for prompt/output
 
 interface DocStat { source_file: string; chunk_count: number; char_count: number; }
 

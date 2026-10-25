@@ -33,24 +33,30 @@ export const resources = {
 
 export namespace Translation {
     export const init = () => {
-        i18n.use(LanguageDetector)
-            .use(initReactI18next)
-            .init({
-                detection: {
-                    order: ["localStorage", "navigator"],
-                    caches: ["localStorage"],
-                },
-                defaultNS,
-                resources,
-                ns: ["app"],
-                fallbackLng: "en",
-                returnEmptyString: false,
-                interpolation: {
-                    escapeValue: false,
-                },
-                returnNull: false,
-            });
+        const instance = i18n.use(LanguageDetector).use(initReactI18next);
+        instance.init({
+            detection: {
+                order: ["localStorage", "navigator"],
+                caches: ["localStorage"],
+            },
+            defaultNS,
+            resources,
+            ns: ["app"],
+            fallbackLng: "en",
+            returnEmptyString: false,
+            interpolation: {
+                escapeValue: false,
+            },
+            returnNull: false,
+        });
+        // `{{count, number}}` in a string formats with the interface's locale, Swiss for German.
+        instance.services.formatter?.add("number", (value, lng, options) =>
+            new Intl.NumberFormat(intlLocale(lng ?? "en"), options).format(value),
+        );
     };
 }
+
+/** The Intl locale for an interface language: German is written the Swiss way (12’345, 25.10.2026). */
+export const intlLocale = (lng: string): string => (lng.startsWith("de") ? "de-CH" : lng);
 
 export const translate = i18n.t;

@@ -24,6 +24,7 @@ const nextConfig = {
             { source: "/v1/:path*",    destination: `${backend}/v1/:path*` },
             { source: "/files/:path*", destination: `${backend}/files/:path*` },
             { source: "/c/:conversationId", destination: "/" },
+            { source: "/next/c/:conversationId", destination: "/next" },
         ];
     },
     env: {
