@@ -21,9 +21,6 @@ logger = logging.getLogger(__name__)
 # Weight of a 'KeywordQuery''s extra terms against the query's own words.
 EXPANSION_WEIGHT = 0.5
 
-# Hits reported to the search listener per query.
-LISTENER_HITS = 10
-
 
 class BM25Retriever(Retriever[ChunkMatch]):
     """
@@ -33,7 +30,7 @@ class BM25Retriever(Retriever[ChunkMatch]):
 
     Attributes:
         corpus: The indexed document chunks.
-        search_listener: Called after every search with its query, terms, detected language and top hits. For debugging tools; None means nobody listens.
+        search_listener: Called after every search with its query, terms, detected language and every hit it returns. For debugging tools; None means nobody listens.
     """
 
     def __init__(self, vector_store: VectorStore, top_k: int) -> None:
@@ -138,7 +135,9 @@ class BM25Retriever(Retriever[ChunkMatch]):
         assert self._bm25 is not None and self.search_listener is not None
         all_terms = list(dict.fromkeys([*query_terms, *expansion_terms]))
         hits = []
-        for i in top_indices[:LISTENER_HITS]:
+        # Every hit this search hands on, not a preview: the debug view has to show
+        # where a chunk ranked, and whether it was in the pool at all.
+        for i in top_indices:
             if scores[i] <= 0:
                 break
             doc_terms = self._bm25.doc_freqs[i]

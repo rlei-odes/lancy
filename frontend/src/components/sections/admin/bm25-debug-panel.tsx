@@ -147,7 +147,7 @@ export const Bm25DebugPanel: FunctionComponent = () => {
             <p className="text-xs text-muted-foreground">
                 When enabled, keeps the last 50 questions in memory with each keyword search made for them: the query
                 variant, the terms it was analysed into (stop words dropped, stems added), extra terms from keyword
-                extraction, the language detected and the top keyword hits with their matched terms. Never written to
+                extraction, the language detected and every keyword hit it passed on, with score and matched terms. Never written to
                 disk; resets to off and empties on backend restart or when disabled. Entries contain users&apos; questions.
             </p>
 

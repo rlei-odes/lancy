@@ -1040,7 +1040,7 @@ Captures raw LLM prompts and responses to a log file for debugging. Off by defau
 
 ### BM25 Debug Recording
 
-Keeps the last 50 questions in memory, each with the keyword searches made for it: query variant, analysed terms, extra terms from keyword extraction, detected language and top hits with matched terms. Off by default; in memory only, emptied when disabled or on restart.
+Keeps the last 50 questions in memory, each with the keyword searches made for it: query variant, analysed terms, extra terms from keyword extraction, detected language and every hit with score and matched terms. Off by default; in memory only, emptied when disabled or on restart.
 
 | Endpoint | Description |
 |---|---|

@@ -17,12 +17,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added — Keyword extraction
 
-- New retrieval setting: the utility LLM turns the question into search terms — key terms, synonyms, singular and plural forms, and translations into the other corpus languages. They feed keyword search only, at half the weight of the words the user typed, so "surrogate key" also finds "Ersatzschlüssel" without a synonym outranking the typed word. With it on, expanded queries go to semantic search only. One extra LLM call per question.
+- New retrieval setting: the utility LLM turns the question into search terms — key terms, synonyms, singular and plural forms, and translations into the other corpus languages. They feed keyword search only, at half the weight of the words the user typed, so "surrogate key" also finds "Ersatzschlüssel" without a synonym outranking the typed word. With it on, expanded queries go to semantic search only. One extra LLM call per question. The prompt asks for the same meaning in other words only — not the question's field ("database"), not neighbouring concepts ("foreign key" for "surrogate key") — since every extra term lifts the chunks that contain it.
 
 ### Added — Keyword search debugging
 
 - The Retrieval Probe lists the query's keyword search terms and highlights the words each chunk matched.
-- **Admin → BM25 Debug** records recent questions with each keyword search made for them: query variant, terms, extra terms, detected language and top hits with matched terms. Off by default, last 50 questions, in memory only.
+- **Admin → BM25 Debug** records recent questions with each keyword search made for them: query variant, terms, extra terms, detected language and every hit with score and matched terms. Off by default, last 50 questions, in memory only.
 
 ### Added — Ingestion progress
 

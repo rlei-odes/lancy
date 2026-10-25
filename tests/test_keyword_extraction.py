@@ -145,7 +145,7 @@ class UtilityLLM:
 
     async def generate(self, messages, **kwargs):
         prompt = messages[-1].content[0].text
-        reply = "Ersatzschlüssel" if "search terms" in prompt else "an expanded query"
+        reply = "Ersatzschlüssel" if "List the words" in prompt else "an expanded query"
         return LLMMessage(role=Roles.ASSISTANT, content=[MessageContent(type="text", text=reply)])
 
     async def generate_stream(self, messages, **kwargs):

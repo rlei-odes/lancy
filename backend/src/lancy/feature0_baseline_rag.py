@@ -1015,7 +1015,10 @@ async def build_vector_store(
         if on_embed_progress:
             on_embed_progress(batch_idx, total_batches)
 
-    logger.info(f"Done! Vector store written to {db_path}")
+    # `db_path` only locates a ChromaDB store; a passed-in pgvector store ignores it.
+    store = type(vector_store).__name__
+    where = f" at {db_path}" if "Chroma" in store else ""
+    logger.info(f"Done! {len(chunks_to_embed)} chunks written to {store}{where}")
     return vector_store
 
 

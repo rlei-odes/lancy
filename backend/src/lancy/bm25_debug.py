@@ -3,7 +3,7 @@ BM25 debug recorder — keeps the recent keyword searches for the admin BM25 Deb
 
 One entry per question: each query variant keyword search ran (the question,
 expanded queries), the terms it was analysed into, the language detected for
-it, and its top hits with their scores and matched terms.
+it, and every hit it passed on with its score and matched terms.
 
 In memory only and off by default, like LLM debug: the entries hold users'
 questions, so nothing is kept unless an admin turns recording on, and a

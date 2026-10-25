@@ -198,12 +198,21 @@ async def keyword_extraction(query: str, llm: LLM, languages: Sequence[str] = ()
         if targets
         else ""
     )
+    # Every term returned adds score to the chunks containing it. A term for the field
+    # around the question ("database", "definition") or a neighbouring concept ("foreign
+    # key" for "surrogate key") lifts chunks that are not about the question at all, so
+    # the prompt asks for the same meaning in other words and nothing wider.
     prompt = (
-        f"List search terms for finding documents that answer: {query}\n\n"
+        f"Question: {query}\n\n"
+        "List the words a document answering this question would use for what it asks about.\n\n"
         "Include:\n"
-        "- the key terms of the question, without filler words;\n"
-        "- close synonyms of each key term, and its singular or plural form;\n"
+        "- the key terms of the question — the concepts it asks about;\n"
+        "- words that mean the same as a key term, and its singular or plural form;\n"
         f"{translations}\n"
+        "Leave out:\n"
+        "- broader topics and the field the question belongs to;\n"
+        "- related, neighbouring or contrasting concepts — they are other things, not other words;\n"
+        '- filler such as question words, "definition", "vs".\n\n'
         "Rules:\n"
         "- One term per line, each a single word or a short phrase.\n"
         "- No numbering, labels, quotes or explanation.\n"
