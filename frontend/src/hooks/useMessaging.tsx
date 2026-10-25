@@ -226,6 +226,7 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
             create_timestamp: new Date().getTime(),
             conversation_id: activeConversationId ? activeConversationId : "",
             parent_id: parentId,
+            ...(expandContextFiles.length > 0 ? { expand_context: expandContextFiles } : {}),
         };
         const kbId = !activeConversationId ? (sessionStorage.getItem("lancy_selected_kb_id") ?? undefined) : undefined;
         const kbName = !activeConversationId ? (sessionStorage.getItem("lancy_selected_kb_name") ?? undefined) : undefined;

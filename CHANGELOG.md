@@ -40,6 +40,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Documents longer than the model's context can be read in full: "Ask using only these" no longer blocks them. They are read in passes — consecutive parts that each fit — with a partial answer per part, citing its passages, and the partial answers are combined into the answer. The chip and the selection bar show the number of passes, sending asks for confirmation, and the answer placeholder shows "Reading part 4 of 13". A 118k-token document took 4 passes and about 100 s with every citation pointing at a real passage. The map, merge and reduce prompts are files in `prompts/`.
 
+- Every answer keeps its "2 documents · 1 cited" summary, not only the latest; hovering it lists the documents and which were cited. A question asked about picked documents shows a document icon, whose hover card names them — also after reopening the conversation.
 - The documents panel steps through a conversation's answers with ‹ › arrows, skipping answers that used no documents. The chat scrolls to the answer stepped to and tints it briefly.
 
 ### Fixed — Security

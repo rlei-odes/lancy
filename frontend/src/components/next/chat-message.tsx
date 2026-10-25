@@ -1,6 +1,6 @@
 import React, { FunctionComponent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Copy, Check, FileText, Pencil, RefreshCcw, ThumbsDown, ThumbsUp } from "lucide-react";
+import { BookOpen, Copy, Check, FileText, Pencil, RefreshCcw, ThumbsDown, ThumbsUp } from "lucide-react";
 import { cn } from "@/lib/lorem";
 import { ERROR_ID, LOADING_ID, useMessaging } from "@/hooks/useMessaging";
 import { useBranding } from "@/hooks/useBranding";
@@ -12,6 +12,33 @@ import { ThreadNavigation } from "@/components/ui/thread-navigation";
 import { documentsForAnswer } from "@/lib/retrieved";
 import { useDocumentPanel } from "@/components/next/document-panel-context";
 import { documentSummary } from "@/components/next/document-panel";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+
+/** A hover card naming documents, marking those the answer cited. */
+const DocumentList: FunctionComponent<{ heading: string; files: { file: string; cited?: boolean }[]; children: React.ReactElement }> = ({
+    heading,
+    files,
+    children,
+}) => {
+    const { t } = useTranslation("app");
+    return (
+        <HoverCard openDelay={200} closeDelay={100}>
+            <HoverCardTrigger asChild>{children}</HoverCardTrigger>
+            <HoverCardContent align="start" className="w-80 p-3">
+                <div className="mb-1.5 text-xs font-medium text-muted-foreground">{heading}</div>
+                <ul className="flex flex-col gap-1">
+                    {files.map(({ file, cited }) => (
+                        <li key={file} className="flex items-center gap-2 text-[13px]">
+                            <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            <span className="flex-1 truncate" title={file}>{file}</span>
+                            {cited && <span className="shrink-0 text-[11px] font-medium text-primary">{t("next.cited")}</span>}
+                        </li>
+                    ))}
+                </ul>
+            </HoverCardContent>
+        </HoverCard>
+    );
+};
 
 const iconButton = "flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground";
 
@@ -141,9 +168,24 @@ const UserMessage: FunctionComponent<{ message: Message }> = ({ message }) => {
         );
     }
 
+    const onlyThese = message.expand_context ?? [];
+
     return (
         <div className="group flex flex-col items-end gap-1">
-            <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl bg-muted px-4 py-2.5 [overflow-wrap:anywhere]">{message.content}</div>
+            <div className="flex max-w-[80%] items-start gap-2">
+                {onlyThese.length > 0 && (
+                    <DocumentList heading={t("next.onlyTheseDocuments", { count: onlyThese.length })} files={onlyThese.map((file) => ({ file }))}>
+                        <span
+                            tabIndex={0}
+                            aria-label={t("next.onlyTheseDocuments", { count: onlyThese.length })}
+                            className="mt-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                            <BookOpen className="h-4 w-4" />
+                        </span>
+                    </DocumentList>
+                )}
+                <div className="min-w-0 whitespace-pre-wrap rounded-2xl bg-muted px-4 py-2.5 [overflow-wrap:anywhere]">{message.content}</div>
+            </div>
             <div className="flex items-center gap-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                 <ThreadNavigation messageId={message.id} />
                 <button type="button" aria-label={t("next.edit")} onClick={() => setEditing(true)} className={iconButton}>
@@ -202,35 +244,43 @@ const AssistantMessage: FunctionComponent<{ message: Message; isLast: boolean; k
                 )}
 
                 {isSaved && (
-                    <div className={cn("flex flex-wrap items-center gap-1 transition-opacity", !isLast && "opacity-0 group-hover:opacity-100 focus-within:opacity-100")}>
+                    <div className="flex flex-wrap items-center gap-1">
+                        {/* Stays on every answer: in a long conversation it says which turn used which documents. */}
                         {documents.length > 0 && (
-                            <button
-                                type="button"
-                                onClick={() => showDocuments(message.id)}
-                                className={cn(
-                                    "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium",
-                                    panelShowsThis ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                                )}
+                            <DocumentList
+                                heading={t("next.documentsOfAnswer")}
+                                files={documents.map((d) => ({ file: d.file, cited: d.citedCount > 0 }))}
                             >
-                                <FileText className="h-4 w-4" />
-                                {documentSummary(t, documents)}
-                            </button>
+                                <button
+                                    type="button"
+                                    onClick={() => showDocuments(message.id)}
+                                    className={cn(
+                                        "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium",
+                                        panelShowsThis ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                                    )}
+                                >
+                                    <FileText className="h-4 w-4" />
+                                    {documentSummary(t, documents)}
+                                </button>
+                            </DocumentList>
                         )}
-                        <ThreadNavigation messageId={message.id} />
-                        <CopyButton text={message.content} />
-                        <Reactions messageId={message.id} reaction={message.reaction} />
-                        {message.parent_id && (
-                            <button
-                                type="button"
-                                aria-label={t("next.regenerate")}
-                                title={t("next.regenerate")}
-                                disabled={sending}
-                                onClick={() => sendMessage(message.parent_id!, MessageTypes.REDO, message.parent_id)}
-                                className={iconButton}
-                            >
-                                <RefreshCcw className="h-4 w-4" />
-                            </button>
-                        )}
+                        <div className={cn("flex flex-wrap items-center gap-1 transition-opacity", !isLast && "opacity-0 group-hover:opacity-100 focus-within:opacity-100")}>
+                            <ThreadNavigation messageId={message.id} />
+                            <CopyButton text={message.content} />
+                            <Reactions messageId={message.id} reaction={message.reaction} />
+                            {message.parent_id && (
+                                <button
+                                    type="button"
+                                    aria-label={t("next.regenerate")}
+                                    title={t("next.regenerate")}
+                                    disabled={sending}
+                                    onClick={() => sendMessage(message.parent_id!, MessageTypes.REDO, message.parent_id)}
+                                    className={iconButton}
+                                >
+                                    <RefreshCcw className="h-4 w-4" />
+                                </button>
+                            )}
+                        </div>
                     </div>
                 )}
 

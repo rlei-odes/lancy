@@ -27,6 +27,8 @@ export interface Message {
     kb_name?: string;
     emb_model?: string;
     retrieval_stats?: RetrievalStats;
+    /** A question answered from these documents in full instead of a search. */
+    expand_context?: string[];
 }
 
 export interface Source {

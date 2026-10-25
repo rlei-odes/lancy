@@ -148,6 +148,8 @@ class ClientMessage(Message):
     tokens_per_second: float | None = None
     llm_model: str | None = None
     retrieval_stats: dict | None = None
+    # A question answered from these documents in full instead of a search.
+    expand_context: list[str] | None = None
 
     def encode(self, charset: str = "utf-8") -> bytes:
         return json.dumps(self.model_dump()).encode(charset)
@@ -264,7 +266,8 @@ class ConversationalToolkitController:
                         content=user_input.content,
                         role=Roles.USER,
                         create_timestamp=get_current_timestamp(),
-                        metadata=None,
+                        # Kept so the question shows later that it was answered from these documents only.
+                        metadata=[{"expand_context": user_input.expand_context}] if user_input.expand_context else None,
                         parent_id=user_input.parent_id,
                     )
                 )
@@ -537,6 +540,7 @@ class ConversationalToolkitController:
                 retrieval_stats=next(
                     (m.get("retrieval_stats") for m in reversed(_meta) if m.get("retrieval_stats")), None
                 ),
+                expand_context=next((m.get("expand_context") for m in _meta if m.get("expand_context")), None),
             )
 
             api_messages.append(api_message)
