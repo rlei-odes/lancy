@@ -149,6 +149,7 @@ export const app = {
         dimLabelOutsideK: "ausserhalb\nk",
         emptyStateTitle: "Anfrage oben eingeben, um die Retrieval-Pipeline zu testen.",
         emptyStateSubtitle: "Ergebnisse zeigen gerankte Chunks mit methodenspezifischen Scores.",
+        methodToggleHint: "Nur für diese Probe ein- oder ausschalten — die gespeicherten Einstellungen bleiben unverändert",
         keywordTerms: "Suchbegriffe",
         keywordTermsHint: "Die Anfrage, wie die Stichwortsuche sie liest: Stoppwörter entfernt, jedes Wort mit seinen Stämmen. Gefundene Wörter sind in den Chunks hervorgehoben.",
         expand: "ausklappen",

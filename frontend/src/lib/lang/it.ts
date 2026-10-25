@@ -149,6 +149,7 @@ export const app = {
         dimLabelOutsideK: "fuori\nk",
         emptyStateTitle: "Inserisci una query qui sopra per sondare il pipeline di retrieval.",
         emptyStateSubtitle: "I risultati mostrano i chunk classificati con i punteggi per metodo.",
+        methodToggleHint: "Attivare o disattivare solo per questa probe — le impostazioni salvate restano invariate",
         keywordTerms: "Termini di ricerca",
         keywordTermsHint: "La query come la legge la ricerca per parole chiave: parole vuote rimosse, ogni parola con le sue radici. Le parole trovate sono evidenziate nei chunk.",
         expand: "espandi",

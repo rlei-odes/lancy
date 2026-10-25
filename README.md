@@ -53,7 +53,7 @@ Lancy combines two complementary retrieval methods and fuses their results:
 - **Semantic search** — dense vector retrieval via cosine similarity against chunk embeddings. Captures meaning, synonyms, paraphrases, and cross-lingual matches where the query language differs from the document language.
 - **RRF (Reciprocal Rank Fusion)** — merges the two ranked lists by position rather than raw score, avoiding the need to normalise incompatible score scales. Consistently outperforms either method alone on mixed corpora.
 
-BM25 can be toggled per session from the RAG Config panel or the Retrieval Probe. Disabling BM25 falls back to pure semantic retrieval.
+BM25 is switched on or off for everyone in the RAG settings; the Retrieval Probe can switch it off for a single probe. Disabling BM25 falls back to pure semantic retrieval.
 
 The RRF `k` constant (default 60) controls how steeply rank position is penalised. Each result's contribution is scored as `1 / (k + rank)`: a top-ranked result scores `1/61`, a result at rank 10 scores `1/70`, and so on. A higher `k` flattens the differences between ranks — making the fusion more democratic and less dominated by whichever method happened to rank something first. A lower `k` amplifies the advantage of top positions. The default of 60 is the value from the original RRF paper and works well in practice across a wide range of corpora.
 
@@ -68,11 +68,11 @@ Three optional pre-retrieval techniques address different failure modes. All are
 
 ### Retrieval Probe
 
-The Retrieval Probe lets you test queries against the full retrieval pipeline without invoking the LLM for the final answer. Enter a question, choose which methods to run (BM25, semantic, hybrid), and get back a ranked list of chunks with scores broken out per method — BM25 score, cosine similarity, and fused RRF score shown individually for each result. The query's keyword search terms are listed above the results, and the words each chunk matched are highlighted.
+The Retrieval Probe lets you test queries against the full retrieval pipeline without invoking the LLM for the final answer. Pick the knowledge base, enter a question, switch BM25 or reranking on or off for this probe — they start from the saved settings — and get back a ranked list of chunks with scores broken out per method — BM25 score, cosine similarity, and fused RRF score shown individually for each result. The query's keyword search terms are listed above the results, and the words each chunk matched are highlighted.
 
 The result list visualises the `top_k` cut-off: chunks inside `top_k` render normally; chunks beyond it are dimmed and labelled, so you can see exactly what the RAG would discard. When reranking is enabled, the pool of reranker candidates is shown the same way. This makes the effect of tuning `top_k`, toggling BM25, or enabling reranking immediately legible without running a full chat query.
 
-Accessible from the Retrieval Explorer page (`/explorer → Retrieval Probe tab`), alongside the RAG settings sidebar.
+Accessible from the Retrieval Explorer page (`/explorer → Retrieval Probe tab`).
 
 ### Chunk Browser
 

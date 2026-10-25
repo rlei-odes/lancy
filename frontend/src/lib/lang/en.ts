@@ -149,6 +149,7 @@ export const app = {
         dimLabelOutsideK: "outside\nk",
         emptyStateTitle: "Enter a query above to probe the retrieval pipeline.",
         emptyStateSubtitle: "Results show ranked chunks with per-method scores.",
+        methodToggleHint: "Switch on or off for this probe only — the saved settings stay unchanged",
         keywordTerms: "Keyword terms",
         keywordTermsHint: "The query as keyword search reads it: stop words dropped, each word with its stems. Matched words are highlighted in the chunks.",
         expand: "expand",

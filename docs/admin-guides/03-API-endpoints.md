@@ -710,6 +710,7 @@ Dry-run of the retrieval pipeline — returns ranked chunks with per-chunk score
 | `bm25_enabled` | bool | `true` | Include BM25 sparse retrieval |
 | `reranking_enabled` | bool | `false` | Apply LLM reranking after RRF fusion |
 | `filters` | object | `null` | Metadata filters, e.g. `{"source_file": "x.pdf"}` |
+| `kb_id` | string | `null` | A KB loaded in the pool; `null` = the pool's active KB. 404 if the KB is not loaded |
 
 **Response:**
 

@@ -6,7 +6,7 @@ import { corpusLanguageShares } from "@/lib/corpus-languages";
 import { useMessaging } from "@/hooks/useMessaging";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
-interface Kb {
+export interface Kb {
     id: string;
     name: string;
     embedding_backend: string;
@@ -24,7 +24,7 @@ function languageLabel(kb: Kb): string {
         .join(" · ");
 }
 
-interface Pool {
+export interface Pool {
     loaded: string[];
     active: string | null;
     emb_key?: { backend: string; model: string } | null;
@@ -38,7 +38,7 @@ const chip = "flex h-8 items-center gap-1.5 rounded-lg border border-border px-2
  * the shared agents for everyone. Loading a KB into the pool is an admin action
  * and stays on the admin side.
  */
-function adoptKb(kb: Kb, pool: Pool) {
+export function adoptKb(kb: Kb, pool: Pool) {
     sessionStorage.setItem("lancy_selected_kb_id", kb.id);
     sessionStorage.setItem("lancy_selected_kb_name", kb.name);
     window.dispatchEvent(new CustomEvent("lancy-kb-changed", { detail: { kbId: kb.id } }));

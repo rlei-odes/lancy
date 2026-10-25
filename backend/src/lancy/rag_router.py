@@ -150,6 +150,7 @@ class RetrieveRequest(BaseModel):
     bm25_enabled: bool = True
     reranking_enabled: bool = False
     filters: dict[str, str] | None = None
+    kb_id: str | None = None  # a KB loaded in the pool; None = the pool's active KB
 
 
 class ChunkScores(BaseModel):

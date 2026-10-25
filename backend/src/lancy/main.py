@@ -54,6 +54,7 @@ if _litellm_env.exists():
                 os.environ[_k.strip()] = _v.strip()
 
 import uvicorn
+from fastapi import HTTPException
 
 from lancy.logging_config import build_log_config, configure_loguru
 
@@ -999,7 +1000,13 @@ def build_server():
         top_k = cfg.retriever_top_k
         fetch_k = cfg.reranking_candidate_pool if req.reranking_enabled else top_k + math.ceil(top_k * 0.4)
 
-        active_entry = pool.get_active()
+        # The session's selected KB, which may differ from the pool's active one.
+        if req.kb_id:
+            active_entry = pool.get(req.kb_id)
+            if active_entry is None:
+                raise HTTPException(status_code=404, detail=f"Knowledge base '{req.kb_id}' is not loaded.")
+        else:
+            active_entry = pool.get_active()
         if active_entry is None:
             return RetrieveResponse(chunks=[], top_k=top_k, total_returned=0, reranking_skipped=False)
         vs = active_entry.vs

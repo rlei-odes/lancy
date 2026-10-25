@@ -10,7 +10,7 @@ import {
     XAxis,
     YAxis,
 } from "recharts";
-import { BarChart2, Clock, FileText, Library, Loader2, TrendingUp } from "lucide-react";
+import { BarChart2, Clock, FileText, Loader2, TrendingUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 const API_BASE = "";
@@ -274,15 +274,20 @@ export const KbAnalytics: FunctionComponent<{ active: boolean }> = ({ active }) 
     const [error, setError] = useState<string | null>(null);
     const [notFound, setNotFound] = useState(false);
 
+    // The KB comes from the page's selector: the session's selected KB, else the active one.
     useEffect(() => {
         if (!active) return;
         fetch(`${API_BASE}/api/v1/kb`, { credentials: "include" })
             .then((r) => r.json())
             .then((reg: KBRegistry) => {
                 setKbRegistry(reg);
-                setSelectedKb(reg.active);
+                const saved = sessionStorage.getItem("lancy_selected_kb_id");
+                setSelectedKb(saved && reg.bases[saved] ? saved : reg.active);
             })
             .catch(() => {});
+        const handler = (e: Event) => setSelectedKb((e as CustomEvent<{ kbId: string }>).detail.kbId);
+        window.addEventListener("lancy-kb-changed", handler);
+        return () => window.removeEventListener("lancy-kb-changed", handler);
     }, [active]);
 
     useEffect(() => {
@@ -305,41 +310,20 @@ export const KbAnalytics: FunctionComponent<{ active: boolean }> = ({ active }) 
             .finally(() => setLoading(false));
     }, [selectedKb]);
 
-    const kbOptions = kbRegistry
-        ? Object.values(kbRegistry.bases).map((kb) => ({ id: kb.id, name: kb.name }))
-        : [];
-
     return (
         <div className="flex flex-col gap-6 w-full">
-            {/* KB selector */}
-            <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted/30">
-                    <Library className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">{t("explorer.analyticsKbLabel")}</span>
-                    {stats && (
-                        <span className="ml-auto text-xs text-muted-foreground">
-                            {t(stats.scope === "incremental"
-                                ? "explorer.analyticsScopeIncremental"
-                                : "explorer.analyticsScopeFull")}
-                            {" · "}
-                            {t("explorer.analyticsComputedAt", {
-                                date: new Date(stats.computed_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }),
-                            })}
-                        </span>
-                    )}
+            {/* When the shown numbers were computed */}
+            {stats && (
+                <div className="-mt-3 px-1 text-xs text-muted-foreground">
+                    {t(stats.scope === "incremental"
+                        ? "explorer.analyticsScopeIncremental"
+                        : "explorer.analyticsScopeFull")}
+                    {" · "}
+                    {t("explorer.analyticsComputedAt", {
+                        date: new Date(stats.computed_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }),
+                    })}
                 </div>
-                <div className="px-4 py-3">
-                    <select
-                        value={selectedKb}
-                        onChange={(e) => setSelectedKb(e.target.value)}
-                        className="text-xs [font-family:inherit] bg-muted border border-border text-foreground rounded px-2 py-1 focus:outline-hidden focus:border-blue-400 transition-colors"
-                    >
-                        {kbOptions.map((kb) => (
-                            <option key={kb.id} value={kb.id}>{kb.name}</option>
-                        ))}
-                    </select>
-                </div>
-            </div>
+            )}
 
             {/* Error */}
             {error && (

@@ -488,7 +488,7 @@ The classic chat stays at `/legacy` and `/legacy/c/{id}` (`components/template/h
 
 `frontend/src/components/sections/rag-config-panel.tsx`
 
-The settings panel, shown full width as **Admin → Knowledge & RAG** (`layout="page"`) and as a sidebar on the Advanced Features page and the classic chat:
+The settings panel, shown full width as **Admin → Knowledge & RAG** (`layout="page"`) and as a sidebar in the classic chat. The Advanced Features page has no settings panel: its tabs share one knowledge base selector (`explorer-kb-select.tsx`), which selects a KB the way the chat's KB picker does — session storage plus the `lancy-kb-changed` event — so the probe, chunk browser, analytics and batch analysis follow it. The settings panel holds:
 - Knowledge base selector and management — compatible KBs selectable normally; incompatible KBs greyed out (user) or red+⚠ (admin, triggers pool reset); controls lock with a spinner while a KB is loading
 - LLM model and temperature
 - Embedding backend and model

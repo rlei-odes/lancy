@@ -149,6 +149,7 @@ export const app = {
         dimLabelOutsideK: "hors\nk",
         emptyStateTitle: "Saisir une requête ci-dessus pour sonder le pipeline de retrieval.",
         emptyStateSubtitle: "Les résultats affichent les chunks classés avec les scores par méthode.",
+        methodToggleHint: "Activer ou désactiver pour cette probe uniquement — les paramètres enregistrés restent inchangés",
         keywordTerms: "Termes de recherche",
         keywordTermsHint: "La requête telle que la recherche par mots-clés la lit : mots vides retirés, chaque mot avec ses racines. Les mots trouvés sont surlignés dans les chunks.",
         expand: "développer",

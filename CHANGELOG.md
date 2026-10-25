@@ -22,6 +22,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added — Keyword search debugging
 
 - The Retrieval Probe lists the query's keyword search terms and highlights the words each chunk matched.
+- The Retrieval Probe's BM25 and Reranking pills are switches for that probe, starting from the saved settings.
 - **Admin → BM25 Debug** records recent questions with each keyword search made for them: query variant, terms, extra terms, detected language and every hit with score and matched terms. Off by default, last 50 questions, in memory only.
 
 ### Added — Ingestion progress
@@ -34,6 +35,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - A file that cannot be indexed — chunker error, no text, timeout, or a crashed chunking worker — is remembered by its hash and skipped by incremental runs; a full re-index tries it again. **Admin → Ingestion Log → Not indexed** lists these files per KB with reason and error, and retries one or all without a full re-index. Before, every incremental run chunked such files again: on one KB, 24 files and several minutes of OCR per run for nothing.
 - The chunker's error reaches the log and the ingestion log (`Chunking failed for '…': …`) instead of a bare "No chunks produced". A damaged upload is now reported as failed, not as an empty success.
 - Chunking may take `max(900 s, 120 s per MB)` per file, up from `max(600 s, 60 s per MB)`.
+
+### Changed — Advanced Features
+
+- The RAG settings panel is gone from the Advanced Features page. Its tabs share a knowledge base selector instead, which also selects the KB for the chat session.
+- The Retrieval Probe searches the selected knowledge base. It searched the server's active one, whichever KB was selected.
 
 ### Changed — Retrieval
 

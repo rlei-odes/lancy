@@ -34,7 +34,10 @@ async function runProbe(
     rerankingEnabled: boolean,
     sourceFilter: string
 ): Promise<RetrieveResponse> {
+    // The session's selected KB; without it the backend searches the pool's active one.
+    const kbId = sessionStorage.getItem("lancy_selected_kb_id");
     const body: Record<string, unknown> = { query, bm25_enabled: bm25Enabled, reranking_enabled: rerankingEnabled };
+    if (kbId) body.kb_id = kbId;
     if (sourceFilter.trim()) body.filters = { source_file: sourceFilter.trim() };
     const r = await fetch(`${API_BASE}/api/v1/rag/retrieve`, {
         method: "POST",
@@ -49,15 +52,22 @@ async function runProbe(
     return r.json();
 }
 
-function MethodIndicator({ label, enabled, color }: {
+/** A search method switched on or off for this probe only; the saved settings stay as they are. */
+function MethodToggle({ label, enabled, color, onToggle, title }: {
     label: string;
     enabled: boolean;
     color: string;
+    onToggle: () => void;
+    title: string;
 }) {
     return (
-        <span
+        <button
+            type="button"
+            onClick={onToggle}
+            aria-pressed={enabled}
+            title={title}
             className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border select-none",
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border select-none transition-opacity hover:opacity-80",
                 enabled
                     ? `${color} border-transparent`
                     : "bg-transparent text-muted-foreground border-border opacity-50"
@@ -65,7 +75,7 @@ function MethodIndicator({ label, enabled, color }: {
         >
             <span className={cn("h-1.5 w-1.5 rounded-full", enabled ? "bg-current" : "bg-muted-foreground")} />
             {label}
-        </span>
+        </button>
     );
 }
 
@@ -77,7 +87,8 @@ export const RetrievalProbe: FunctionComponent = () => {
     const [rerankingEnabled, setRerankingEnabled] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [result, setResult] = useState<RetrieveResponse | null>(null);
+    // The methods a result was run with: the toggles may change after the run.
+    const [result, setResult] = useState<(RetrieveResponse & { bm25: boolean; reranking: boolean }) | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     const syncConfig = useCallback(() => {
@@ -89,12 +100,20 @@ export const RetrievalProbe: FunctionComponent = () => {
             .catch(() => {});
     }, []);
 
-    // Seed on mount and refresh whenever the sidebar saves
+    // Seed from the saved settings on mount and whenever they are saved; the toggles
+    // then change this probe only.
     useEffect(() => {
         syncConfig();
         window.addEventListener("rag-config-saved", syncConfig);
         return () => window.removeEventListener("rag-config-saved", syncConfig);
     }, [syncConfig]);
+
+    // Another KB's results would be misleading next to the new selection.
+    useEffect(() => {
+        const handler = () => { setResult(null); setError(null); };
+        window.addEventListener("lancy-kb-changed", handler);
+        return () => window.removeEventListener("lancy-kb-changed", handler);
+    }, []);
 
     const handleSubmit = useCallback(async () => {
         const q = query.trim();
@@ -102,12 +121,8 @@ export const RetrievalProbe: FunctionComponent = () => {
         setLoading(true);
         setError(null);
         try {
-            // Re-fetch session config so indicators and probe always use the latest sidebar settings
-            const cfg = await fetchSessionConfig().catch(() => ({ bm25_enabled: bm25Enabled, reranking_enabled: rerankingEnabled, retriever_top_k: 5 }));
-            setBm25Enabled(cfg.bm25_enabled);
-            setRerankingEnabled(cfg.reranking_enabled);
-            const res = await runProbe(q, cfg.bm25_enabled, cfg.reranking_enabled, sourceFilter);
-            setResult(res);
+            const res = await runProbe(q, bm25Enabled, rerankingEnabled, sourceFilter);
+            setResult({ ...res, bm25: bm25Enabled, reranking: rerankingEnabled });
         } catch (e) {
             setError(e instanceof Error ? e.message : "Unknown error");
         } finally {
@@ -150,8 +165,20 @@ export const RetrievalProbe: FunctionComponent = () => {
                         {/* Method toggles */}
                         <div className="flex items-center gap-1.5">
                             <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
-                            <MethodIndicator label="BM25" enabled={bm25Enabled} color="bg-amber-500/15 text-amber-600 dark:text-amber-400" />
-                            <MethodIndicator label="Reranking" enabled={rerankingEnabled} color="bg-rose-500/15 text-rose-600 dark:text-rose-400" />
+                            <MethodToggle
+                                label="BM25"
+                                enabled={bm25Enabled}
+                                onToggle={() => setBm25Enabled((v) => !v)}
+                                title={t("explorer.methodToggleHint")}
+                                color="bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                            />
+                            <MethodToggle
+                                label="Reranking"
+                                enabled={rerankingEnabled}
+                                onToggle={() => setRerankingEnabled((v) => !v)}
+                                title={t("explorer.methodToggleHint")}
+                                color="bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                            />
                         </div>
 
                         {/* Source filter */}
@@ -208,7 +235,7 @@ export const RetrievalProbe: FunctionComponent = () => {
                     </div>
 
                     {/* Keyword terms */}
-                    {bm25Enabled && result.query_terms && result.query_terms.length > 0 && (
+                    {result.bm25 && result.query_terms && result.query_terms.length > 0 && (
                         <div className="flex flex-wrap items-center gap-1.5 px-1" title={t("explorer.keywordTermsHint")}>
                             <span className="text-xs text-muted-foreground">{t("explorer.keywordTerms")}</span>
                             {result.query_terms.map((term) => (
@@ -226,7 +253,7 @@ export const RetrievalProbe: FunctionComponent = () => {
                     <div className="flex flex-col gap-2">
                         {result.chunks.map((chunk, i) => {
                             const isOverK = chunk.final_rank > topK;
-                            const dimLabel = rerankingEnabled && !result.reranking_skipped
+                            const dimLabel = result.reranking && !result.reranking_skipped
                                 ? t("explorer.dimLabelReranker")
                                 : t("explorer.dimLabelOutsideK");
                             return (
@@ -242,9 +269,9 @@ export const RetrievalProbe: FunctionComponent = () => {
                                         </div>
                                     )}
                                     <ChunkCard
-                                        chunk={bm25Enabled ? chunk : { ...chunk, matched_terms: [] }}
+                                        chunk={result.bm25 ? chunk : { ...chunk, matched_terms: [] }}
                                         topK={topK}
-                                        rerankingActive={rerankingEnabled && !result.reranking_skipped}
+                                        rerankingActive={result.reranking && !result.reranking_skipped}
                                         rerankingSkipped={result.reranking_skipped}
                                         dimmed={isOverK}
                                         dimLabel={isOverK ? dimLabel : undefined}

@@ -6,9 +6,8 @@ import { useRouter } from "next/router";
 import { ArrowLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useTheme } from "@/hooks/useTheme";
-import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { cn } from "@/lib/lorem";
-import { RagConfigSidebar } from "@/components/sections/rag-config-sidebar";
+import { ExplorerKbSelect } from "@/components/sections/explorer-kb-select";
 import { RetrievalProbe } from "@/components/sections/retrieval-probe";
 import { ChunkBrowser } from "@/components/sections/chunk-browser";
 import { KbAnalytics } from "@/components/sections/kb-analytics";
@@ -19,7 +18,6 @@ type Tab = "probe" | "browser" | "analytics" | "piles" | "batch";
 
 export default function ExplorerPage() {
     const { cssClass } = useTheme();
-    const { isMobile } = useMediaQuery();
     const { t } = useTranslation("app");
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>("probe");
@@ -77,6 +75,8 @@ export default function ExplorerPage() {
                     {/* Scrollable content area */}
                     <div className="flex-1 overflow-y-auto">
                         <div className={cn(activeTab === "probe" ? "max-w-3xl" : "max-w-7xl", "mx-auto px-5 py-6")}>
+                            {/* My Documents are the user's own piles, outside any knowledge base. */}
+                            {activeTab !== "piles" && <div className="mb-6"><ExplorerKbSelect /></div>}
                             {activeTab === "probe" && <RetrievalProbe />}
                             {activeTab === "browser" && <ChunkBrowser active={activeTab === "browser"} />}
                             {activeTab === "analytics" && <KbAnalytics active={activeTab === "analytics"} />}
@@ -85,9 +85,6 @@ export default function ExplorerPage() {
                         </div>
                     </div>
                 </div>
-
-                {/* RAG config sidebar */}
-                {!isMobile && <RagConfigSidebar />}
             </main>
         </>
     );
