@@ -549,5 +549,7 @@ export const app = {
         notSent: "Non envoyé",
         rerankCut: "Reranker ↓ depuis #{{rank}}, sous le seuil",
         chunksDiscarded: "+{{count}} écartés",
+        discardedCount_one: "{{count, number}} écarté",
+        discardedCount_other: "{{count, number}} écartés",
     },
 };

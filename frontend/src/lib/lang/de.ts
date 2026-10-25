@@ -549,5 +549,7 @@ export const app = {
         notSent: "Nicht gesendet",
         rerankCut: "Reranker ↓ von #{{rank}}, unter dem Schnitt",
         chunksDiscarded: "+{{count}} verworfen",
+        discardedCount_one: "{{count, number}} verworfen",
+        discardedCount_other: "{{count, number}} verworfen",
     },
 };

@@ -133,7 +133,7 @@ const DocumentTile: FunctionComponent<{ doc: RetrievedDocument }> = ({ doc }) =>
                             ))}
                         </span>
                         <span className="mr-1 text-xs text-muted-foreground">
-                            {onlyDiscarded ? t("next.chunksDiscarded", { count: discardedCount }) : t("next.chunks", { count: doc.sentCount })}
+                            {onlyDiscarded ? t("next.discardedCount", { count: discardedCount }) : t("next.chunks", { count: doc.sentCount })}
                             {!onlyDiscarded && discardedCount > 0 && ` ${t("next.chunksDiscarded", { count: discardedCount })}`}
                         </span>
                         {doc.semantic && <MethodPill kind="semantic" />}
