@@ -7,6 +7,7 @@ Typical usage: initialise from a list of 'ChunkRecord' objects already stored in
 """
 
 import asyncio
+import logging
 from typing import Any
 
 from rank_bm25 import BM25Okapi  # type: ignore[import-untyped]
@@ -14,6 +15,8 @@ from rank_bm25 import BM25Okapi  # type: ignore[import-untyped]
 from conversational_toolkit.retriever.base import Retriever, SemanticOnlyQuery
 from conversational_toolkit.retriever.text_analysis import analyze_document, analyze_query
 from conversational_toolkit.vectorstores.base import ChunkMatch, VectorStore
+
+logger = logging.getLogger(__name__)
 
 
 class BM25Retriever(Retriever[ChunkMatch]):
@@ -75,6 +78,7 @@ class BM25Retriever(Retriever[ChunkMatch]):
             self._bm25 = await loop.run_in_executor(None, _build)
 
         query_terms = analyze_query(query)
+        logger.info(f"BM25 terms for {query[:80]!r}: {' '.join(dict.fromkeys(query_terms))}")
         scores: list[float] = self._bm25.get_scores(query_terms).tolist()
         ranked_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
         if filters:

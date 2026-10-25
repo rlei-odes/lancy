@@ -391,6 +391,14 @@ Both require backend config storage plumbing that is already in place (`branding
 
 ## Admin Tooling
 
+### BM25 Debug — Show the Search Terms
+
+Keyword search analyses every query variant into search terms: stop words dropped, words stemmed in all supported languages. The terms are only visible as a backend log line (`BM25 terms for '…': …`), so nobody can see from the UI why a keyword search did or did not match.
+
+**What's needed:**
+- **Retrieval Probe:** return the analysed terms with the probe result and show them above the chunks, with each chunk's matched terms highlighted. Cheapest and most useful.
+- **Admin debug tab**, like LLM Debug: the recent searches, each with its query variants, their terms, the language detected for the question, and the top keyword hits with their scores.
+
 ### User Feedback — Thumbs Up / Down
 
 **Goal:** let users rate individual answers with a thumbs up or down. Capture the active RAG configuration at the time of rating so quality can be correlated with retrieval settings. The thumbs up / down UI is already implemented.

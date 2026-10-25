@@ -23,12 +23,12 @@ interface Pool {
 const chip = "flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-[13px] text-muted-foreground";
 
 /**
- * Adopt a KB for this session, as the RAG panel does for a KB the pool holds:
- * remember it, tell the other surfaces, and apply the KB's "Default" retrieval
- * preset to this session's config. Loading a KB into the pool is an admin action
+ * Adopt a KB for this session: remember it and tell the other surfaces. Settings
+ * are the admin's; a user switching KB must not save any — a config save rebuilds
+ * the shared agents for everyone. Loading a KB into the pool is an admin action
  * and stays on the admin side.
  */
-async function adoptKb(kb: Kb, pool: Pool, applyPreset: boolean) {
+function adoptKb(kb: Kb, pool: Pool) {
     sessionStorage.setItem("lancy_selected_kb_id", kb.id);
     sessionStorage.setItem("lancy_selected_kb_name", kb.name);
     window.dispatchEvent(new CustomEvent("lancy-kb-changed", { detail: { kbId: kb.id } }));
@@ -36,21 +36,6 @@ async function adoptKb(kb: Kb, pool: Pool, applyPreset: boolean) {
     const compatible = !pool.emb_key || (kb.embedding_backend === pool.emb_key.backend && kb.embedding_model === pool.emb_key.model);
     sessionStorage.setItem("lancy_kb_incompatible", compatible ? "0" : "1");
     window.dispatchEvent(new CustomEvent("lancy-kb-pool-state", { detail: { kbId: kb.id, compatible } }));
-
-    if (!applyPreset) return;
-    const presets = await fetch(`/api/v1/rag/presets/${encodeURIComponent(kb.id)}`, { credentials: "include" }).then((r) => (r.ok ? r.json() : null));
-    const retrieval: { name: string; data: Record<string, unknown> }[] = Array.isArray(presets) ? presets : (presets?.retrieval ?? []);
-    const defaultPreset = retrieval.find((p) => p.name === "Default");
-    if (!defaultPreset) return;
-    const session = await fetch("/api/v1/rag/config", { credentials: "include" }).then((r) => (r.ok ? r.json() : null));
-    if (!session) throw new Error("could not read the session config to apply the KB's Default preset");
-    const saved = await fetch("/api/v1/rag/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...session, ...defaultPreset.data }),
-        credentials: "include",
-    });
-    if (!saved.ok) throw new Error(`applying the Default preset failed: ${saved.status}`);
 }
 
 export const KbPicker: FunctionComponent = () => {
@@ -78,7 +63,7 @@ export const KbPicker: FunctionComponent = () => {
                 setPool(p);
                 setSelectedId(resolved);
                 const kb = reg.bases[resolved];
-                if (kb) return adoptKb(kb, p, false);
+                if (kb) adoptKb(kb, p);
             })
             .catch((e) => console.error("[kb-picker] loading knowledge bases failed:", e));
     }, []);
@@ -99,7 +84,7 @@ export const KbPicker: FunctionComponent = () => {
 
     const choose = (kb: Kb) => {
         setSelectedId(kb.id);
-        adoptKb(kb, pool, true).catch((e) => console.error("[kb-picker] switching knowledge base failed:", e));
+        adoptKb(kb, pool);
     };
 
     return (

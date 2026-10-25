@@ -380,6 +380,9 @@ class ConversationalToolkitController:
             _retrieval_stats = last_chunk.retrieval_stats.model_dump() if last_chunk.retrieval_stats else None
             if _retrieval_stats:
                 MetadataProvider.add_metadata({"retrieval_stats": _retrieval_stats})
+            if last_chunk.follow_up_questions:
+                # Saved with the message so they come back when the conversation is reopened.
+                MetadataProvider.add_metadata({"follow_up_questions": list(last_chunk.follow_up_questions)})
 
             final_message = await self.message_db.create_message(
                 Message(
@@ -441,7 +444,9 @@ class ConversationalToolkitController:
                     sources=sources,
                     retrieved=retrieved,
                     reaction=None,
-                    follow_up_questions=[],
+                    follow_up_questions=next(
+                        (m.get("follow_up_questions") for m in reversed(_meta) if m.get("follow_up_questions")), []
+                    ),
                     parent_id=message.parent_id,
                     create_timestamp=message.create_timestamp,
                     query_duration_ms=next(
@@ -517,7 +522,9 @@ class ConversationalToolkitController:
                 sources=sources,
                 retrieved=retrieved,
                 reaction=api_reaction,
-                follow_up_questions=[],
+                follow_up_questions=next(
+                    (m.get("follow_up_questions") for m in reversed(_meta) if m.get("follow_up_questions")), []
+                ),
                 parent_id=message.parent_id,
                 create_timestamp=message.create_timestamp,
                 query_duration_ms=next(

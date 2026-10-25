@@ -3,7 +3,7 @@
 import Head from "next/head";
 import { useRouter } from "next/router";
 import React, { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, BarChart2, Bug, Database, List, Palette, ShieldCheck } from "lucide-react";
+import { ArrowLeft, BarChart2, Bug, Database, List, Palette, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { useRole } from "@/hooks/useRole";
 import { cn } from "@/lib/lorem";
@@ -13,10 +13,12 @@ import { BrandingSettings } from "@/components/sections/admin/branding-settings"
 import { IngestionLog } from "@/components/sections/admin/ingestion-log";
 import { LlmDebugPanel } from "@/components/sections/admin/llm-debug-panel";
 import { AuthSettings } from "@/components/sections/admin/auth-settings";
+import { RagConfigPanel } from "@/components/sections/rag-config-panel";
 
-type Tab = "usage" | "database" | "branding" | "ingest-log" | "llm-debug" | "auth";
+type Tab = "rag" | "usage" | "database" | "branding" | "ingest-log" | "llm-debug" | "auth";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    { id: "rag",        label: "Knowledge & RAG",  icon: <SlidersHorizontal className="h-3.5 w-3.5" /> },
     { id: "usage",      label: "Usage Analytics", icon: <BarChart2 className="h-3.5 w-3.5" /> },
     { id: "database",   label: "Database",         icon: <Database className="h-3.5 w-3.5" /> },
     { id: "branding",   label: "Branding",         icon: <Palette className="h-3.5 w-3.5" /> },
@@ -29,7 +31,7 @@ export default function AdminPage() {
     const { cssClass } = useTheme();
     const { role, loading } = useRole();
     const router = useRouter();
-    const [activeTab, setActiveTab] = useState<Tab>("usage");
+    const [activeTab, setActiveTab] = useState<Tab>("rag");
     const [authDirty, setAuthDirty] = useState(false);
 
     // Redirect non-admins away
@@ -93,6 +95,12 @@ export default function AdminPage() {
                     </div>
 
                     {/* Content */}
+                    {activeTab === "rag" ? (
+                        // The settings panel scrolls itself and keeps its save and reindex buttons in view.
+                        <div className="flex-1 min-h-0 w-full max-w-7xl mx-auto px-5 py-5">
+                            <RagConfigPanel layout="page" />
+                        </div>
+                    ) : (
                     <div className="flex-1 overflow-y-auto">
                         <div className={cn(activeTab === "ingest-log" ? "max-w-7xl" : "max-w-3xl", "mx-auto px-5 py-6")}>
                             {activeTab === "usage"      && <UsageAnalytics />}
@@ -103,6 +111,7 @@ export default function AdminPage() {
                             {activeTab === "auth"       && <AuthSettings onDirtyChange={setAuthDirty} />}
                         </div>
                     </div>
+                    )}
                 </div>
             </main>
         </>

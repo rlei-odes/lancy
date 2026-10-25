@@ -4,6 +4,7 @@ import React, { FunctionComponent, useEffect, useState, useCallback, useRef } fr
 import { RefreshCw, ChevronDown, ChevronRight, AlertCircle, CheckCircle2, Loader2, Save, Trash2, Plus, Pencil, X, Database, SlidersHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useRole } from "@/hooks/useRole";
+import { cn } from "@/lib/lorem";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -451,7 +452,13 @@ async function persistUserPresets(kbId: string, presets: UserPresets): Promise<v
 
 interface StatusMessage { type: "idle" | "loading" | "success" | "error"; text: string; }
 
-export const RagConfigPanel: FunctionComponent = () => {
+/**
+ * 'sidebar' is the narrow column beside the classic chat. 'page' lays the same
+ * controls out for a full-width admin page: KB and presets side by side, the
+ * setting sections in two columns, all open.
+ */
+export const RagConfigPanel: FunctionComponent<{ layout?: "sidebar" | "page" }> = ({ layout = "sidebar" }) => {
+    const isPage = layout === "page";
     const { t } = useTranslation("app");
     const { role } = useRole();
     const isAdmin = role !== "user";
@@ -509,7 +516,9 @@ export const RagConfigPanel: FunctionComponent = () => {
     const allKbPresets = userKbPresets;
 
     // Sections
-    const [sections, setSections] = useState({ retrieval: true, embedding: false, llm: false, prompt: false });
+    const [sections, setSections] = useState(
+        isPage ? { retrieval: true, embedding: true, llm: true, prompt: true } : { retrieval: true, embedding: false, llm: false, prompt: false },
+    );
     const toggle = (s: keyof typeof sections) => setSections((prev) => ({ ...prev, [s]: !prev[s] }));
 
     // ── Loaders ──────────────────────────────────────────────────────────────
@@ -1228,7 +1237,7 @@ export const RagConfigPanel: FunctionComponent = () => {
     // ── Render ────────────────────────────────────────────────────────────────
 
     return (
-        <div className="flex flex-col h-full bg-card border-l border-border text-card-foreground overflow-hidden" style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
+        <div className={cn("flex flex-col h-full bg-card border-border text-card-foreground overflow-hidden", isPage ? "rounded-lg border" : "border-l")} style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
 
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 bg-card/80 backdrop-blur-sm">
@@ -1251,6 +1260,8 @@ export const RagConfigPanel: FunctionComponent = () => {
                 </button>
             </div>
 
+            <div className={isPage ? "grid grid-cols-1 lg:grid-cols-2 lg:divide-x divide-border/60" : undefined}>
+            <div>
             {/* KB Selector */}
             <div className="px-3 py-2 border-b border-border/60 bg-card/60 space-y-1.5">
                 <div className="flex items-center gap-1">
@@ -1349,6 +1360,7 @@ export const RagConfigPanel: FunctionComponent = () => {
                     t={t as (key: string) => string}
                 />
             )}
+            </div>
 
             {/* Preset toolbar */}
             <div className="px-3 py-2 border-b border-border/60 bg-card/60 space-y-2">
@@ -1449,9 +1461,15 @@ export const RagConfigPanel: FunctionComponent = () => {
                 </div>
                 </fieldset>
             </div>
+            </div>
 
             {/* Scrollable params */}
-            <div className="flex-1 overflow-y-auto px-4 py-2 space-y-4 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+            <div
+                className={cn(
+                    "flex-1 overflow-y-auto px-4 py-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent",
+                    isPage ? "grid grid-cols-1 xl:grid-cols-2 gap-x-10 gap-y-6 content-start py-4" : "space-y-4",
+                )}
+            >
 
                 {/* ── Prompt ── */}
                 <div>
