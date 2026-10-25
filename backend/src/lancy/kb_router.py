@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field
 
 from lancy.feature0_baseline_rag import _CHUNKERS, _IMAGE_EXTENSIONS, safe_conn_str
 from lancy.kb_pool import EmbeddingConflict
-from lancy.kb_stats import read_language_distribution
+from lancy.kb_stats import failed_files_path, forget_failed, load_failed_files, read_language_distribution
 
 _SUPPORTED_UPLOAD_EXTS = set(_CHUNKERS) | _IMAGE_EXTENSIONS
 
@@ -277,6 +277,24 @@ def create_kb_router(
         log.info(f"Updated KB '{kb_id}'")
         return _redact(updated)
 
+    @router.get("/kb/{kb_id}/failed-files")
+    async def list_failed_files(kb_id: str) -> dict:
+        """Files this KB could not index, newest first. Incremental runs skip them."""
+        if kb_id not in _load().bases:
+            raise HTTPException(404, f"KB '{kb_id}' not found")
+        failed = load_failed_files(db_dir, kb_id)
+        files = [{"hash": h, **entry} for h, entry in failed.items()]
+        return {"files": sorted(files, key=lambda f: f["at"], reverse=True)}
+
+    @router.delete("/kb/{kb_id}/failed-files")
+    async def retry_failed_files(kb_id: str, hash: str | None = None) -> dict:
+        """Forget one failed file (`?hash=`) or all, so the next incremental run tries them again."""
+        if kb_id not in _load().bases:
+            raise HTTPException(404, f"KB '{kb_id}' not found")
+        remaining = forget_failed(db_dir, kb_id, hash)
+        log.info(f"KB '{kb_id}': {'all failed files' if hash is None else f'failed file {hash[:8]}…'} queued for retry")
+        return {"remaining": remaining}
+
     @router.delete("/kb/{kb_id}")
     async def delete_kb(kb_id: str) -> dict:
         reg = _load()
@@ -287,7 +305,7 @@ def create_kb_router(
         kb = reg.bases.pop(kb_id)
         # A KB created later under the same name gets this id again; it must not
         # inherit the files this one could not index.
-        (db_dir / f"kb_failed_{kb_id}.json").unlink(missing_ok=True)
+        failed_files_path(db_dir, kb_id).unlink(missing_ok=True)
         if reg.active == kb_id:
             reg.active = next(iter(reg.bases))
             await activate_callback(reg.bases[reg.active])

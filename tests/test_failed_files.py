@@ -25,7 +25,8 @@ import pytest
 
 from lancy import ingestion
 from lancy.feature0_baseline_rag import load_chunks
-from lancy.ingestion import load_failed_files, run_ingestion
+from lancy.ingestion import run_ingestion
+from lancy.kb_stats import forget_failed, load_failed_files
 from lancy.kb_router import KBInfo
 
 
@@ -101,3 +102,15 @@ def test_a_full_reindex_tries_it_again(corrupt, in_thread, tmp_path):
     assert again.keys() == first.keys()
     assert next(iter(again.values()))["at"] >= next(iter(first.values()))["at"]
     assert ingestion._index_status["skipped_failed"] == 0
+
+
+def test_forgetting_a_file_lets_the_next_incremental_run_try_it(corrupt, in_thread, tmp_path, monkeypatch):
+    """Retrying one file must not need a full re-index of the whole KB."""
+    run(corrupt, tmp_path)
+    (h,) = load_failed_files(tmp_path, "test")
+
+    assert forget_failed(tmp_path, "test", h) == 0
+    run(corrupt, tmp_path)
+
+    assert ingestion._index_status["skipped_failed"] == 0
+    assert h in load_failed_files(tmp_path, "test")  # tried again, and failed again

@@ -1,5 +1,6 @@
 import React, { FunctionComponent, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, RefreshCw } from "lucide-react";
+import { FailedFiles } from "@/components/sections/admin/failed-files";
 
 const STATUSES = ["success", "error", "crashed", "timeout", "no_chunks"];
 const PAGE_SIZE = 25;
@@ -62,6 +63,7 @@ function fmtTs(ts: string): string {
 
 export const IngestionLog: FunctionComponent = () => {
     const [kbs, setKbs] = useState<KBMeta[]>([]);
+    const [activeKbId, setActiveKbId] = useState("");
     const [filterKb, setFilterKb] = useState("");
     const [filterStatus, setFilterStatus] = useState("");
     const [filterDays, setFilterDays] = useState("30");
@@ -73,7 +75,7 @@ export const IngestionLog: FunctionComponent = () => {
     useEffect(() => {
         fetch("/api/v1/kb", { credentials: "include" })
             .then((r) => r.json())
-            .then((reg) => setKbs(Object.values(reg.bases as Record<string, KBMeta>)))
+            .then((reg) => { setKbs(Object.values(reg.bases as Record<string, KBMeta>)); setActiveKbId(reg.active); })
             .catch(() => {});
     }, []);
 
@@ -101,7 +103,9 @@ export const IngestionLog: FunctionComponent = () => {
 
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
+            {kbs.length > 0 && <FailedFiles kbs={kbs} activeKbId={activeKbId} />}
+
+            <div className="flex items-center justify-between gap-3 flex-wrap pt-2">
                 <h2 className="text-sm font-semibold">Ingestion Log</h2>
                 <div className="flex items-center gap-2 flex-wrap">
                     <select

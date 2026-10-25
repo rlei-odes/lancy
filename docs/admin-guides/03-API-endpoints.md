@@ -401,6 +401,19 @@ Replaces the KB config fields. Stats (`chunks`, `files`, `last_indexed`, `langua
 
 ---
 
+### Failed Files
+
+```
+GET    /kb/{kb_id}/failed-files
+DELETE /kb/{kb_id}/failed-files[?hash=<file hash>]
+```
+
+`GET` lists the files the KB could not index, newest first: `{"files": [{"hash", "source_file", "reason", "error", "at"}]}`. `reason` is `error`, `no_chunks`, `timeout` or `crashed`. Incremental indexing skips these files.
+
+`DELETE` is **admin only**. It forgets one file (`hash`) or all of them, so the next incremental indexing tries them again; it does not start indexing. Returns `{"remaining": n}`.
+
+---
+
 ### Delete KB
 
 ```

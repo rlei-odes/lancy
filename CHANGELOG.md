@@ -31,7 +31,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed — Ingestion
 
-- A file that cannot be indexed — chunker error, no text, timeout, or a crashed chunking worker — is remembered by its hash and skipped by incremental runs; a full re-index tries it again. Before, every incremental run chunked such files again: on one KB, 24 files and several minutes of OCR per run for nothing.
+- A file that cannot be indexed — chunker error, no text, timeout, or a crashed chunking worker — is remembered by its hash and skipped by incremental runs; a full re-index tries it again. **Admin → Ingestion Log → Not indexed** lists these files per KB with reason and error, and retries one or all without a full re-index. Before, every incremental run chunked such files again: on one KB, 24 files and several minutes of OCR per run for nothing.
 - The chunker's error reaches the log and the ingestion log (`Chunking failed for '…': …`) instead of a bare "No chunks produced". A damaged upload is now reported as failed, not as an empty success.
 - Chunking may take `max(900 s, 120 s per MB)` per file, up from `max(600 s, 60 s per MB)`.
 

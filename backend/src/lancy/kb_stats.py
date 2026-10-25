@@ -109,6 +109,49 @@ async def backfill_languages(db_dir: Path, kb_id: str, vs: VectorStore) -> int:
     return len(missing)
 
 
+def failed_files_path(db_dir: Path, kb_id: str) -> Path:
+    return db_dir / f"kb_failed_{kb_id}.json"
+
+
+def load_failed_files(db_dir: Path, kb_id: str) -> dict[str, dict]:
+    """Files of the KB that could not be indexed, by file hash: {source_file, reason, error, at}.
+
+    A file that yields no chunks stores nothing, so the store cannot tell it from a
+    new file; without this list every incremental run would chunk it again.
+    Incremental runs skip these files; a full re-index, or forgetting one, retries it.
+    """
+    path = failed_files_path(db_dir, kb_id)
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text())
+
+
+def remember_failed(db_dir: Path, kb_id: str, h: str, name: str, reason: str, error: str = "") -> None:
+    failed = load_failed_files(db_dir, kb_id)
+    failed[h] = {
+        "source_file": name,
+        "reason": reason,
+        "error": error,
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    failed_files_path(db_dir, kb_id).write_text(json.dumps(failed, indent=2))
+
+
+def forget_failed(db_dir: Path, kb_id: str, h: str | None = None) -> int:
+    """Drop one failed file (by hash), or all of them, so the next incremental run tries them again.
+
+    Returns how many are left.
+    """
+    failed = {} if h is None else load_failed_files(db_dir, kb_id)
+    failed.pop(h or "", None)
+    path = failed_files_path(db_dir, kb_id)
+    if failed:
+        path.write_text(json.dumps(failed, indent=2))
+    else:
+        path.unlink(missing_ok=True)
+    return len(failed)
+
+
 def _approx_percentile(buckets: dict[str, int], total: int, pct: float) -> int:
     if total == 0:
         return 0
