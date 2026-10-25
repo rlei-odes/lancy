@@ -286,6 +286,25 @@ HyDE and query expansion both generate text that is embedded and matched against
 
 **Proposal:** a `corpus_language` field on the KB, set by the admin, threaded into the HyDE and query-expansion prompts. Default "same as the query" for mixed corpora.
 
+Corpora are often mixed — German course material with English terms, standards in several languages — so the field should hold a list of languages, not one. Keyword extraction (below) uses it to pick translation targets. A per-chunk language, detected at ingestion and stored in metadata, would be the precise version; BM25 already detects it in memory from stop words (`text_analysis.detect_language`).
+
+### Keyword Extraction for Search — Synonyms and Translations
+
+Keyword search matches the question's own words, after stop words are dropped and words stemmed (`retriever/text_analysis.py`). It cannot find a document that uses a different word or language: "surrogate key" never matches "Ersatzschlüssel" or "technischer Schlüssel".
+
+**Proposal:** a utility-LLM step before retrieval that turns the question into search terms:
+- the key terms of the question, without filler;
+- their close synonyms and singular/plural forms;
+- 2–3 translations into the KB's corpus languages (see above).
+
+The terms feed keyword search only — semantic search already works across languages. The question's own terms weigh more than expansions, so a synonym cannot outrank the word the user typed: either as separate BM25 queries fused with a lower weight, or as one query with weighted terms.
+
+**Cost:** one short utility-LLM call per question, like query expansion; it could replace query expansion for the keyword side.
+
+**Shares the term-extraction step with** "Max Search Reach — Every Keyword Hit Gets Read", which needs the same terms to decide what must be read.
+
+**Alternative to evaluate afterwards:** bge-m3, the embedding model in use, can also produce multilingual sparse lexical weights. Using those instead of hand-built BM25 analysis needs new index data, so a reindex.
+
 ### RAG Settings: LLM Call Calculation
 
 Especially with Neighbour Chunk Expansion, we have many variables that control how many chunks could get sent to the helper LLM and the main model. We should have a text-based preview telling the user the maximum value for each. If no helper model is selected, it should show that all reranking etc. calls go to the main model. The stats are: number of calls, max. number of chunks, for each.

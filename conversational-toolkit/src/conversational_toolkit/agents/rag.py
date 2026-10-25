@@ -9,7 +9,7 @@ from typing import Any, AsyncGenerator, Callable
 
 from conversational_toolkit.agents.base import Agent, AgentAnswer, QueryWithContext, RetrievalStats
 from conversational_toolkit.llms.base import LLM, LLMMessage, Roles, MessageContent
-from conversational_toolkit.retriever.base import Retriever
+from conversational_toolkit.retriever.base import Retriever, SemanticOnlyQuery
 from conversational_toolkit.retriever.reranking_retriever import RerankingRetriever
 from conversational_toolkit.utils.retriever import (
     make_query_standalone,
@@ -101,7 +101,8 @@ class RAG(Agent):
 
         if self.enable_hyde:
             hyde_expansion_message = await hyde_expansion(query, self.utility_llm)
-            queries.append(hyde_expansion_message)
+            # A hypothetical answer widens semantic recall; as keywords it is noise.
+            queries.append(SemanticOnlyQuery(hyde_expansion_message))
 
         if phase_callback:
             phase_callback("retrieving")

@@ -6,12 +6,13 @@ BM25 lexical retriever backed by 'rank-bm25'.
 Typical usage: initialise from a list of 'ChunkRecord' objects already stored in a vector store, then combine with a 'VectorStoreRetriever' inside a 'HybridRetriever' for lexical + semantic search.
 """
 
-import re
+import asyncio
 from typing import Any
 
 from rank_bm25 import BM25Okapi  # type: ignore[import-untyped]
 
-from conversational_toolkit.retriever.base import Retriever
+from conversational_toolkit.retriever.base import Retriever, SemanticOnlyQuery
+from conversational_toolkit.retriever.text_analysis import analyze_document, analyze_query
 from conversational_toolkit.vectorstores.base import ChunkMatch, VectorStore
 
 
@@ -19,7 +20,7 @@ class BM25Retriever(Retriever[ChunkMatch]):
     """
     In-memory BM25 retriever over a fixed corpus of 'ChunkRecord' objects.
 
-    Uses 'rank_bm25.BM25Okapi' under the hood. The corpus is tokenised with a simple word-boundary regex (lowercased) at construction time.
+    Uses 'rank_bm25.BM25Okapi' under the hood. Chunks and queries go through 'text_analysis': stop words dropped, words stemmed — chunks in their own language, queries in every supported language. A 'SemanticOnlyQuery' returns no results.
 
     Attributes:
         corpus: The indexed document chunks.
@@ -33,19 +34,14 @@ class BM25Retriever(Retriever[ChunkMatch]):
         self._bm25 = None
 
     @staticmethod
-    def _tokenize(text: str) -> list[str]:
-        """Lowercase word-boundary tokenisation."""
-        return re.findall(r"\b\w+\b", text.lower())
-
-    @staticmethod
     def _searchable_text(chunk: Any) -> str:
         """Chunk content plus filename/title, so lexical search also matches
         document names — e.g. "find X" over a filename that never appears in
         the body text. Metadata/title are cheap to include here since BM25
         tokenises this in memory at query time; embeddings are unaffected.
 
-        Underscores are replaced with spaces before tokenising: _tokenize's
-        \\w+ treats "_" as a word character, so an underscore-joined filename
+        Underscores are replaced with spaces before tokenising: the word
+        pattern treats "_" as a word character, so an underscore-joined filename
         segment (e.g. "Komponenten_000014468_B_001") would otherwise become
         one glued token instead of separately matchable words.
         """
@@ -59,9 +55,9 @@ class BM25Retriever(Retriever[ChunkMatch]):
         BM25 index is built over the full corpus and cached; filtering happens after
         scoring so the cache remains valid across queries with different filters.
         """
+        if isinstance(query, SemanticOnlyQuery):
+            return []
         if self._bm25 is None:
-            import asyncio
-
             loop = asyncio.get_running_loop()
             self.corpus = await self.vs.get_chunks_by_filter()
 
@@ -70,11 +66,15 @@ class BM25Retriever(Retriever[ChunkMatch]):
             if not self.corpus:
                 return []
 
-            tokenized = [self._tokenize(self._searchable_text(chunk)) for chunk in self.corpus]
-            # BM25Okapi index build is CPU-bound — run in thread to avoid blocking event loop
-            self._bm25 = await loop.run_in_executor(None, lambda: BM25Okapi(tokenized))
+            corpus = self.corpus
 
-        query_terms = self._tokenize(query)
+            # Analysing and indexing the corpus is CPU-bound — run in a thread to keep the event loop free.
+            def _build() -> BM25Okapi:
+                return BM25Okapi([analyze_document(self._searchable_text(chunk)) for chunk in corpus])
+
+            self._bm25 = await loop.run_in_executor(None, _build)
+
+        query_terms = analyze_query(query)
         scores: list[float] = self._bm25.get_scores(query_terms).tolist()
         ranked_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
         if filters:
