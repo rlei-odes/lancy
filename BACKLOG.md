@@ -185,9 +185,15 @@ The reindex itself reports plain success. The user has just re-indexed a KB and 
 
 All three look nice now but they are not really aligned with each other. Not necessary, but is an inconsistency.
 
-### Improve Design of Source Citation Window
+### Render Chunk Content in the Document Panel
 
-Definitely does not look nice now but is hard to design as just raw markdown is shown. We can still improve this visually and align more with our design.
+The document panel on `/next` shows chunk text as plain text, so markdown arrives raw: `##` headings, `- ` list markers, `<!-- image -->` comments, and tables as `|` rows. The classic sources sheet ran chunks through the markdown renderer, which at least drew tables.
+
+**What's needed:**
+- Render chunk content as markdown in the panel, with styles scaled for a 512px column (the shared `Markdown` component's heading sizes are built for full answers).
+- Tables scroll sideways inside the chunk card rather than widening the panel.
+- A full-screen overlay for one chunk, or a whole document's chunks, when the content is too large to read in the panel — wide tables, long sections.
+- Drop docling's `<!-- image -->` placeholders, or show a marker that the chunk had an image there.
 
 ---
 
@@ -200,6 +206,21 @@ The **Expand context** action (v0.3.8) currently only lets the user pick from do
 **Reuse:** the backend path already exists — `RAG._answer_stream_expand_context` accepts any list of `source_files`. What's missing is a UI to browse the full KB file list (endpoint `GET /api/v1/rag/store-info` already returns `file_list`) and a persistence layer so the pinned selection survives across messages (unlike the current one-shot pick, which resets after send). Likely lives in `rag_config_snapshot` on the conversation, or as a KB-level admin setting.
 
 **Open question:** interaction with the current per-answer pick — should pinned docs merge with the one-shot selection, or are they mutually exclusive?
+
+---
+
+### Expand Context — Multi-Pass for Documents Larger Than the Context
+
+"Ask using only these" (and the classic **Expand context** action) sends every chunk of the picked documents in one LLM call. Long documents exceed the budget on their own: a single standards document estimated at ~300,000 tokens against a 66,000-token budget (60 % of `num_ctx`). The UI blocks the request, so the user cannot ask about the one document they care about.
+
+**What's needed:** a multi-pass mode for selections over budget. Split the documents' chunks into batches that fit, ask the question against each batch (map), then answer from the per-batch results (reduce). Each pass should keep its chunk citations so the final answer can still cite passages.
+
+**Open questions:**
+- Map output: extracted relevant passages, or partial answers? Passages keep citations exact; partial answers are shorter to reduce.
+- Cost and time: a 300k-token document is five or more LLM calls before the final one. The UI should state the number of passes before the user confirms, and show progress while they run.
+- Whether to filter first: rank the selected documents' chunks against the question and send only the best ones that fit, as a cheaper single-pass alternative.
+
+**Reuse:** `RAG._answer_stream_expand_context` already fetches all chunks of the picked files; the token estimate lives in `useContextBudget` (`frontend/src/components/next/use-context-budget.ts`).
 
 ---
 
