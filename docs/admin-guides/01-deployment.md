@@ -147,7 +147,7 @@ Backend and LLM on a GPU machine; frontend on a separate (lighter) machine. The 
             gpu-server:5432  (pgvector, optional)
 ```
 
-The LLM can run on a separate GPU machine — set `ollama_host` (or `custom_base_url`) in the RAG Parameters panel to point at it.
+The LLM can run on a separate GPU machine — set `ollama_host` (or `custom_base_url`) under Admin → Knowledge & RAG to point at it.
 
 Run the installation steps from the [Installation](#installation) section above on the backend machine before proceeding.
 
@@ -169,7 +169,7 @@ scripts/start-frontend.sh
 
 > **CORS / `ALLOW_ORIGINS`** — in the standard setup, the frontend proxies all backend calls server-side, so the browser only ever talks to the frontend host. **You do not need to set `ALLOW_ORIGINS`** for this case. Only set it if a browser will hit the backend directly (e.g. exposing `/v1/chat/completions` to web tools like Open WebUI, n8n in browser context, or a separate web app). Then set it on the backend machine to the originating URL(s), comma-separated: `ALLOW_ORIGINS=http://host-a:3000,http://host-b:3000`. Either export it before `scripts/start-backend.sh` or add it as an `Environment=` line in the systemd service.
 
-On first start, `rag_config.json` is not present on a fresh clone — the backend defaults to Ollama. Open the **RAG Parameters** panel to configure the LLM backend (provider, host/URL, model). Settings are saved automatically.
+On first start, `rag_config.json` is not present on a fresh clone — the backend defaults to Ollama. Open **Admin → Knowledge & RAG** to configure the LLM backend (provider, host/URL, model). Settings are saved automatically.
 
 ### Keeping up to date
 
@@ -217,7 +217,7 @@ Three dedicated tiers. Suitable for teams, higher load, or managed infrastructur
 |---|---|
 | Frontend | `BACKEND_URL=http://backend-host:8080`, `APP_PASSWORD` |
 | Backend | LLM credentials or host, `DATABASE_URL` (if using Postgres). `ALLOW_ORIGINS` only if a browser hits the backend directly (not via the frontend proxy) |
-| KB definitions | `vs_connection_string=postgresql://...` (if using pgvector; set in RAG Parameters panel) |
+| KB definitions | `vs_connection_string=postgresql://...` (if using pgvector; set under Admin → Knowledge & RAG) |
 | Reverse proxy | TLS termination, proxy to frontend port 3000 |
 
 **TLS termination is easy with Caddy.** No Docker required — install it natively, point `reverse_proxy` at `localhost:3000`, and give it a cert (either automatic via ACME/Let's Encrypt for a public hostname, or one issued by an internal CA for an internal-only hostname). A minimal internal-CA Caddyfile:
@@ -238,7 +238,7 @@ No further configuration needed on the lancy side — the frontend already sets 
 Once the stack is up (whichever profile you chose), the steps to load your first documents are the same:
 
 1. Log in at the frontend URL (e.g. `http://localhost:3000`)
-2. Open the **RAG Parameters** panel (right side)
+2. Open **Admin → Knowledge & RAG**
 3. Click **+** next to the knowledge base selector
 4. Enter a name and the path to your documents (e.g. `data/`)
 5. Choose an embedding backend (default: local SentenceTransformer — no API key needed)
@@ -268,22 +268,22 @@ Once the stack is up (whichever profile you chose), the steps to load your first
 
 ### Backend → LLM
 
-Most LLM settings are configured at runtime from the **RAG Parameters panel** — no env var or restart needed:
+Most LLM settings are configured at runtime under **Admin → Knowledge & RAG** — no env var or restart needed:
 
 | Setting | Where |
 |---|---|
-| Provider (`ollama` / `custom` / `litellm`) | RAG Parameters panel — `llm_backend` |
-| Model name | RAG Parameters panel — `llm_model` |
-| LLM server host/URL | RAG Parameters panel — `ollama_host` or `custom_base_url` |
-| API key | RAG Parameters panel — `custom_api_key` |
-| Utility/preprocessing model | RAG Parameters panel — `utility_llm_model` |
+| Provider (`ollama` / `custom` / `litellm`) | Knowledge & RAG — `llm_backend` |
+| Model name | Knowledge & RAG — `llm_model` |
+| LLM server host/URL | Knowledge & RAG — `ollama_host` or `custom_base_url` |
+| API key | Knowledge & RAG — `custom_api_key` |
+| Utility/preprocessing model | Knowledge & RAG — `utility_llm_model` |
 | LiteLLM proxy URL + key | Env vars: `LITELLM_BASE_URL`, `LITELLM_API_KEY` |
 
 The `custom` backend accepts any OpenAI-compatible endpoint — use it for OpenAI, Anthropic, vLLM, or hosted APIs.
 
 ### Backend → Vector Store (pgvector)
 
-Configured per KB in the **RAG Parameters panel**: select `pgvector` as the vector store type and enter the connection string. Prerequisite: create a database and enable pgvector for it. The backend creates the table and index automatically on first use.
+Configured per KB under **Admin → Knowledge & RAG**: select `pgvector` as the vector store type and enter the connection string. Prerequisite: create a database and enable pgvector for it. The backend creates the table and index automatically on first use.
 
 ```
 postgresql://user:password@<db-host>:5432/lancy

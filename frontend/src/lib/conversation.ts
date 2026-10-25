@@ -21,7 +21,50 @@ export const generateRandomConversations = (max = 40) => {
     return conversations;
 };
 
-export const groupConversationsByDate = (conversations: Conversation[], translate: TFunction): { date: string; conversations: Conversation[] }[] => {
+export interface PeriodLabels {
+    today: string;
+    yesterday: string;
+    previous7Days: string;
+    previous30Days: string;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Groups conversations into today, yesterday, the previous 7 and 30 days, then
+ * months of this year, then years — newest group first, empty groups left out.
+ * Days are calendar days in local time.
+ */
+export const groupConversationsByPeriod = (
+    conversations: Conversation[],
+    labels: PeriodLabels,
+    locale: string,
+    now: Date = new Date(),
+): { label: string; conversations: Conversation[] }[] => {
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const monthName = new Intl.DateTimeFormat(locale, { month: "long" });
+
+    const periodOf = (timestamp: number): string => {
+        const date = new Date(timestamp);
+        const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+        const daysAgo = Math.round((startOfToday - startOfDay) / DAY_MS);
+        if (daysAgo <= 0) return labels.today;
+        if (daysAgo === 1) return labels.yesterday;
+        if (daysAgo <= 7) return labels.previous7Days;
+        if (daysAgo <= 30) return labels.previous30Days;
+        if (date.getFullYear() === now.getFullYear()) return monthName.format(date);
+        return String(date.getFullYear());
+    };
+
+    const groups = new Map<string, Conversation[]>();
+    for (const conversation of [...conversations].sort((a, b) => b.update_timestamp - a.update_timestamp)) {
+        const label = periodOf(conversation.update_timestamp);
+        groups.set(label, [...(groups.get(label) ?? []), conversation]);
+    }
+    return [...groups.entries()].map(([label, items]) => ({ label, conversations: items }));
+};
+
+export const groupConversationsByDate =(conversations: Conversation[], translate: TFunction): { date: string; conversations: Conversation[] }[] => {
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);

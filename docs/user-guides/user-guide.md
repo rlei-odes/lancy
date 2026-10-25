@@ -2,38 +2,46 @@
 Main guide for users. How to get answers from your knowledge base.
 ---
 
-## Retrieval presets
+## Asking questions
 
-The RAG Parameters panel controls **how** the system searches your documents before answering — how many passages it retrieves, whether it rewrites your question, whether it re-ranks the results. A preset is a named set of those settings.
+Type your question in the box at the bottom and press Enter. Lancy searches the knowledge base for passages that fit, hands the best ones to the language model, and the answer cites the documents it used.
 
-The dropdown marks where each preset comes from:
+### Choosing the knowledge base
 
-| Prefix | Meaning | Can you overwrite it? |
-|---|---|---|
-| `★` | Yours. You created it. | Yes |
-| `·` | Set by an administrator, shared by everyone | No — you get an error, save under your own name instead |
-| `◆` | Fixed, cannot be changed by anyone | No |
+The button next to the question box names the knowledge base a new chat searches, with how many documents and passages it holds. Pick another one before your first question. Once a chat has started it stays with its knowledge base — the button shows a lock — so start a new chat to ask another one.
 
-### What loads when you switch knowledge base
+How the search works — how many passages it retrieves, whether it rewrites your question, whether it re-ranks the results — is set by your administrator for each knowledge base. The **Reference** in the menu at the bottom left explains each setting.
 
-**Switching knowledge base resets your retrieval settings to `Default`** — the administrator's baseline for the whole organisation. This happens every time, and it replaces whatever you had set.
+### Options for the next question
 
-So if you work with your own preset, the order matters:
+The **+** next to the question box offers:
 
-1. Switch to the knowledge base you want.
-2. *Then* select your `★` preset from the dropdown.
+- **Filter documents** — in a new chat, limits the search to documents with matching properties, such as a document type. Only offered when your administrator has set up filters for the knowledge base. The filter stays fixed for the conversation.
+- **Chat only** — skips the search for the next message; the model answers from the conversation and its general knowledge.
 
-Doing it the other way round loses your selection: the KB switch overwrites it. Your preset is not deleted — just not active until you pick it again.
+Whatever is switched on shows as a small label above the question; click its × to remove it.
 
-### Saving your own
+### The Documents panel
 
-Adjust the settings, click the save icon next to the dropdown, and give it a name. Use a name of your own — if you type the name of an administrator preset the save is refused with a message.
+The panel on the right shows, for an answer, every document the search found. The button below each answer — for example *3 documents · 1 cited* — opens that answer's documents, and clicking a document name in the answer opens and expands that document. While an answer is being written, the panel already lists what was found; which documents were cited follows when the answer is complete.
 
-Your presets are private: nobody else sees them, and they do not affect anyone else's searches. They are tied to your browser session, so clearing your site data or signing in from a different browser starts you fresh with the administrator's `Default`.
+Each document shows one small square per passage:
 
-### If you are not sure what to pick
+| Square | Meaning |
+|---|---|
+| Filled | The answer cites this passage |
+| Outlined | Given to the model, not cited |
+| Dashed | Found, but ranked too low by the re-ranking step, so the model never saw it |
 
-`Default` is chosen by your administrator as the sensible baseline, and it is what you get without doing anything. The other administrator presets (`·`) trade speed against thoroughness — `Fast` retrieves less, `Quality` and `Multi-Document` retrieve more and do extra work per question. Try one if answers feel too shallow or too slow.
+**Semantic** and **Keyword** tell which search found the document: semantic search matches meaning, keyword search matches words. Expand a document to read its passages and where each one ranked; the arrow icon opens the document itself. *Cited* filters the list down to the documents the answer used.
+
+### Asking about specific documents
+
+Tick documents in the panel and choose **Ask using only these**: your next question is answered from those documents read in full, without searching. The panel estimates whether they fit the model; if they are too long, select fewer. After that one question, the chat searches normally again.
+
+### Suggested follow-up questions
+
+Below the latest answer, Lancy suggests a few follow-up questions. Click one to ask it.
 
 ---
 
@@ -49,7 +57,7 @@ Processing runs on the server, so you can leave the page meanwhile. When it is d
 
 If you add or remove files later, the pile is marked *needs reprocessing* — click **Process** again to include the changes. A pile marked *failed* can simply be processed again; if it keeps failing, tell your administrator.
 
-You can keep up to 20 piles with up to 200 files each. A pile belongs to your browser session, like your presets.
+You can keep up to 20 piles with up to 200 files each. A pile belongs to your browser session, like your question sets.
 
 ---
 

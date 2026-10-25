@@ -60,6 +60,7 @@ All `/api/admin/*` endpoints require admin. The table below is the full access m
 | `/api/v1/rag/presets/{kb_id}` | POST | 401 | ✓ | ✓ |
 | `/api/v1/rag/reindex` | POST | 401 | 403 | ✓ |
 | `/api/v1/rag/reindex-cancel` | POST | 401 | 403 | ✓ |
+| `/api/v1/rag/config` | POST | 401 | 403 | ✓ |
 | `/api/v1/rag/reindex-status` | GET | 401 | ✓ | ✓ |
 | `/api/v1/rag/query-status` | GET | 401 | ✓ | ✓ |
 | `/api/v1/rag/retrieve` | POST | 401 | ✓ | ✓ |
@@ -80,7 +81,7 @@ All `/api/admin/*` endpoints require admin. The table below is the full access m
 | `/v1/models` | GET | 401 | ✓ | ✓ |
 
 Notes:
-- `POST /rag/config` and `POST /rag/presets` are intentionally user-writable — users may adjust session RAG parameters and save presets from the config panel.
+- `POST /rag/config` is admin-only: a settings save rebuilds the agents every user answers with. `POST /rag/presets` stays user-writable, but a user cannot apply a preset.
 - `/api/auth/*` routes are excluded from middleware auth checks (they implement their own access control internally — see the Authentication section below).
 - The backend itself has no auth layer; it trusts the `x-user-role` header injected by the middleware. Port 8080 must be firewalled in any non-local deployment.
 
@@ -594,12 +595,35 @@ POST /rag/config
 
 Read or write the current RAG session configuration (LLM backend, model, retrieval parameters, system prompt).
 
-Write semantics differ by role:
-
-- **Admin** — writes update the shared baseline in `rag_config.json` and the system prompt file, affecting all future sessions.
-- **User** — writes are scoped to the user's session; only retrieval fields (`retriever_top_k`, `bm25_enabled`, etc.) are persisted per-user. LLM fields are ignored.
+Every caller reads the same configuration: the admin's baseline in `rag_config.json` plus the system prompt file. Only an admin may write it (`403` for users, enforced by both the middleware and the backend); a write updates the baseline and rebuilds the agents of every loaded knowledge base.
 
 The GET response includes all fields; use the Swagger UI schema or `GET /rag/config` for the full field list.
+
+---
+
+### Message Sources and Retrieval Details
+
+Assistant messages — in the stream (`POST /api/v1/messages/stream`) and when a conversation is loaded (`GET /api/v1/conversations/{id}/messages`) — carry two lists of chunks:
+
+| Field | Contents |
+|---|---|
+| `sources` | The chunks the answer cites. |
+| `retrieved` | Every chunk the search found: those sent to the LLM in context order, then those a reranker discarded. Empty for chat-only and expanded-context answers, and for answers saved before 0.5.0. |
+
+Each `retrieved` entry has its retrieval record under `metadata._retrieval`:
+
+```json
+{
+  "chunk_id": "…",
+  "title": "## Generate an artificial key",
+  "position": 2,
+  "sent": true,
+  "cited": true,
+  "ranks": { "semantic": 1, "bm25": 1, "pre_rerank": 3 }
+}
+```
+
+`ranks` holds the chunk's best rank in each search method that found it and, with reranking, its position before reranking. The first streamed chunk of an answer already carries `retrieved`, with `cited: false` throughout; the final message carries the saved version. `follow_up_questions` are saved with the message and returned when the conversation is loaded.
 
 ---
 

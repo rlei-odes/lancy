@@ -165,6 +165,13 @@ Three separate defects show up in that one chunk, all in docling's table seriali
 - Can the section heading be recovered from the first cell of a full-width row and promoted to a real markdown heading, fixing the title attribution?
 - Is the cell truncation a page-boundary artefact we can detect and report during ingestion, instead of losing content silently?
 
+**4. Table padding fills chunks.** docling pads cells with spaces and draws separator rows as wide as the columns. A glossary table chunk from the CASDEAI course was 66 % padding — 8,010 characters, 2,744 of text — and in `wb_local` 24 % of all chunks exceed 2,000 characters. Since `compact_markdown_tables` the reranker, the answer LLM, batch analysis and the context budget all see compacted text. Still padded:
+- **The embedding.** Padding tokens dilute the chunk's vector; that glossary chunk scored 0.41 against a question it answers, below noise matches at 0.44.
+- **Chunk splitting.** `_split_chunk_by_tokens` estimates tokens from characters, so padding uses up `max_chunk_tokens`: a table chunk at the cap holds a third of the text it could.
+- **Stored content and the document panel**, which shows the padding.
+
+**Fix:** compact tables during ingestion, before splitting. Needs a reindex, and changes chunk boundaries for every table-heavy document — measure it as the practice note below describes before adopting it.
+
 **Practice note:** docling moves fast and its table handling is actively changing — the 2.112 → 2.132 bump altered chunking for 20 of 20 sampled documents. Take its releases in small steps rather than letting twenty minor versions accumulate, and measure each one against a fixed sample of documents before adopting it: chunk the sample before and after, and compare per-file chunk counts, character totals and per-chunk content hashes. Equal counts are not enough — boundaries move while the count stays the same. A throwaway script for exactly this is in the history at `12d3f30`.
 
 ---
@@ -185,9 +192,15 @@ The reindex itself reports plain success. The user has just re-indexed a KB and 
 
 All three look nice now but they are not really aligned with each other. Not necessary, but is an inconsistency.
 
-### Improve Design of Source Citation Window
+### Render Chunk Content in the Document Panel
 
-Definitely does not look nice now but is hard to design as just raw markdown is shown. We can still improve this visually and align more with our design.
+The document panel on `/next` shows chunk text as plain text, so markdown arrives raw: `##` headings, `- ` list markers, `<!-- image -->` comments, and tables as `|` rows. The classic sources sheet ran chunks through the markdown renderer, which at least drew tables.
+
+**What's needed:**
+- Render chunk content as markdown in the panel, with styles scaled for a 512px column (the shared `Markdown` component's heading sizes are built for full answers).
+- Tables scroll sideways inside the chunk card rather than widening the panel.
+- A full-screen overlay for one chunk, or a whole document's chunks, when the content is too large to read in the panel — wide tables, long sections.
+- Drop docling's `<!-- image -->` placeholders, or show a marker that the chunk had an image there.
 
 ---
 
@@ -200,6 +213,47 @@ The **Expand context** action (v0.3.8) currently only lets the user pick from do
 **Reuse:** the backend path already exists — `RAG._answer_stream_expand_context` accepts any list of `source_files`. What's missing is a UI to browse the full KB file list (endpoint `GET /api/v1/rag/store-info` already returns `file_list`) and a persistence layer so the pinned selection survives across messages (unlike the current one-shot pick, which resets after send). Likely lives in `rag_config_snapshot` on the conversation, or as a KB-level admin setting.
 
 **Open question:** interaction with the current per-answer pick — should pinned docs merge with the one-shot selection, or are they mutually exclusive?
+
+---
+
+### Expand Context — Multi-Pass for Documents Larger Than the Context
+
+"Ask using only these" (and the classic **Expand context** action) sends every chunk of the picked documents in one LLM call. Long documents exceed the budget on their own: a single standards document estimated at ~300,000 tokens against a 66,000-token budget (60 % of `num_ctx`). The UI blocks the request, so the user cannot ask about the one document they care about.
+
+**What's needed:** a multi-pass mode for selections over budget. Split the documents' chunks into batches that fit, ask the question against each batch (map), then answer from the per-batch results (reduce). Each pass should keep its chunk citations so the final answer can still cite passages.
+
+**Open questions:**
+- Map output: extracted relevant passages, or partial answers? Passages keep citations exact; partial answers are shorter to reduce.
+- Cost and time: a 300k-token document is five or more LLM calls before the final one. The UI should state the number of passes before the user confirms, and show progress while they run.
+- Whether to filter first: rank the selected documents' chunks against the question and send only the best ones that fit, as a cheaper single-pass alternative.
+
+**Reuse:** `RAG._answer_stream_expand_context` already fetches all chunks of the picked files; the token estimate lives in `useContextBudget` (`frontend/src/components/next/use-context-budget.ts`).
+
+---
+
+### Max Search Reach — Every Keyword Hit Gets Read
+
+A search mode for questions where missing a document is worse than waiting. The default search returns the best few chunks; a relevant passage that ranks poorly is never seen, however clearly it answers the question. Example: "What is a surrogate key?" — the CASDEAI course defines it in a glossary table, in German, 80 % into an 8,000-character chunk. It never reached the answer.
+
+**How keyword terms come about today:** they don't, as a separate step. `BM25Retriever._tokenize` lowercases each query variant (the question, any expanded queries, the HyDE document) and splits it into words — every word, including "what", "is", "a", with no stop words, stemming or translation. "surrogate" finds "surrogate", never "Surrogatschlüssel" or "Ersatzschlüssel".
+
+**The mode:**
+1. **Term extraction.** An LLM step turns the question into the terms that must be looked for: the key concepts, their synonyms, and their translations into the corpus languages (see "Corpus Language Setting per KB").
+2. **Exhaustive match.** Every chunk containing one of the terms is a must-read — no top-k cut. The BM25 index already scores the whole corpus; this keeps everything with a non-zero score for a term instead of the top few.
+3. **Read in passes.** If the must-read chunks fit the context, answer from them directly. If not, read them in batches that fit and extract what each batch says about the question (map), then answer from those extracts (reduce), keeping chunk citations through both steps.
+4. **Report the reach.** Tell the user how many chunks matched, how many were read, and how many passes it took — the document panel can show every chunk that was read.
+
+**Shares machinery with** "Expand Context — Multi-Pass for Documents Larger Than the Context": the batching, the map and reduce prompts, citation carry-over and progress reporting are the same problem.
+
+**Open questions:** a cap on matched chunks before asking the user to narrow the question; whether semantic search adds candidates beyond the keyword matches; how to show cost and progress for a run of many LLM calls.
+
+---
+
+### Reranker — Show the Passage Around the Query Terms When Cut
+
+The reranker sends each candidate in full, table padding compacted. Only when the whole pool exceeds its prompt budget (half of `num_ctx`) is every candidate cut, to the same share from the start. A passage deep in a long chunk is then lost again.
+
+**Improvement:** when a candidate must be cut, send the window around the query terms' occurrences instead of the beginning — the chunk's title plus the best-matching span, falling back to the start when no term occurs. Mostly matters for small `num_ctx` settings and large candidate pools.
 
 ---
 
@@ -231,6 +285,25 @@ Show neighbours in the sources panel when the user expands a citation. The retri
 HyDE and query expansion both generate text that is embedded and matched against the corpus, so they work best in the corpus language. Neither knows what that is. The expansion prompt used to ask for a mix of languages and spent one of its slots translating an English question for an English corpus; it now follows the query's language, which is a guess, not knowledge.
 
 **Proposal:** a `corpus_language` field on the KB, set by the admin, threaded into the HyDE and query-expansion prompts. Default "same as the query" for mixed corpora.
+
+Corpora are often mixed — German course material with English terms, standards in several languages — so the field should hold a list of languages, not one. Keyword extraction (below) uses it to pick translation targets. A per-chunk language, detected at ingestion and stored in metadata, would be the precise version; BM25 already detects it in memory from stop words (`text_analysis.detect_language`).
+
+### Keyword Extraction for Search — Synonyms and Translations
+
+Keyword search matches the question's own words, after stop words are dropped and words stemmed (`retriever/text_analysis.py`). It cannot find a document that uses a different word or language: "surrogate key" never matches "Ersatzschlüssel" or "technischer Schlüssel".
+
+**Proposal:** a utility-LLM step before retrieval that turns the question into search terms:
+- the key terms of the question, without filler;
+- their close synonyms and singular/plural forms;
+- 2–3 translations into the KB's corpus languages (see above).
+
+The terms feed keyword search only — semantic search already works across languages. The question's own terms weigh more than expansions, so a synonym cannot outrank the word the user typed: either as separate BM25 queries fused with a lower weight, or as one query with weighted terms.
+
+**Cost:** one short utility-LLM call per question, like query expansion; it could replace query expansion for the keyword side.
+
+**Shares the term-extraction step with** "Max Search Reach — Every Keyword Hit Gets Read", which needs the same terms to decide what must be read.
+
+**Alternative to evaluate afterwards:** bge-m3, the embedding model in use, can also produce multilingual sparse lexical weights. Using those instead of hand-built BM25 analysis needs new index data, so a reindex.
 
 ### RAG Settings: LLM Call Calculation
 
@@ -317,6 +390,14 @@ Both require backend config storage plumbing that is already in place (`branding
 ---
 
 ## Admin Tooling
+
+### BM25 Debug — Show the Search Terms
+
+Keyword search analyses every query variant into search terms: stop words dropped, words stemmed in all supported languages. The terms are only visible as a backend log line (`BM25 terms for '…': …`), so nobody can see from the UI why a keyword search did or did not match.
+
+**What's needed:**
+- **Retrieval Probe:** return the analysed terms with the probe result and show them above the chunks, with each chunk's matched terms highlighted. Cheapest and most useful.
+- **Admin debug tab**, like LLM Debug: the recent searches, each with its query variants, their terms, the language detected for the question, and the top keyword hits with their scores.
 
 ### User Feedback — Thumbs Up / Down
 

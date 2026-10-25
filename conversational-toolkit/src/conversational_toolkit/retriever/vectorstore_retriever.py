@@ -14,6 +14,8 @@ class VectorStoreRetriever(Retriever[ChunkMatch]):
     async def retrieve(self, query: str, filters: dict[str, Any] | None = None) -> list[ChunkMatch]:
         embeddings = await self.embedding_model.get_embeddings(query)
         results = await self.vector_store.get_chunks_by_embedding(embeddings[0], self.top_k, filters=filters or None)
+        for rank, result in enumerate(results, start=1):
+            result.ranks["semantic"] = rank
         return results
 
 

@@ -61,20 +61,19 @@ export const Help: FunctionComponent<Props> = ({ onClickBack }) => {
                 </Section>
 
                 <Section title={t("help.secSettings")} icon={<SlidersHorizontal className={iconCls} />}>
-                    <p>{t("help.settingsIntro", { panel: t("rag.title") })}</p>
+                    <p>{t("help.settingsIntro")}</p>
                     <Item name={t("rag.fieldTopK")}>{t("help.topK")}</Item>
                     <Item name={t("rag.fieldBm25")}>{t("help.bm25")}</Item>
                     <Item name={t("rag.fieldRrfK")}>{t("help.rrfK")}</Item>
                     <Item name={t("rag.fieldQueryExp")}>{t("help.queryExp")}</Item>
                     <Item name={t("rag.fieldHyde")}>{t("help.hyde")}</Item>
                     <Item name={t("rag.fieldReranking")}>{t("help.reranking", { pool: t("rag.fieldRerankPool") })}</Item>
-                    <Item name={t("rag.presetLabel")}>{t("help.presets")}</Item>
                 </Section>
 
                 <Section title={t("help.secTips")} icon={<Target className={iconCls} />}>
                     <Item name={t("help.tipSpecificName")}>{t("help.tipSpecific")}</Item>
                     <Item name={t("chatFilters.add")}>{t("help.tipFilter")}</Item>
-                    <Item name={t("expandContext.label")}>{t("help.tipExpand")}</Item>
+                    <Item name={t("next.askWithSelected")}>{t("help.tipExpand")}</Item>
                     <Item name={t("chatOnly.label")}>{t("help.tipChatOnly")}</Item>
                     <Item name={t("help.tipSourcesName")}>{t("help.tipSources")}</Item>
                 </Section>

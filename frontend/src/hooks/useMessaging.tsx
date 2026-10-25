@@ -136,7 +136,9 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
     const { t } = useTranslation("app");
 
     const setConversationId = (conversationId: Conversation["id"]) => {
-        router.push(conversationId ? `/c/${conversationId}` : "/", undefined, { shallow: true });
+        // The classic chat stays reachable at /legacy; keep its users there.
+        const base = router.pathname.startsWith("/legacy") ? "/legacy" : "";
+        router.push(conversationId ? `${base}/c/${conversationId}` : base || "/", undefined, { shallow: true });
     };
 
     const setMessagesAndThread = (messages: Message[], cursor?: Message["id"]) => {
@@ -263,7 +265,13 @@ export const MessagingProvider: React.FC<Props> = ({ children }) => {
             (streamedMessage) => {
                 // Update the last message (which is a loading message) with the new streamed message
                 console.debug("[stream] chunk id=%s contentLen=%d sources=%d", streamedMessage.id, streamedMessage.content?.length ?? 0, streamedMessage.sources?.length ?? 0);
-                setThread((prev) => [...prev.slice(0, -1), streamedMessage]);
+                setThread((prev) => {
+                    // The retrieved documents arrive once, with the first chunk; carry them
+                    // forward until the final message brings the saved, cited version.
+                    const previous = prev[prev.length - 1];
+                    const keep = !streamedMessage.retrieved?.length && previous?.retrieved?.length;
+                    return [...prev.slice(0, -1), keep ? { ...streamedMessage, retrieved: previous.retrieved } : streamedMessage];
+                });
 
                 if (cursor !== streamedMessage.id) {
                     newCursor = streamedMessage.id;

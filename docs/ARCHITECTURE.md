@@ -6,7 +6,7 @@
 
 ```mermaid
 flowchart TD
-    FE["**Next.js Frontend**\nChat UI · RAG Config Panel · Session Labels · i18n\nAuth (session cookie) · Sidebar badges · Source citations"]
+    FE["**Next.js Frontend**\nChat UI · Document panel · Admin settings · i18n\nAuth (session cookie) · Source citations"]
     BE["**FastAPI Backend**\n/rag · /kb · /v1/chat/completions (OpenAI-compat)"]
     KB["**KB Pool** (concurrent)\nKB-A: ChromaDB · local embed · BM25+semantic\nKB-B: pgvector · LiteLLM embed · semantic only\nKB-N: ..."]
     RP["**Retrieval Pipeline**\nQuery → BM25 | Semantic | HyDE\n→ RRF fusion → Reranker → Top-K"]
@@ -341,23 +341,29 @@ Query
 
 [Optional] HyDE
   → LLM generates a hypothetical answer document
-  → hypothetical doc is embedded (not the original query)
-  → embedded HyDE vector used for ANN search
+  → used for semantic search only (a SemanticOnlyQuery); BM25 skips it
 
-[Parallel]
-  → BM25 retrieval (sparse, term-frequency based)
-  → Semantic retrieval (ANN on query/HyDE embedding)
+[Parallel, per variant]
+  → BM25 retrieval — stop words dropped, words stemmed (text_analysis.py)
+  → Semantic retrieval (ANN on the variant's embedding)
 
 [RRF Fusion]
   → Reciprocal Rank Fusion merges ranked lists
   → Score: Σ 1 / (k + rank_i)   (k=60 default)
 
 [Optional] LLM Reranking
-  → Cross-encoder or LLM scores each candidate
-  → Final Top-K selected
+  → the fused pool (candidate pool size) is ranked in one LLM call against the user's question
+  → each candidate is sent whole, table padding compacted, within a budget of half num_ctx
+  → top-K kept; the rest returned as discarded
 
-→ Top-K chunks passed to generator
+→ Top-K chunks passed to generator, table padding compacted
 ```
+
+**Keyword analysis.** `retriever/text_analysis.py` handles German, English, French and Italian. A chunk is stemmed in its own language, detected from the stop words it contains. A query word is expanded to its stem in every supported language plus the word itself, so an English term still matches inside a German chunk; stop words are dropped in the query's language only. The analysed terms are logged per query (`BM25 terms for …`). The BM25 index is built in memory when a KB loads, so analysis changes need no reindex.
+
+**Provenance.** Every chunk records how it was found in `ChunkMatch.ranks`: its best rank in semantic and keyword search, and its position before reranking (`pre_rerank`). Fusion keeps the best rank per method. The answer carries every chunk sent to the LLM (`AgentAnswer.retrieved`) and the reranker's discards (`AgentAnswer.discarded`). The controller saves each of them once as a source of the message, with the record under `metadata._retrieval`: chunk id, title, position, `sent`, `cited`, ranks. The API's `sources` stays the cited chunks only; `retrieved` lists all of them, sent first in context order, then the discards. The first streamed chunk of an answer already carries `retrieved`, uncited, so the client can show the documents while the answer is written.
+
+**Table compaction.** `utils/text.py: compact_markdown_tables` strips the alignment padding docling writes into markdown table rows. It applies wherever a model reads chunk text — reranker, answer context, batch analysis — and to the character counts behind the context budgets. Stored chunks and embeddings keep the padding.
 
 ### Vector Stores
 
@@ -451,27 +457,32 @@ Browser → GET /api/rag/query
 
 Set `BACKEND_URL` in `frontend/.env` to point at the backend host when running on separate machines.
 
-### RAG Config Panel
+### Chat Page
+
+`frontend/src/pages/index.tsx` → `frontend/src/components/next/`
+
+The chat at `/` and `/c/{id}`:
+- **Sidebar** (`chat-sidebar.tsx`) — new chat, search, conversations grouped by period with knowledge base and date; the user menu holds Settings, Reference, Advanced Features, Admin, the classic view, and version and uptime.
+- **Thread and composer** (`chat-message.tsx`, `composer.tsx`) — answers with citations that open their document in the panel; the composer has the knowledge base picker (`kb-picker.tsx`) and a `+` menu for the metadata filter and chat-only.
+- **Document panel** (`document-panel.tsx`) — per answer, every retrieved document grouped from the message's `retrieved` list (`lib/retrieved.ts`): cited and sent passages, the search method that found them, reranker discards. Ticking documents arms expand-context for the next question, with a token budget check (`use-context-budget.ts`).
+
+The KB picker only selects a knowledge base for the session; it never writes settings.
+
+The classic chat stays at `/legacy` and `/legacy/c/{id}` (`components/template/home.tsx`) until it is removed. Session labels — grouping conversations for A/B evaluation runs — and the sidebar's per-conversation config badges exist only there.
+
+### RAG Settings
 
 `frontend/src/components/sections/rag-config-panel.tsx`
 
-Right-side collapsible panel exposing all RAG parameters:
-- Knowledge base selector — compatible KBs selectable normally; incompatible KBs greyed out (user) or red+⚠ (admin, triggers pool reset); controls lock with a spinner while a KB is loading
+The settings panel, shown full width as **Admin → Knowledge & RAG** (`layout="page"`) and as a sidebar on the Advanced Features page and the classic chat:
+- Knowledge base selector and management — compatible KBs selectable normally; incompatible KBs greyed out (user) or red+⚠ (admin, triggers pool reset); controls lock with a spinner while a KB is loading
 - LLM model and temperature
 - Embedding backend and model
 - Retrieval: k, BM25 on/off, HyDE on/off, Query Expansion on/off, Reranking on/off
-- Presets (fast / balanced / quality)
+- Presets
 - Re-index / cancel indexing controls with live progress
 
-All settings are persisted in `rag_config.json` and snapshotted per conversation.
-
-### Session Labels & Badges
-
-Each conversation stores a `rag_config_snapshot` at creation time. The sidebar renders
-badges showing the full config: `KB · LLM · T= · emb: · k= · BM25 · Rerank · HyDE`.
-
-Session labels group conversations for A/B evaluation runs: label two sessions,
-run the same questions with different configs, compare outputs.
+Settings are the admin's: they are saved to `rag_config.json` and the system prompt file, and every user's questions run with them. Users see the panel read-only; `POST /api/v1/rag/config` is admin-only, because a save rebuilds the agents of every loaded KB. Each conversation snapshots the settings at creation (`rag_config_snapshot`).
 
 ### Auth
 

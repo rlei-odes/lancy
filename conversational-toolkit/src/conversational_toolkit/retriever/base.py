@@ -15,6 +15,15 @@ from conversational_toolkit.chunking.base import Chunk
 T_co = TypeVar("T_co", bound=Chunk, covariant=True)
 
 
+class SemanticOnlyQuery(str):
+    """A query meant for semantic search only; keyword retrievers return nothing for it.
+
+    Used for HyDE text: a hypothetical answer widens semantic recall, but as a
+    keyword query its many words only add noise. A 'str' subclass so it passes
+    unchanged through fusion and reranking down to the retrievers.
+    """
+
+
 class Retriever(ABC, Generic[T_co]):
     """
     Abstract base class for document retrievers.

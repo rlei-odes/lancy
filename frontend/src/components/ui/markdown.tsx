@@ -130,7 +130,32 @@ const SourceCitationLink: FunctionComponent<{ filename: string; sources?: Source
     );
 };
 
-export const Markdown: FunctionComponent<{ content: string; sources?: Source[] }> = ({ content, sources }) => (
+const safeDecode = (value: string): string => {
+    try {
+        return decodeURIComponent(value);
+    } catch {
+        return value; // a literal "%" that is not an escape
+    }
+};
+
+/** Inline citation that hands the cited file to the caller, which shows it elsewhere. */
+const CitationChip: FunctionComponent<{ filename: string; onClick: (filename: string) => void }> = ({ filename, onClick }) => (
+    <button
+        type="button"
+        title={filename}
+        onClick={() => onClick(filename)}
+        className="inline-block max-w-[18rem] truncate rounded-md bg-primary/10 px-1.5 align-bottom text-[0.85em] font-medium leading-6 text-primary hover:bg-primary/20 transition-colors"
+    >
+        {filename}
+    </button>
+);
+
+export const Markdown: FunctionComponent<{
+    content: string;
+    sources?: Source[];
+    /** When set, in-text citations call this instead of opening their own popup. */
+    onCitationClick?: (filename: string) => void;
+}> = ({ content, sources, onCitationClick }) => (
     <ReactMarkdown
         remarkPlugins={[RemarkMath, RemarkGfm, RemarkBreaks]}
         rehypePlugins={[
@@ -159,6 +184,7 @@ export const Markdown: FunctionComponent<{ content: string; sources?: Source[] }
                 // source:// links are in-text citations → show content popup
                 if (href.startsWith("source://")) {
                     const filename = decodeURIComponent(href.replace("source://", ""));
+                    if (onCitationClick) return <CitationChip filename={filename} onClick={onCitationClick} />;
                     return <SourceCitationLink filename={filename} sources={sources} />;
                 }
 
@@ -169,6 +195,8 @@ export const Markdown: FunctionComponent<{ content: string; sources?: Source[] }
                 // LLM sometimes embeds filenames as relative links → rewrite to backend file endpoint
                 // (or to the source's external_url if one was supplied at ingestion)
                 if (!isHttp && !isInternal && isDocFile && href !== "") {
+                    // The renderer URL-encodes the href linkifyDocRefs built from the plain filename.
+                    if (onCitationClick) return <CitationChip filename={safeDecode(href)} onClick={onCitationClick} />;
                     const source = sources?.find((s) => (s.metadata?.source_file as string) === href);
                     const fileUrl = resolveSourceUrl(href, source?.metadata);
                     return (

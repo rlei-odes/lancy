@@ -17,6 +17,8 @@ export interface Message {
     parent_id?: string;
     user_id?: string;
     sources?: Source[];
+    /** Every chunk the search sent to the LLM, cited or not, in context order. Empty without a search. */
+    retrieved?: Source[];
     reaction?: Reaction;
     follow_up_questions?: string[];
     query_duration_ms?: number;
@@ -38,8 +40,21 @@ export interface Source {
         url?: string;
         header?: string;
         mime_type?: string;
-        [key: string]: string | number | boolean | string[] | null | undefined;
+        _retrieval?: RetrievalInfo;
+        [key: string]: string | number | boolean | string[] | RetrievalInfo | null | undefined;
     };
+}
+
+/** How a retrieved chunk was found. Ranks are 1-based; a method that did not return the chunk is absent. */
+export interface RetrievalInfo {
+    chunk_id: string;
+    title: string;
+    /** Position in the LLM context; discarded chunks follow the sent ones in ranked order. */
+    position: number;
+    /** False when a reranker ranked the chunk below the cut. Absent on answers saved before discards were kept. */
+    sent?: boolean;
+    cited: boolean;
+    ranks: { semantic?: number; bm25?: number; pre_rerank?: number };
 }
 
 export enum MessageTypes {

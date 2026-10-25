@@ -14,7 +14,7 @@ Lancy organises documents into **Knowledge Bases (KBs)**. Each KB has its own em
 
 ### Via the UI
 
-1. Log in as admin and open the **RAG Parameters** panel (right side of the interface)
+1. Log in as admin and open **Admin → Knowledge & RAG**
 2. Click **+** next to the knowledge base selector
 3. Enter a name, a source directory path (e.g. `data/`), and choose your embedding backend
 4. Save — the KB is registered but not yet indexed
@@ -40,7 +40,7 @@ Note: If you are using the API to ingest files, the source directory path is irr
 
 ## KB Settings Reference
 
-These are set at KB creation and stored in `knowledge_bases.json`. Most can be edited in the **RAG Parameters** panel. Changing the embedding model on an existing KB requires a full re-index with `reset=true` — the vector store dimension is fixed at creation time.
+These are set at KB creation and stored in `knowledge_bases.json`. Most can be edited under **Admin → Knowledge & RAG**. Changing the embedding model on an existing KB requires a full re-index with `reset=true` — the vector store dimension is fixed at creation time.
 
 ### Embedding
 

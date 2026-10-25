@@ -9,7 +9,7 @@ from typing import Any, AsyncGenerator, Callable
 
 from conversational_toolkit.agents.base import Agent, AgentAnswer, QueryWithContext, RetrievalStats
 from conversational_toolkit.llms.base import LLM, LLMMessage, Roles, MessageContent
-from conversational_toolkit.retriever.base import Retriever
+from conversational_toolkit.retriever.base import Retriever, SemanticOnlyQuery
 from conversational_toolkit.retriever.reranking_retriever import RerankingRetriever
 from conversational_toolkit.utils.retriever import (
     make_query_standalone,
@@ -17,6 +17,7 @@ from conversational_toolkit.utils.retriever import (
     reciprocal_rank_fusion,
     hyde_expansion,
 )
+from conversational_toolkit.utils.text import compact_markdown_tables
 from conversational_toolkit.vectorstores.base import ChunkRecord, VectorStore
 
 import logging
@@ -100,7 +101,8 @@ class RAG(Agent):
 
         if self.enable_hyde:
             hyde_expansion_message = await hyde_expansion(query, self.utility_llm)
-            queries.append(hyde_expansion_message)
+            # A hypothetical answer widens semantic recall; as keywords it is noise.
+            queries.append(SemanticOnlyQuery(hyde_expansion_message))
 
         if phase_callback:
             phase_callback("retrieving")
@@ -108,18 +110,20 @@ class RAG(Agent):
             if isinstance(retriever, RerankingRetriever):
                 retriever.phase_callback = phase_callback
 
-        async def _retrieve_one(retriever) -> list[ChunkRecord]:
+        async def _retrieve_one(retriever) -> tuple[list[ChunkRecord], list[ChunkRecord]]:
             # A reranking retriever fuses the variants itself and ranks the merged
             # pool in one LLM call, against the user's question rather than the
             # HyDE document. Ranking per variant would cost one call each and
             # never compare a chunk found by one variant against another's.
             if isinstance(retriever, RerankingRetriever):
-                return await retriever.retrieve_multi(queries, rank_query=query, filters=filters)
+                kept, dropped = await retriever.rank_pool(queries, rank_query=query, filters=filters)
+                return list(kept), list(dropped)
             results = await asyncio.gather(*[retriever.retrieve(q, filters=filters) for q in queries])
-            return reciprocal_rank_fusion(list(results))[: retriever.top_k]
+            return reciprocal_rank_fusion(list(results))[: retriever.top_k], []
 
         all_results = await asyncio.gather(*[_retrieve_one(r) for r in self.retrievers])
-        sources: list[ChunkRecord] = [chunk for group in all_results for chunk in group]
+        sources: list[ChunkRecord] = [chunk for kept, _ in all_results for chunk in kept]
+        discarded: list[ChunkRecord] = [chunk for _, dropped in all_results for chunk in dropped]
 
         # Build retrieval stats from the first reranker (there is at most one in practice).
         reranker = next((r for r in self.retrievers if isinstance(r, RerankingRetriever)), None)
@@ -156,7 +160,7 @@ class RAG(Agent):
                 context_message.content.append(
                     MessageContent(
                         type="text",
-                        text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}">{source.content}</source>',
+                        text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}">{compact_markdown_tables(source.content)}</source>',
                     )
                 )
             elif "image" in source.mime_type:
@@ -199,6 +203,8 @@ class RAG(Agent):
                         content=[MessageContent(type="text", text=content)],
                         role=Roles.ASSISTANT,
                         sources=sources,
+                        retrieved=sources,
+                        discarded=discarded,
                         retrieval_stats=retrieval_stats,
                     )
                 )
@@ -252,7 +258,7 @@ class RAG(Agent):
                 context_message.content.append(
                     MessageContent(
                         type="text",
-                        text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}">{source.content}</source>',
+                        text=f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}">{compact_markdown_tables(source.content)}</source>',
                     )
                 )
             elif "image" in source.mime_type:

@@ -20,6 +20,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from conversational_toolkit.agents.base import Agent, QueryWithContext
+from conversational_toolkit.chunking.base import Chunk
 from conversational_toolkit.conversation_database.data_models.conversation import Conversation, ConversationDatabase
 from conversational_toolkit.conversation_database.data_models.message import Message, MessageDatabase
 from conversational_toolkit.conversation_database.data_models.reaction import Reaction, ReactionDatabase
@@ -29,6 +30,7 @@ from conversational_toolkit.llms.base import LLMMessage, Roles, MessageContent
 from conversational_toolkit.utils.database import generate_uid
 from conversational_toolkit.utils.metadata_provider import MetadataProvider
 from conversational_toolkit.utils.time import get_current_timestamp
+from conversational_toolkit.vectorstores.base import ChunkRecord
 
 
 class MessageFilter(BaseModel):
@@ -78,8 +80,68 @@ class ReactionInput(BaseModel):
     note: str | None = None
 
 
+RETRIEVAL_KEY = "_retrieval"
+
+
+def _sources_to_store(
+    sources: Sequence[Chunk], retrieved: Sequence[ChunkRecord], discarded: Sequence[ChunkRecord] = ()
+) -> list[tuple[Chunk, dict]]:
+    """Each chunk to save for an answer, with the metadata to save it under.
+
+    When a search ran, every chunk it found is saved once, and how it was found
+    goes under RETRIEVAL_KEY: its id and title (a stored source keeps neither
+    otherwise), its position, whether it was sent to the LLM, whether the answer
+    cited it, and its per-method ranks. The chunks sent come first, in context
+    order; the ones a reranker discarded follow in ranked order. Without a
+    search (chat only, expanded context, agents that do not search) the cited
+    sources are saved unchanged.
+    """
+    if not retrieved:
+        return [(source, source.metadata) for source in sources]
+    cited = {getattr(source, "id", None) for source in sources}
+    sent = list({chunk.id: chunk for chunk in retrieved}.values())
+    sent_ids = {chunk.id for chunk in sent}
+    dropped = [chunk for chunk in {c.id: c for c in discarded}.values() if chunk.id not in sent_ids]
+    return [
+        (
+            chunk,
+            {
+                **chunk.metadata,
+                RETRIEVAL_KEY: {
+                    "chunk_id": chunk.id,
+                    "title": chunk.title,
+                    "position": position,
+                    "sent": position <= len(sent),
+                    "cited": chunk.id in cited,
+                    "ranks": dict(getattr(chunk, "ranks", {})),
+                },
+            },
+        )
+        for position, chunk in enumerate(sent + dropped, start=1)
+    ]
+
+
+def _split_stored_sources(stored: list[Source]) -> tuple[list[Source], list[Source]]:
+    """Split a message's saved sources into the cited ones and everything retrieved.
+
+    'sources' keeps its meaning and shape for every consumer: the cited chunks,
+    without the retrieval record. 'retrieved' holds every chunk the search found,
+    sent to the LLM or discarded by a reranker ('sent' tells them apart). It is
+    empty for answers saved without a search or before provenance was recorded.
+    """
+    ordered = sorted(stored, key=lambda s: s.metadata.get(RETRIEVAL_KEY, {}).get("position", 0))
+    retrieved = [s for s in ordered if RETRIEVAL_KEY in s.metadata]
+    sources = [
+        s.model_copy(update={"metadata": {k: v for k, v in s.metadata.items() if k != RETRIEVAL_KEY}})
+        for s in ordered
+        if s.metadata.get(RETRIEVAL_KEY, {}).get("cited", True)
+    ]
+    return sources, retrieved
+
+
 class ClientMessage(Message):
     sources: Sequence[Source]
+    retrieved: Sequence[Source] = Field(default_factory=list)
     reaction: str | None
     follow_up_questions: Sequence[str] | None
     query_duration_ms: int | None = None
@@ -261,6 +323,7 @@ class ConversationalToolkitController:
             _aiter = stream.__aiter__()
             _pending = asyncio.create_task(_next_chunk(_aiter))
             last_chunk = None
+            retrieved_announced = False
             try:
                 while True:
                     done, _ = await asyncio.wait({_pending}, timeout=_KEEPALIVE)
@@ -272,6 +335,16 @@ class ConversationalToolkitController:
                         break
                     last_chunk = chunk
                     if chunk.content:
+                        # What the search found is known before the first token; send it
+                        # once, so the client can show it while the answer is written.
+                        # Nothing is cited yet: that is settled by the final message.
+                        provisional: list[Source] = []
+                        if not retrieved_announced and chunk.retrieved:
+                            retrieved_announced = True
+                            provisional = [
+                                Source(id=m[RETRIEVAL_KEY]["chunk_id"], message_id="", content=c.content, metadata=m)
+                                for c, m in _sources_to_store([], chunk.retrieved, chunk.discarded)
+                            ]
                         yield ClientMessage(
                             id="",
                             user_id="",
@@ -279,6 +352,7 @@ class ConversationalToolkitController:
                             content=last_chunk.content[0].text if last_chunk.content else "",
                             role=Roles.ASSISTANT,
                             sources=[],
+                            retrieved=provisional,
                             reaction=None,
                             follow_up_questions=chunk.follow_up_questions,
                             parent_id=input_message.id,
@@ -306,6 +380,9 @@ class ConversationalToolkitController:
             _retrieval_stats = last_chunk.retrieval_stats.model_dump() if last_chunk.retrieval_stats else None
             if _retrieval_stats:
                 MetadataProvider.add_metadata({"retrieval_stats": _retrieval_stats})
+            if last_chunk.follow_up_questions:
+                # Saved with the message so they come back when the conversation is reopened.
+                MetadataProvider.add_metadata({"follow_up_questions": list(last_chunk.follow_up_questions)})
 
             final_message = await self.message_db.create_message(
                 Message(
@@ -320,14 +397,13 @@ class ConversationalToolkitController:
                 )
             )
 
-            sources = [
+            stored = [
                 await self.source_db.create_source(
-                    Source(
-                        id=generate_uid(), message_id=final_message.id, content=source.content, metadata=source.metadata
-                    )
+                    Source(id=generate_uid(), message_id=final_message.id, content=chunk.content, metadata=metadata)
                 )
-                for source in last_chunk.sources
+                for chunk, metadata in _sources_to_store(last_chunk.sources, last_chunk.retrieved, last_chunk.discarded)
             ]
+            sources, retrieved = _split_stored_sources(stored)
 
             yield ClientMessage(
                 id=final_message.id,
@@ -336,6 +412,7 @@ class ConversationalToolkitController:
                 content=final_message.content,
                 role=final_message.role,
                 sources=sources,
+                retrieved=retrieved,
                 reaction=None,
                 follow_up_questions=last_chunk.follow_up_questions,
                 parent_id=input_message.id,
@@ -356,6 +433,7 @@ class ConversationalToolkitController:
         api_messages = []
         for message in sorted(messages, key=lambda m: m.create_timestamp):
             _meta = message.metadata or []
+            sources, retrieved = _split_stored_sources(await self.source_db.get_sources_by_message_id(message.id))
             api_messages.append(
                 ClientMessage(
                     id=message.id,
@@ -363,9 +441,12 @@ class ConversationalToolkitController:
                     conversation_id=message.conversation_id,
                     content=message.content,
                     role=message.role,
-                    sources=await self.source_db.get_sources_by_message_id(message.id),
+                    sources=sources,
+                    retrieved=retrieved,
                     reaction=None,
-                    follow_up_questions=[],
+                    follow_up_questions=next(
+                        (m.get("follow_up_questions") for m in reversed(_meta) if m.get("follow_up_questions")), []
+                    ),
                     parent_id=message.parent_id,
                     create_timestamp=message.create_timestamp,
                     query_duration_ms=next(
@@ -430,7 +511,7 @@ class ConversationalToolkitController:
         for message in messages:
             reactions = await self.reaction_db.get_reactions_by_message_id(message.id)
             api_reaction = reactions[0].content if reactions else None
-            sources = await self.source_db.get_sources_by_message_id(message.id)
+            sources, retrieved = _split_stored_sources(await self.source_db.get_sources_by_message_id(message.id))
             _meta = message.metadata or []
             api_message = ClientMessage(
                 id=message.id,
@@ -439,8 +520,11 @@ class ConversationalToolkitController:
                 content=message.content,
                 role=message.role,
                 sources=sources,
+                retrieved=retrieved,
                 reaction=api_reaction,
-                follow_up_questions=[],
+                follow_up_questions=next(
+                    (m.get("follow_up_questions") for m in reversed(_meta) if m.get("follow_up_questions")), []
+                ),
                 parent_id=message.parent_id,
                 create_timestamp=message.create_timestamp,
                 query_duration_ms=next(

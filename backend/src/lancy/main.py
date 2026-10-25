@@ -366,6 +366,8 @@ class CustomRAG(RAG):
         return AgentAnswer(
             content=[MessageContent(type="text", text=content)],
             sources=[s for s in unique_sources if s.id in relevant_source_ids],
+            retrieved=answer.retrieved,
+            discarded=answer.discarded,
             follow_up_questions=follow_up_questions,
             retrieval_stats=answer.retrieval_stats,
         )
@@ -423,6 +425,12 @@ def _build_components(kb: KBInfo, cfg: RagConfig) -> tuple[VectorStore, CustomRA
         # strand one Postgres pool per failed rebuild.
         _dispose_vs_sync(vs)
         raise
+
+
+def _rerank_prompt_budget(num_ctx: int) -> int:
+    """Characters of candidate text the reranker may send: half the context, at a
+    conservative 3 characters per token, so the prompt and the ranking still fit."""
+    return num_ctx // 2 * 3
 
 
 def _assemble_components(
@@ -510,7 +518,11 @@ def _assemble_components(
         log.warning(f"Utility LLM build failed ({exc}), using main LLM for preprocessing")
         utility_llm = llm
 
-    final_retriever = RerankingRetriever(hybrid, utility_llm, top_k=top_k) if cfg.reranking_enabled else hybrid
+    final_retriever = (
+        RerankingRetriever(hybrid, utility_llm, top_k=top_k, max_prompt_chars=_rerank_prompt_budget(cfg.num_ctx))
+        if cfg.reranking_enabled
+        else hybrid
+    )
 
     all_retrievers = [final_retriever]
     aux_stores: list = []
@@ -1016,9 +1028,10 @@ def build_server():
                 for i, cid in enumerate(ordered_ids):
                     pre_rerank_ranks[cid] = i + 1
                 reranker = RerankingRetriever(
-                    retriever=None,
+                    retriever=None,  # type: ignore[arg-type]
                     llm=utility_llm,
-                    top_k=top_k,  # type: ignore[arg-type]
+                    top_k=top_k,
+                    max_prompt_chars=_rerank_prompt_budget(cfg.num_ctx),
                 )
                 ranked_indices = await reranker._llm_rerank(req.query, candidates)
                 ordered_ids = [candidates[i].id for i in ranked_indices[:fetch_k]]

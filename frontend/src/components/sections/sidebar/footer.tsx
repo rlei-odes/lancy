@@ -32,8 +32,8 @@ const formatUptime = (startedAt: string, now: number, t: Translate): string | nu
     return t("uptime.days", { days: Math.floor(hours / 24), hours: hours % 24 });
 };
 
-export const Footer: FunctionComponent = () => {
-    const { theme } = useTheme();
+/** When the backend started and how long ago, polled so a restart resets the clock. */
+export const useBackendUptime = (): { startedAt: string | null; uptime: string | null } => {
     const { t } = useTranslation("app");
     const [startedAt, setStartedAt] = useState<string | null>(null);
     const [now, setNow] = useState(() => Date.now());
@@ -69,7 +69,13 @@ export const Footer: FunctionComponent = () => {
         return () => clearInterval(ticker);
     }, [startedAt]);
 
-    const uptime = startedAt ? formatUptime(startedAt, now, t) : null;
+    return { startedAt, uptime: startedAt ? formatUptime(startedAt, now, t) : null };
+};
+
+export const Footer: FunctionComponent = () => {
+    const { theme } = useTheme();
+    const { t } = useTranslation("app");
+    const { startedAt, uptime } = useBackendUptime();
     const isDarkMode = theme === Theme.DARK;
     return (
         <div className="flex justify-center w-full py-1 px-2">

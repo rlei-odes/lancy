@@ -5,6 +5,38 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Lancy v0.5.0] — 2026-10-25 · rlei-odes
+
+### Added — New chat interface
+
+- The chat at `/` is redesigned: a slimmer conversation list grouped by period with each chat's knowledge base and date, a composer with the knowledge base picker and a `+` menu for the document filter and chat-only, and a user menu with settings, reference, advanced features, admin, and version and uptime.
+- A documents panel shows, for each answer, every document the search found: which passages were cited, which were sent to the model, which the reranker discarded, and whether semantic or keyword search found them. Citations in an answer open their document there; documents appear while the answer is still being written.
+- Ticking documents in the panel answers the next question from them in full, with a check that they fit the model's context.
+- The classic chat stays reachable at `/legacy`.
+
+### Added — RAG settings on the admin page
+
+- **Admin → Knowledge & RAG** is the first admin tab, with the settings panel laid out for a full page.
+
+### Changed — Settings are the admin's
+
+- Every user's questions run with the settings the admin saved. Users see them read-only and can no longer save settings; personal retrieval settings saved earlier are no longer applied. A settings save rebuilds the agents everyone answers with, so they were never personal in effect.
+- Switching knowledge base in the chat only selects it.
+
+### Changed — Retrieval
+
+- The reranker judges each candidate on its whole content instead of the first 400 characters, within a budget of half the context.
+- Markdown table padding is removed before any model reads a chunk, and from the character counts behind the context budgets. A padded glossary table went from 8,010 to 2,744 characters.
+- Keyword search drops stop words and stems words for German, English, French and Italian. A question word also matches its forms in the other languages, so English terms are found inside German chunks. HyDE text feeds semantic search only. Adds the `snowballstemmer` dependency.
+- Each answer saves every chunk the search found with how it was found: rank per search method, position before reranking, sent or discarded, cited or not.
+
+### Fixed — Chat
+
+- Suggested follow-up questions come back when a conversation is reopened.
+- The document filter offers the fields of the knowledge base selected in the session, not the server-wide active one.
+
+---
+
 ## [Lancy v0.4.2] — 2026-10-10 · rlei-odes
 
 ### Added — Batch analysis runs on the server
