@@ -8,6 +8,12 @@
    has to match the element itself as well as its descendants. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* v4 wraps `hover:` in `@media (hover: hover)`. Touch-capable Windows laptops
+   often report `hover: none` even with a mouse attached, which silently drops
+   every hover style in the app. Plain `:hover`, as in v3, applies wherever the
+   pointer actually hovers. */
+@custom-variant hover (&:hover);
+
 /* v4's default border colour is `currentcolor`. The rule below restores the
    grey default the elements here were written against; `*` is immediately
    overridden by `border-border` further down, so this governs the pseudo-
