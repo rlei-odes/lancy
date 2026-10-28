@@ -1,7 +1,7 @@
 from typing import Union, Any
 from loguru import logger
 from numpy._typing import NDArray
-from sentence_transformers.models import Transformer, Pooling
+from sentence_transformers.sentence_transformer.modules import Transformer, Pooling
 from sentence_transformers import SentenceTransformer
 from conversational_toolkit.embeddings.base import EmbeddingsModel
 import numpy as np

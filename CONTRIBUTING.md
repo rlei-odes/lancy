@@ -22,10 +22,9 @@ Check existing issues before opening a new one.
    git checkout -b feat/my-feature
    ```
 
-2. Make your changes. Follow the conventions in [CLAUDE.md](CLAUDE.md):
+2. Make your changes. Follow these conventions:
    - Conventional Commits (`feat`, `fix`, `refactor`, `docs`, `chore`)
    - Surgical changes — touch only what you must
-
 
 3. Test your changes against the demo dataset (PrimePack AG in `data/`).
 

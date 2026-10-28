@@ -160,7 +160,7 @@ def _collect_candidate_files(
 
 **Pre-pass in `_run_ingestion` (main.py), before `load_chunks`:**
 
-File hashing reads entire files from disk — blocking I/O. Per the CLAUDE.md constraint, all blocking operations must use `run_in_executor`. The pre-pass runs in the executor, producing two outputs: the filtered file list and the precomputed hash map.
+File hashing reads entire files from disk — blocking I/O. Blocking operations must not run on the event loop, so they go through `run_in_executor`. The pre-pass runs in the executor, producing two outputs: the filtered file list and the precomputed hash map.
 
 Steps (all inside a single `run_in_executor` call, before the existing `load_chunks` executor call):
 

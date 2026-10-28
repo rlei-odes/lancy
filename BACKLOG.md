@@ -613,7 +613,7 @@ Done: Extract ingestion pipeline from `main.py` into `ingestion.py`. Done: KBPoo
 
 ### Refactor: Split rag-config-panel.tsx
 
-At 1,938 lines this is by far the largest file in the frontend — roughly 10× the average component and nearly 3× the next largest (`batch-analysis.tsx`, 770). It grows by design: CLAUDE.md names it as the home for every session-configurable setting, so each new RAG parameter lands here.
+At 1,938 lines this is by far the largest file in the frontend — roughly 10× the average component and nearly 3× the next largest (`batch-analysis.tsx`, 770). It grows by design: it is the home for every session-configurable setting, so each new RAG parameter lands here.
 
 Split on the seams that already exist rather than on a line count. Four concerns currently share the file:
 
