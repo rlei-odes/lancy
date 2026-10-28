@@ -92,9 +92,9 @@ export const ChatSidebar: FunctionComponent = () => {
             <button
                 type="button"
                 onClick={createNewConversation}
-                className="flex h-11 items-center gap-2.5 rounded-lg border border-border bg-card px-3 text-sm font-medium hover:bg-muted"
+                className="group/new flex h-11 items-center gap-2.5 rounded-lg border border-border bg-card px-3 text-sm font-medium shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-150 hover:border-primary/40 hover:bg-primary/5 hover:shadow-md focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98] active:shadow-sm motion-reduce:transition-none motion-reduce:active:scale-100"
             >
-                <SquarePen className="h-[18px] w-[18px]" />
+                <SquarePen className="h-[18px] w-[18px] text-primary transition-transform duration-200 group-hover/new:-rotate-12 motion-reduce:transition-none motion-reduce:group-hover/new:rotate-0" />
                 {t("newChat")}
             </button>
             <label className="flex h-9 items-center gap-2 rounded-lg px-2.5 text-muted-foreground focus-within:bg-card">
