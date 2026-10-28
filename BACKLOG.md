@@ -52,6 +52,19 @@ Discovered while deploying with pgvector + Qwen3-Embedding-8B via Ollama: got pa
 3. Investigate pgvector's `halfvec` type — it may have a higher indexable dimension ceiling and could close this gap without truncation. Not yet checked.
 4. Document the 1024-dim ceiling as the practical limit for pgvector + Ollama embeddings, and steer pgvector deployments toward smaller embedding models.
 
+### Pooled KBs Come Back One at a Time After a Restart
+
+Observed after the deploy of 2026-10-28: the first admin login after the restart showed no active KB. Opening **Admin → KBs** showed one active, and on a second look both were active again.
+
+Known so far: `_startup` loads only the registry's active KB into the pool ([main.py:918](backend/src/lancy/main.py#L918)). A KB that was pooled alongside it before the restart is not reloaded there. How the second KB came back, and why the chat first showed none at all, is not traced yet.
+
+**Investigation steps:**
+1. Read the backend log from that restart: which KBs load at startup, and which load later and on what request.
+2. Find what reloads a pooled KB after startup — a frontend auto-activate, or a lazy load on first use.
+3. Check what the chat's KB selector shows while the startup load is still running.
+
+**Likely fix:** persist the pool's membership, and reload every pooled KB at startup, not just the active one. Until they are loaded, the UI should say so rather than show no KB.
+
 ---
 
 ## Ingestion
@@ -193,6 +206,16 @@ The document panel on `/next` shows chunk text as plain text, so markdown arrive
 - A full-screen overlay for one chunk, or a whole document's chunks, when the content is too large to read in the panel — wide tables, long sections.
 - Drop docling's `<!-- image -->` placeholders, or show a marker that the chunk had an image there.
 
+### Document Panel — Show the RAG Settings Behind an Answer
+
+Since v0.5.0 users no longer see or change the RAG settings: the admin sets them per KB. A user who wonders why an answer found what it found, or missed something, has no way to see how retrieval ran.
+
+**What's needed:**
+- A collapsed section in the right-hand panel, hidden by default, listing the settings an answer used: KB, preset, search methods (semantic, BM25, keyword extraction, HyDE, query expansion), top-k, reranking, LLM and temperature.
+- The settings the answer actually ran with, not today's: the conversation already stores `rag_config_snapshot`, but an admin can change the settings mid-conversation, so per answer is the goal. When the answer predates that record, show the KB's current settings and say so.
+- Read-only, in plain words, and only what helps understand the answer. No secrets such as endpoints, hosts or API keys.
+- Pairs with **Admin RAG Settings — Defaults per KB** below, which decides what a KB's active settings are.
+
 ---
 
 ### Expand Context — Pin a Fixed KB Document
@@ -306,6 +329,19 @@ The POST cannot simply be dropped: it is what makes the loaded preset take effec
 **Fix:** give admins a session row like users have, and reserve `rag_config.json` for an explicit Apply.
 
 **Minor, same area:** `saveAsPreset` does not await the save and shows the success toast unconditionally; `persistUserPresets` ignores exceptions and non-ok responses. No reachable trigger today (protected names are rejected up front, the presets route is not admin-gated, KB preset controls are disabled for users), so this is robustness, not a live bug.
+
+### Admin RAG Settings — Defaults per KB
+
+Since v0.5.0 the RAG settings are admin-only, but the admin section still works like the user-side settings it came from: a session that loads presets, and an Apply that writes `rag_config.json` for everyone. With the user side gone, that flow no longer fits. Saving defaults and choosing which apply to which KB needs a complete revamp, not patches.
+
+**What's needed:**
+- Named defaults (presets) that an admin creates, edits and saves deliberately, apart from trying settings out.
+- For each KB, a choice of which default is active. That is what every user's question on that KB runs with.
+- A clear view of which default is active on which KB, and of unsaved changes.
+- Trying settings out (the Retrieval Probe, test questions) without changing what users get until an explicit save.
+- A plan for existing presets and `rag_config.json`, so a deployment keeps its current behaviour across the upgrade.
+
+Supersedes **An Admin Switching KB Rewrites the Shared Retrieval Baseline** (above) and **Preset UI — End-to-End Review** (below): both are symptoms of the same flow. Close them with this one.
 
 ### Preset UI — End-to-End Review and UX Improvement
 
