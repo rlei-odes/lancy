@@ -335,7 +335,10 @@ class ConversationalToolkitController:
                 stored = conversation.rag_config_snapshot or {}
                 effective_filters = _filters_to_dict(stored.get("filters"))
 
-            ordered_thread = sorted(thread, key=lambda m: m.create_timestamp)
+            # The thread was walked from the newest message up its parent chain, which is
+            # the exact order. Timestamps are not: a question and its answer can share a
+            # millisecond, and a sort then puts the answer first.
+            ordered_thread = list(reversed(thread))
             previous_answer = next((m for m in reversed(ordered_thread) if m.role == Roles.ASSISTANT), None)
             prior_sources = (
                 _cited_chunks(await self.source_db.get_sources_by_message_id(previous_answer.id))

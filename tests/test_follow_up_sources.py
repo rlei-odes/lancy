@@ -279,6 +279,22 @@ def test_the_history_is_capped(tmp_path):
     assert text_of(history[0]) != "question 0"
 
 
+def test_the_history_keeps_reply_order_when_timestamps_tie(tmp_path, monkeypatch):
+    """A question and its answer can share a millisecond; the parent chain still orders them."""
+    import conversational_toolkit.conversation_database.controller as controller_module
+
+    monkeypatch.setattr(controller_module, "get_current_timestamp", lambda: 1_000)
+    agent = CitingAgent()
+    ctrl = controller(tmp_path, agent)
+
+    last = send(ctrl, "question 0")
+    last = send(ctrl, "question 1", after=last)
+    send(ctrl, "the last one", after=last)
+
+    history = agent.queries[-1].history
+    assert [text_of(m) for m in history] == ["question 0", "ok", "question 1", "ok"]
+
+
 # ─── the rewriter reads plain text ────────────────────────────────────────────
 
 

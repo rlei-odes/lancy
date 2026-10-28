@@ -52,6 +52,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed — Chat
 
 - A question disappeared from the chat once the next one was sent, until the conversation was reopened. It was shown under a local id, and the thread is rebuilt from the server ids the answers point to.
+- The history sent with a question could put an answer before its question when both were saved in the same millisecond. It was sorted by timestamp; it now follows the reply chain.
 
 ### Changed — Settings
 
