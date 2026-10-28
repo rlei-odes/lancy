@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyToken } from "@/lib/auth";
+import { verifySession } from "@/lib/auth";
 import { getAppPasswordSecret, getAdminPasswordSecretFromEnv, verifyPassword } from "@/lib/password-hash";
 
 const APP_SECRET = getAppPasswordSecret();
@@ -20,7 +20,6 @@ const PUBLIC_PREFIXES = [
     "/login",
     "/auth/",        // OIDC callback page (/auth/callback)
     "/api/auth/",
-    "/api/v1/files/",
     "/api/v1/branding",
     "/uploads/",
 ];
@@ -47,24 +46,25 @@ function withCors(response: NextResponse): NextResponse {
     return response;
 }
 
-// Returns the role for this request, or null if unauthenticated.
+// Returns the role and, for a logged-in session, the user id, or null if unauthenticated.
 // Mode 1 (no APP_PASSWORD): open access, everyone is admin.
-// Mode 2: role is embedded in the signed cookie.
-async function getRole(request: NextRequest): Promise<"admin" | "user" | null> {
-    if (!APP_SECRET) return "admin";
+// Mode 2/3: role and user id are both in the signed cookie.
+// Bearer API clients and Mode 1 carry no user id; the backend then falls back to "admin".
+async function getSession(request: NextRequest): Promise<{ role: "admin" | "user"; sub: string | null } | null> {
+    if (!APP_SECRET) return { role: "admin", sub: null };
 
     // Bearer token for API clients (Open WebUI, curl, etc.) — always admin
     const authHeader = request.headers.get("authorization") ?? "";
     if (authHeader.startsWith("Bearer ")) {
         const token = authHeader.slice(7);
-        if (await verifyPassword(token, APP_SECRET)) return "admin";
-        if (ADMIN_SECRET && (await verifyPassword(token, ADMIN_SECRET))) return "admin";
+        if (await verifyPassword(token, APP_SECRET)) return { role: "admin", sub: null };
+        if (ADMIN_SECRET && (await verifyPassword(token, ADMIN_SECRET))) return { role: "admin", sub: null };
     }
 
     const cookie = request.cookies.get("rag_auth");
     if (!cookie?.value) return null;
 
-    return verifyToken(cookie.value, SIGNING_KEY);
+    return verifySession(cookie.value, SIGNING_KEY);
 }
 
 export async function middleware(request: NextRequest) {
@@ -78,7 +78,8 @@ export async function middleware(request: NextRequest) {
         return NextResponse.next();
     }
 
-    const role = await getRole(request);
+    const session = await getSession(request);
+    const role = session?.role ?? null;
 
     if (pathname === "/docs") {
         if (!role) {
@@ -95,11 +96,13 @@ export async function middleware(request: NextRequest) {
             headers: { "Content-Type": "application/json", ...CORS_HEADERS },
         });
     }
-    if (role) {
+    if (session) {
         const requestHeaders = new Headers(request.headers);
-        requestHeaders.set("x-user-role", role);
-        const sessionId = request.cookies.get("session_id")?.value;
-        if (sessionId) requestHeaders.set("x-session-id", sessionId);
+        requestHeaders.set("x-user-role", session.role);
+        // The backend owns conversations and piles by this header, so it comes only
+        // from the signed token, never from a header or cookie the client sent.
+        requestHeaders.delete("x-session-id");
+        if (session.sub) requestHeaders.set("x-session-id", session.sub);
         return withCors(NextResponse.next({ request: { headers: requestHeaders } }));
     }
 

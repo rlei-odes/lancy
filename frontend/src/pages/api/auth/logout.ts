@@ -6,6 +6,9 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     res.setHeader("Set-Cookie", [
         "rag_auth=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
         "lancy_display_name=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+        // Left over from before the identity moved into rag_auth. browser_id stays:
+        // it is what brings this browser's password-login history back next time.
+        "session_id=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
     ]);
     return res.status(200).json({ ok: true });
 }

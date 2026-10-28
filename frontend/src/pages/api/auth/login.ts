@@ -1,39 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { randomUUID } from "crypto";
 import { signToken } from "@/lib/auth";
-import { getAdminPassword, getSSOConfig, isMode2Active, isMode3Active, getSessionTtlSeconds } from "@/lib/auth-config";
+import { getAdminPassword, getSSOConfig, isMode2Active, getSessionTtlSeconds } from "@/lib/auth-config";
 import { getAppPasswordSecret, verifyPassword } from "@/lib/password-hash";
 import { logAuth, clientIp } from "@/lib/log-auth";
-
-const SESSION_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
-
-function buildCookies(
-    authToken: string,
-    ttl: number,
-    sessionId: string,
-    displayName: string | null,
-    existingSessionId: string | undefined,
-    secure: string[],
-): string[] {
-    const cookies: string[] = [
-        [`rag_auth=${authToken}`, "Path=/", `Max-Age=${ttl}`, "HttpOnly", "SameSite=Lax", ...secure].join("; "),
-    ];
-
-    // Only set session_id when not already present (Mode 1/2) or always override (Mode 3).
-    if (!existingSessionId || isMode3Active()) {
-        cookies.push(
-            [`session_id=${sessionId}`, "Path=/", `Max-Age=${SESSION_MAX_AGE}`, "HttpOnly", "SameSite=Lax", ...secure].join("; "),
-        );
-    }
-
-    if (displayName !== null) {
-        cookies.push(
-            [`lancy_display_name=${encodeURIComponent(displayName)}`, "Path=/", `Max-Age=${ttl}`, "HttpOnly", "SameSite=Lax", ...secure].join("; "),
-        );
-    }
-
-    return cookies;
-}
+import { browserIdFor, loginCookies } from "@/lib/session-cookies";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== "POST") return res.status(405).end();
@@ -90,12 +60,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const { session_id, display_name } = await ldapRes.json();
         const ttl = getSessionTtlSeconds();
-        const token = await signToken("user", signingKey, ttl);
+        const token = await signToken("user", session_id, signingKey, ttl);
 
         logAuth("LDAP_LOGIN_SUCCESS", { ip: clientIp(req), user: display_name });
         res.setHeader(
             "Set-Cookie",
-            buildCookies(token, ttl, session_id, display_name, req.cookies["session_id"], secure),
+            loginCookies({ authToken: token, ttl, browserId: browserIdFor(req.cookies), displayName: display_name, secure }),
         );
         return res.status(200).json({ ok: true, role: "user" });
     }
@@ -116,13 +86,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const ttl = getSessionTtlSeconds();
-    const token = await signToken(role, signingKey, ttl);
-    const sessionId = req.cookies["session_id"] ?? randomUUID();
+    // No personal identity behind a shared password: the history belongs to this browser.
+    const browserId = browserIdFor(req.cookies);
+    const token = await signToken(role, browserId, signingKey, ttl);
 
     logAuth("LOGIN_SUCCESS", { ip: clientIp(req), role, mode: mode2 ? "2" : "1" });
-    res.setHeader(
-        "Set-Cookie",
-        buildCookies(token, ttl, sessionId, null, req.cookies["session_id"], secure),
-    );
+    res.setHeader("Set-Cookie", loginCookies({ authToken: token, ttl, browserId, displayName: null, secure }));
     return res.status(200).json({ ok: true, role });
 }

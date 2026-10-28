@@ -46,6 +46,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed — Security
 
 - Conversations were readable and changeable by anyone who knew their id: reading, renaming and deleting a conversation, listing its messages and sources, and reacting to its answers never checked that the conversation belonged to the caller. Each of these routes now does, and answers another user's conversation with 404, the same as a missing one, so ids cannot be probed. A reaction must also name a message of that conversation.
+- Logging in as admin after a personal LDAP login in the same browser showed and added to that person's conversations and piles. The user id lived in a `session_id` cookie that the admin login reused. The id is now signed into the session token: an LDAP or OIDC login is its directory id, and a password login (Mode 2, the admin login in Mode 3) is this browser, through a new `browser_id` cookie. The middleware sets `x-session-id` only from the token and drops one a client sends. Each browser keeps its own admin history, as before. Sessions from before this change log in again.
+- Knowledge-base source documents under `/api/v1/files/` were served without a login. They now need a session or the Bearer token.
 
 ### Fixed — Chat
 

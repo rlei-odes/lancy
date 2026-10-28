@@ -43,8 +43,8 @@ function request(pathname: string, init: { method?: string; cookie?: string; aut
     });
 }
 
-async function cookieFor(role: "admin" | "user") {
-    return `rag_auth=${await signToken(role, SECRET)}`;
+async function cookieFor(role: "admin" | "user", sub = "some-user") {
+    return `rag_auth=${await signToken(role, sub, SECRET)}`;
 }
 
 const PROTECTED_ENV = {
@@ -67,6 +67,8 @@ describe("with no session", () => {
         "/api/v1/kb",
         "/v1/chat/completions",
         "/files/report.pdf",
+        // Knowledge-base source documents: readable only with a session.
+        "/api/v1/files/report.pdf",
     ])("answers 401 for the API path %s", async (path) => {
         const middleware = await loadMiddleware(PROTECTED_ENV);
         const res = await middleware(request(path));
@@ -89,7 +91,6 @@ describe("with no session", () => {
         "/login",
         "/auth/callback",
         "/api/auth/login",
-        "/api/v1/files/public.pdf",
         "/api/v1/branding",
         "/uploads/logo.png",
         "/_next/static/chunk.js",
@@ -112,7 +113,7 @@ describe("with no session", () => {
 
     it("rejects a session cookie signed with the wrong secret", async () => {
         const middleware = await loadMiddleware(PROTECTED_ENV);
-        const forged = `rag_auth=${await signToken("admin", "not-the-secret")}`;
+        const forged = `rag_auth=${await signToken("admin", "some-user", "not-the-secret")}`;
         const res = await middleware(request("/api/v1/rag/config", { cookie: forged }));
 
         expect(res.status).toBe(401);
@@ -232,6 +233,66 @@ describe("x-user-role", () => {
 
         const res = await middleware(req);
         expect(res.status).toBe(403);
+    });
+});
+
+// ─── the user id is passed downstream, not trusted from the client ────────────
+//
+// The backend owns conversations and piles by x-session-id. It used to come from
+// a session_id cookie that a later login in the same browser did not replace, so
+// an admin login after a personal LDAP login read and wrote that person's history.
+
+describe("x-session-id", () => {
+    it("is the subject of the verified cookie", async () => {
+        const middleware = await loadMiddleware(PROTECTED_ENV);
+        const res = await middleware(request("/api/v1/conversations", { cookie: await cookieFor("user", "rleimer") }));
+
+        expect(res.headers.get("x-middleware-request-x-session-id")).toBe("rleimer");
+    });
+
+    it("ignores a leftover session_id cookie from an earlier login", async () => {
+        const middleware = await loadMiddleware(PROTECTED_ENV);
+        const cookie = `${await cookieFor("admin", "this-browser")}; session_id=rleimer`;
+        const res = await middleware(request("/api/v1/conversations", { cookie }));
+
+        expect(res.headers.get("x-middleware-request-x-session-id")).toBe("this-browser");
+    });
+
+    it("cannot be spoofed by the client sending its own header", async () => {
+        const middleware = await loadMiddleware(PROTECTED_ENV);
+        const req = request("/api/v1/conversations", { cookie: await cookieFor("user", "mallory") });
+        req.headers.set("x-session-id", "alice");
+
+        const res = await middleware(req);
+        expect(res.headers.get("x-middleware-request-x-session-id")).toBe("mallory");
+    });
+
+    it("is dropped for a Bearer client rather than taken from its header", async () => {
+        const middleware = await loadMiddleware(PROTECTED_ENV);
+        const req = request("/api/v1/conversations", { auth: `Bearer ${SECRET}` });
+        req.headers.set("x-session-id", "alice");
+
+        const res = await middleware(req);
+        expect(res.status).toBe(200);
+        expect(res.headers.get("x-middleware-request-x-session-id")).toBeNull();
+    });
+
+    it("refuses a session token from before the subject was added", async () => {
+        const middleware = await loadMiddleware(PROTECTED_ENV);
+        // A valid old-format token: role.exp.hmac, signed with the right secret.
+        const exp = Math.floor(Date.now() / 1000) + 3600;
+        const key = await crypto.subtle.importKey(
+            "raw",
+            new TextEncoder().encode(SECRET),
+            { name: "HMAC", hash: "SHA-256" },
+            false,
+            ["sign"],
+        );
+        const raw = await crypto.subtle.sign({ name: "HMAC", hash: "SHA-256" }, key, new TextEncoder().encode(`admin.${exp}`));
+        const sig = Array.from(new Uint8Array(raw), (b) => b.toString(16).padStart(2, "0")).join("");
+
+        const res = await middleware(request("/api/v1/conversations", { cookie: `rag_auth=admin.${exp}.${sig}` }));
+        expect(res.status).toBe(401);
     });
 });
 

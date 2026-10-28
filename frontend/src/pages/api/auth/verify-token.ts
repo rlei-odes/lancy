@@ -4,6 +4,7 @@ import { signToken } from "@/lib/auth";
 import { getSSOConfig, getSessionTtlSeconds } from "@/lib/auth-config";
 import { getAppPasswordSecret } from "@/lib/password-hash";
 import { logAuth, clientIp } from "@/lib/log-auth";
+import { browserIdFor, loginCookies } from "@/lib/session-cookies";
 
 // Module-level JWKS cache keyed by issuer URL.
 // On key rotation or verification failure the cache entry is evicted and refetched.
@@ -37,8 +38,6 @@ function checkGroupMembership(payload: JWTPayload, allowedGroups: string[]): boo
     const combined = [...groups, ...roles].map(normalize);
     return allowedGroups.some((g) => combined.includes(normalize(g)));
 }
-
-const SESSION_MAX_AGE = 60 * 60 * 24 * 365; // 1 year — stable IdP identity
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== "POST") return res.status(405).end();
@@ -100,18 +99,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const username = (payload["preferred_username"] as string | undefined) ?? null;
     const ttl = getSessionTtlSeconds();
 
-    const authToken = await signToken("user", signingKey, ttl);
+    if (!sessionId) {
+        return res.status(401).json({ error: "Token has no subject" });
+    }
+    const authToken = await signToken("user", sessionId, signingKey, ttl);
 
     // See login.ts — Secure must reflect actual TLS termination (via reverse proxy),
     // not build mode, or plain-HTTP internal deployments silently drop the cookie.
     const secure = req.headers["x-forwarded-proto"] === "https" ? ["Secure"] : [];
-    const cookies = [
-        [`rag_auth=${authToken}`, "Path=/", `Max-Age=${ttl}`, "HttpOnly", "SameSite=Lax", ...secure].join("; "),
-        [`session_id=${sessionId}`, "Path=/", `Max-Age=${SESSION_MAX_AGE}`, "HttpOnly", "SameSite=Lax", ...secure].join("; "),
-        [`lancy_display_name=${encodeURIComponent(displayName)}`, "Path=/", `Max-Age=${ttl}`, "HttpOnly", "SameSite=Lax", ...secure].join("; "),
-    ];
 
     logAuth("OIDC_LOGIN_SUCCESS", { ip: clientIp(req), username, user: displayName, sub: sessionId });
-    res.setHeader("Set-Cookie", cookies);
+    res.setHeader(
+        "Set-Cookie",
+        loginCookies({ authToken, ttl, browserId: browserIdFor(req.cookies), displayName, secure }),
+    );
     return res.status(200).json({ ok: true });
 }
