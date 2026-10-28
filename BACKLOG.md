@@ -244,6 +244,15 @@ A search mode for questions where missing a document is worse than waiting. The 
 **Variant — source citation view only (no LLM cost):**
 Show neighbours in the sources panel when the user expands a citation. The retrieved chunk renders normally; preceding and succeeding chunks render below/above it in a muted style. The backend returns `neighbour_content_before` / `neighbour_content_after` alongside each source chunk. Zero latency impact, always safe to enable.
 
+### Follow-up Questions — Decide Whether to Search Again
+
+A follow-up now gets the chunks the previous answer cited (`QueryWithContext.prior_sources`), placed first in `<sources>`, and still runs a full search for the rewritten question. Two further steps:
+
+- **Skip the search when the previous sources answer it.** "When was that?", "who signed it?" or "summarise that" are about the chunks already carried over; a new search only adds unrelated chunks and costs the expansion, keyword and rerank calls. Let the rewrite step return `{"standalone_query": …, "needs_new_search": true|false}` (one utility call, as now) and answer from the carried chunks alone when it says no. Fall back to searching when the reply does not parse or nothing was carried over. Show it in the answer's retrieval stats so a wrong decision is visible.
+- **Tell the answer prompt about earlier turns.** `system_prompt.default.md` says to answer "strictly on the provided sources" and to mark anything else ❓ MISSING. A fact stated in an earlier answer of the conversation but not in this turn's sources is then reported missing. Allow facts from earlier answers, cited as such, and say that the first sources are the ones the previous answer used.
+
+Small UI follow-up: carried chunks are saved with the rank `previous_answer`; the document panel ignores unknown ranks. Label them "from the previous answer" there.
+
 ---
 
 ### Keyword Extraction — Score Multi-Word Expansions as Phrases
@@ -573,7 +582,8 @@ No urgent updates. The following are worth revisiting when there is a concrete r
 
 - **React 18 → 19** — React 19 is stable. Low urgency.
 - **`@types/node: ^20` → `^22`** — trivial bump.
-- **`next` → 16.x** — `eslint-config-next` is already on 16 while `next` is on 15. Fix the mismatch during the bump. `eslint-config-next` is also the only remaining source of the unpatchable `braces` advisory (via `@next/eslint-plugin-next` → `fast-glob` → `micromatch`), which the Tailwind v4 migration removed from the Tailwind side only.
+- **`next` → 16.x** — security reason now: Next 15 bundles PostCSS 8.4.31, flagged high by `npm audit` (XSS in CSS stringify, `.map` file disclosure via `sourceMappingURL`); the fixed copy ships only with `next` 16.4.3+. Build-time only and needs attacker-controlled CSS, so low practical exposure. `eslint-config-next` is already on 16 while `next` is on 15. Fix the mismatch during the bump. `eslint-config-next` is also the only remaining source of the unpatchable `braces` advisory (via `@next/eslint-plugin-next` → `fast-glob` → `micromatch`), which the Tailwind v4 migration removed from the Tailwind side only.
+- **`katex` (via `rehype-katex` / `remark-math`)** — `npm audit` flags a low prototype-pollution advisory; its suggested fix downgrades `rehype-katex` to 1.2.0, a breaking change. Wait for a patched `katex` in range instead.
 - **`lucide-react: ^0.321.0`** — far behind; current is in the 0.4xx range.
 - **`i18next: ^24.x`** — newer major available.
 - **`mini-css-extract-plugin` + explicit `webpack` in devDeps** — Next manages its own webpack. Probable leftovers; verify before deleting.
