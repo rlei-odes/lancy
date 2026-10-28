@@ -63,6 +63,7 @@ jobs:
           fetch-depth: 0
 
       - uses: actions/setup-python@v7
+        id: python
         with:
           python-version: "3.13"
 
@@ -73,7 +74,10 @@ jobs:
           path: .venv
           # The workflow file is part of the key: changing how the venv is built has
           # to invalidate it, or a cached environment outlives the fix.
-          key: venv-${{ runner.os }}-py313-${{ hashFiles('requirements.txt', 'backend/pyproject.toml', 'conversational-toolkit/pyproject.toml', '.github/workflows/backend.yml') }}
+          # So is the exact Python patch version: .venv/bin/python is a symlink into
+          # the runner's toolcache, and it dangles once the runner image moves on to
+          # another 3.13.x.
+          key: venv-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('requirements.txt', 'backend/pyproject.toml', 'conversational-toolkit/pyproject.toml', '.github/workflows/backend.yml') }}
 
       - name: Create venv
         if: steps.venv.outputs.cache-hit != 'true'
