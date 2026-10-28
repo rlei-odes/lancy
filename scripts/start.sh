@@ -90,8 +90,10 @@ echo "  Backend PID: $(cat $LOG_DIR/backend.pid)"
 echo "Starting frontend on port 3000 (mode: $MODE)..."
 cd "$REPO/frontend"
 if [ package-lock.json -nt node_modules/.package-lock.json ] 2>/dev/null || [ ! -d node_modules ]; then
-    echo "  Running npm install..."
-    npm install -q
+    # npm ci installs the lockfile as committed; npm install would rewrite it
+    # for this machine's npm and leave a local change that blocks git pull.
+    echo "  Running npm ci..."
+    npm ci -q
 fi
 # Roll the previous run aside instead of truncating it — a crash you restart
 # out of is still readable in frontend.log.1.

@@ -93,7 +93,7 @@ pip install -r requirements.txt
 
 ### Frontend
 
-The frontend has no separate install step — `scripts/start-frontend.sh` runs `npm install` automatically if `node_modules` is missing or outdated. The only thing you need to do manually is create the `.env` file:
+The frontend has no separate install step — `scripts/start-frontend.sh` runs `npm ci` automatically if `node_modules` is missing or outdated. `npm ci` installs exactly the committed `package-lock.json` and never rewrites it, so `git pull` on the server is not blocked by a local lockfile change. The only thing you need to do manually is create the `.env` file:
 
 ```bash
 cd frontend
