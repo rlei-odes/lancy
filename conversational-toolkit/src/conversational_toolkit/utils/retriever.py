@@ -31,7 +31,7 @@ async def make_query_standalone(llm: LLM, history: list[LLMMessage], query: str)
         Reformulated Query (ONLY the reformulated query in the same language as the user query, without any explanation):
     """
     )
-    chat_history = "\n".join([f"{message.role}: {message.content}" for message in history])
+    chat_history = "\n".join(f"- {message.role}: {_history_text(message)}" for message in history)
 
     conversation = [
         LLMMessage(
@@ -52,12 +52,25 @@ async def make_query_standalone(llm: LLM, history: list[LLMMessage], query: str)
             ],
         ),
     ]
-    reformulated_query = (await llm.generate(conversation)).content[0].text or ""
+    reply = await llm.generate(conversation)
+    reformulated_query = ((reply.content[0].text if reply.content else "") or "").strip()
 
     loguru.logger.debug(f"Original query: {query}")
     loguru.logger.debug(f"Reformulated query: {reformulated_query}")
 
-    return reformulated_query
+    # An empty rewrite would search for nothing; the user's own words are better.
+    return reformulated_query or query
+
+
+# Characters of one earlier message the query rewriter sees. It needs the subject
+# of the conversation, not every detail of a long answer.
+HISTORY_MESSAGE_CHARS = 1500
+
+
+def _history_text(message: LLMMessage) -> str:
+    """A message's text on one line, cut to HISTORY_MESSAGE_CHARS."""
+    text = " ".join(" ".join(c.text or "" for c in message.content if c.type == "text").split())
+    return text if len(text) <= HISTORY_MESSAGE_CHARS else text[:HISTORY_MESSAGE_CHARS] + " …"
 
 
 def language_rule(languages: Sequence[str]) -> str:

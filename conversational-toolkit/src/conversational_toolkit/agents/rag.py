@@ -64,6 +64,19 @@ def _answer_field(text: str) -> str:
     return text.strip()
 
 
+def carry_prior_sources(prior: Sequence[ChunkRecord], found: Sequence[ChunkRecord]) -> list[ChunkRecord]:
+    """The chunks to answer a follow-up from: the previous answer's, then the new search's.
+
+    Carried chunks bypass search and reranking: the follow-up is most likely about
+    them, and the rewritten question may not rank them again. A chunk the search
+    found again keeps its place among the carried ones instead of appearing twice.
+    Identity is the chunk id, or the text when an older answer kept no id.
+    """
+    seen_ids = {c.id for c in prior}
+    seen_texts = {c.content for c in prior}
+    return [*prior, *(c for c in found if c.id not in seen_ids and c.content not in seen_texts)]
+
+
 def _source_xml(source: ChunkRecord, text: str) -> str:
     return f'<source id="{source.id}" file="{source.metadata.get("source_file", "")}">{text}</source>'
 
@@ -199,8 +212,11 @@ class RAG(Agent):
             return reciprocal_rank_fusion(list(results))[: retriever.top_k], []
 
         all_results = await asyncio.gather(*[_retrieve_one(r) for r in self.retrievers])
-        sources: list[ChunkRecord] = [chunk for kept, _ in all_results for chunk in kept]
+        found: list[ChunkRecord] = [chunk for kept, _ in all_results for chunk in kept]
         discarded: list[ChunkRecord] = [chunk for _, dropped in all_results for chunk in dropped]
+        sources = carry_prior_sources(query_with_context.prior_sources, found)
+        if len(sources) > len(found):
+            logger.info(f"Retrieval: {len(sources) - len(found)} chunk(s) carried over from the previous answer")
 
         # Build retrieval stats from the first reranker (there is at most one in practice).
         reranker = next((r for r in self.retrievers if isinstance(r, RerankingRetriever)), None)

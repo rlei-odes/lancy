@@ -23,6 +23,9 @@ class QueryWithContext(BaseModel):
     filters: dict[str, Any] | None = None  # neutral {field: value} metadata pre-filter, threaded to retrievers
     chat_only: bool = False  # if True, agent skips retrieval and answers from history + general knowledge only
     expand_context: list[str] | None = None  # if set, replace retrieval with all chunks from these source_files
+    # Chunks the previous answer cited. A follow-up ("when was that?") is usually about them,
+    # and a fresh search for the rewritten question need not find them again.
+    prior_sources: list[ChunkRecord] = Field(default_factory=list)
 
 
 class RetrievalStats(BaseModel):

@@ -30,7 +30,7 @@ from conversational_toolkit.llms.base import LLMMessage, Roles, MessageContent
 from conversational_toolkit.utils.database import generate_uid
 from conversational_toolkit.utils.metadata_provider import MetadataProvider
 from conversational_toolkit.utils.time import get_current_timestamp
-from conversational_toolkit.vectorstores.base import ChunkRecord
+from conversational_toolkit.vectorstores.base import ChunkMatch, ChunkRecord
 
 
 class MessageFilter(BaseModel):
@@ -137,6 +137,44 @@ def _split_stored_sources(stored: list[Source]) -> tuple[list[Source], list[Sour
         if s.metadata.get(RETRIEVAL_KEY, {}).get("cited", True)
     ]
     return sources, retrieved
+
+
+# Earlier turns sent to the agent with a question: 5 questions and their answers. Older
+# turns rarely matter to a follow-up and would otherwise grow every prompt without end.
+MAX_HISTORY_MESSAGES = 10
+
+# Marks a chunk carried over from the previous answer in its saved per-method ranks.
+PREVIOUS_ANSWER_RANK = "previous_answer"
+
+
+def _cited_chunks(stored: list[Source]) -> list[ChunkMatch]:
+    """The chunks a saved answer cited, rebuilt to be sent to the LLM again.
+
+    A chunk saved with its retrieval record gets back its original id, so a new
+    search that finds it again is recognised as the same chunk; one saved without
+    (chat only, expanded context, older answers) keeps its stored id.
+    """
+    ordered = sorted(stored, key=lambda s: s.metadata.get(RETRIEVAL_KEY, {}).get("position", 0))
+    chunks: list[ChunkMatch] = []
+    for source in ordered:
+        info = source.metadata.get(RETRIEVAL_KEY, {})
+        if not info.get("cited", True):
+            continue
+        metadata = {k: v for k, v in source.metadata.items() if k != RETRIEVAL_KEY}
+        chunks.append(
+            ChunkMatch(
+                id=info.get("chunk_id") or source.id,
+                title=info.get("title") or metadata.get("title", ""),
+                content=source.content,
+                # The mime type is not saved; image chunks hold their data URL as content.
+                mime_type="image/png" if source.content.startswith("data:image") else "text/markdown",
+                metadata=metadata,
+                embedding=[],
+                score=0.0,
+                ranks={PREVIOUS_ANSWER_RANK: len(chunks) + 1},
+            )
+        )
+    return chunks
 
 
 class ClientMessage(Message):
@@ -297,18 +335,27 @@ class ConversationalToolkitController:
                 stored = conversation.rag_config_snapshot or {}
                 effective_filters = _filters_to_dict(stored.get("filters"))
 
+            ordered_thread = sorted(thread, key=lambda m: m.create_timestamp)
+            previous_answer = next((m for m in reversed(ordered_thread) if m.role == Roles.ASSISTANT), None)
+            prior_sources = (
+                _cited_chunks(await self.source_db.get_sources_by_message_id(previous_answer.id))
+                if previous_answer
+                else []
+            )
+
             t_start = time.monotonic()
             stream = self.agent.answer_stream(
                 QueryWithContext(
                     query=input_message.content,
                     history=[
                         LLMMessage(role=message.role, content=[MessageContent(type="text", text=message.content)])
-                        for message in sorted(thread, key=lambda m: m.create_timestamp)
+                        for message in ordered_thread[-MAX_HISTORY_MESSAGES:]
                     ],
                     conversation_id=conversation.id,
                     filters=effective_filters,
                     chat_only=user_input.chat_only,
                     expand_context=user_input.expand_context,
+                    prior_sources=prior_sources,
                 )
             )
 
